@@ -1,0 +1,168 @@
+version: 1
+workflow_id: consultation-v1
+title: MCS Consultation Workflow V1
+revision: teacher-confirmed-flow-2026-04
+source_documents:
+  - /home/ZR/data2/MCS/docs/流程.txt
+  - /home/ZR/data2/MCS/docs/交互剧本.txt
+status: active_draft
+entry_stage: patient-login
+stages:
+  - id: patient-login
+    name: 患者登录
+    type: identity_entry
+    outputs:
+      - authenticated_session
+      - patient_identity
+      - login_context
+    completion_criteria:
+      - authenticated_session_established
+
+  - id: consultation-preparation
+    name: 问诊准备
+    type: preparation
+    inputs:
+      - patient_identity
+      - existing_profile_snapshot
+      - device_status
+      - permission_activation_state
+    outputs:
+      - participant_profile_snapshot
+      - assigned_doctor_persona
+      - device_readiness
+      - consent_state
+      - consultation_ready_state
+    completion_criteria:
+      - preparation_confirmed
+      - doctor_persona_assigned
+      - audio_channel_ready
+
+  - id: digital-human-consultation
+    name: 数字人交互问诊
+    type: rule_driven_consultation
+    engine: rule-v1
+    doctor_personas_dir: /home/ZR/data2/MCS/packages/workflow-resources/doctor-personas
+    script_dir: /home/ZR/data2/MCS/packages/workflow-resources/interview-scripts/rule-v1
+    substeps:
+      - stage-01-greeting-and-briefing
+      - stage-02-chief-complaint
+      - stage-03-current-history-followup
+      - stage-04-high-risk-screening
+      - handoff-to-scale-assessment
+    inputs:
+      - participant_profile_snapshot
+      - assigned_doctor_persona
+      - consultation_ready_state
+    outputs:
+      - chief_complaint_raw_text
+      - chief_complaint_summary
+      - current_history_structured_result
+      - high_risk_screening_result
+      - consultation_record_bundle
+      - scale_handoff_payload
+    completion_criteria:
+      - rule_interview_completed
+    safety_overrides:
+      - when: high_risk_screening_result.alert_level in [high, urgent]
+        action: pause_standard_flow_and_require_human_review
+        next: clinical-decision
+        requires_human_review: true
+
+  - id: scale-assessment
+    name: 量表问诊
+    type: assessment
+    scale_catalog_dir: /home/ZR/data2/MCS/packages/workflow-resources/scales
+    substeps:
+      - scale-selection
+      - scale-session-runner
+    required_scales:
+      - phq9
+      - sds
+      - sas
+      - social-function
+    scale_policy:
+      doctor_rule_recommended_required: true
+      patient_optional_selection_enabled: true
+      submit_each_scale_immediately: true
+      reveal_single_scale_score_immediately: false
+      reveal_aggregate_result_only_after_completion: true
+    multimodal_capture:
+      enabled_modalities:
+        - speech
+        - face
+        - pose
+        - eeg
+      decision_policy: supportive_only
+    inputs:
+      - chief_complaint_summary
+      - current_history_structured_result
+      - scale_handoff_payload
+    outputs:
+      - selected_scales
+      - scale_submission_records
+      - multimodal_feature_bundle
+      - assessment_aggregate_payload
+    completion_criteria:
+      - all_required_and_selected_scales_completed
+
+  - id: clinical-decision
+    name: 临床决策
+    type: clinical_decision
+    inputs:
+      - current_history_structured_result
+      - high_risk_screening_result
+      - assessment_aggregate_payload
+      - multimodal_feature_bundle
+    outputs:
+      - risk_level
+      - risk_explanation
+      - referral_recommendations
+      - lifestyle_suggestions
+      - intervention_entry_payload
+
+  - id: intervention-execution
+    name: 调节干预
+    type: intervention_execution
+    inputs:
+      - risk_level
+      - risk_explanation
+      - intervention_entry_payload
+    outputs:
+      - intervention_plan
+      - intervention_intensity
+      - intervention_content_set
+      - intervention_execution_record
+      - user_feedback
+
+  - id: review-and-reassessment
+    name: 对话回顾与再评估
+    type: followup
+    inputs:
+      - consultation_record_bundle
+      - scale_submission_records
+      - multimodal_feature_bundle
+      - intervention_execution_record
+      - user_feedback
+    outputs:
+      - conversation_review_record
+      - timeline_record
+      - reassessment_task
+      - exportable_report
+      - next_round_entry
+
+transition_rules:
+  - from: patient-login
+    to: consultation-preparation
+  - from: consultation-preparation
+    to: digital-human-consultation
+  - from: digital-human-consultation
+    to: scale-assessment
+  - from: scale-assessment
+    to: clinical-decision
+  - from: clinical-decision
+    to: intervention-execution
+  - from: intervention-execution
+    to: review-and-reassessment
+  - from: review-and-reassessment
+    to: consultation-preparation
+    when: reassessment_requested_or_scheduled

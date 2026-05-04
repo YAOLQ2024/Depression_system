@@ -1,0 +1,176 @@
+version: 1
+stage_id: stage-03-current-history-followup
+title: 现病史规则式问诊
+source_document: /home/ZR/data2/MCS/docs/交互剧本.txt
+revision: teacher-confirmed-flow-2026-04
+entry_node: select-followup-track
+slots:
+  - dominant_followup_track
+  - symptom_duration
+  - symptom_frequency
+  - symptom_intensity
+  - functional_impact
+  - recent_stressor
+  - prior_psychiatric_visit
+  - family_history
+  - current_history_summary
+routing_hints:
+  based_on: chief_complaint_keywords
+  rule_paths:
+    sleep: sleep-track-open
+    mood: mood-track-open
+    anxiety: anxiety-track-open
+    default: general-track-open
+nodes:
+  - id: select-followup-track
+    type: route_by_rule
+    rule_source: chief_complaint_keywords
+    branches:
+      sleep: sleep-track-open
+      mood: mood-track-open
+      anxiety: anxiety-track-open
+      default: general-track-open
+
+  - id: sleep-track-open
+    type: speak_then_wait
+    prompt: 您刚刚提到睡眠方面的困扰。我先确认一下，主要更像是入睡困难、夜里容易醒，还是醒得很早之后就很难再睡着？
+    extraction:
+      strategy: free_text
+      target_slot: dominant_followup_track
+    branches:
+      normal:
+        next: ask-duration
+      silence:
+        after_seconds: 6
+        next: ask-duration
+      recognition_failure:
+        next: ask-duration
+
+  - id: mood-track-open
+    type: speak_then_wait
+    prompt: 您刚刚提到情绪低落或做什么都提不起劲。我想确认一下，这种状态更接近持续心情差、容易哭、没兴趣，还是总觉得很累、很空？
+    extraction:
+      strategy: free_text
+      target_slot: dominant_followup_track
+    branches:
+      normal:
+        next: ask-duration
+      silence:
+        after_seconds: 6
+        next: ask-duration
+      recognition_failure:
+        next: ask-duration
+
+  - id: anxiety-track-open
+    type: speak_then_wait
+    prompt: 您刚刚提到紧张、害怕或总是放松不下来。我想继续确认一下，这种感觉更像持续担心、胸闷心慌，还是在特定场景下特别明显？
+    extraction:
+      strategy: free_text
+      target_slot: dominant_followup_track
+    branches:
+      normal:
+        next: ask-duration
+      silence:
+        after_seconds: 6
+        next: ask-duration
+      recognition_failure:
+        next: ask-duration
+
+  - id: general-track-open
+    type: speak_then_wait
+    prompt: 我想继续了解一下您最困扰的这个问题具体是怎么表现的。您可以说说它通常在什么情况下最明显。
+    extraction:
+      strategy: free_text
+      target_slot: dominant_followup_track
+    branches:
+      normal:
+        next: ask-duration
+      silence:
+        after_seconds: 6
+        next: ask-duration
+      recognition_failure:
+        next: ask-duration
+
+  - id: ask-duration
+    type: speak_then_wait
+    prompt: 这种情况大概从什么时候开始的？是最近几天、几周，还是已经持续几个月甚至更久了？
+    extraction:
+      strategy: free_text
+      target_slot: symptom_duration
+    branches:
+      normal:
+        next: ask-frequency-intensity
+      silence:
+        after_seconds: 6
+        next: ask-frequency-intensity
+      recognition_failure:
+        next: ask-frequency-intensity
+
+  - id: ask-frequency-intensity
+    type: speak_then_wait
+    prompt: 这种不舒服通常出现得有多频繁？如果按严重程度来感受，它对您来说更像轻度影响，还是已经很明显地压住了您的状态？
+    extraction:
+      strategy: free_text
+      target_slots:
+        - symptom_frequency
+        - symptom_intensity
+    branches:
+      normal:
+        next: ask-functional-impact
+      silence:
+        after_seconds: 6
+        next: ask-functional-impact
+      recognition_failure:
+        next: ask-functional-impact
+
+  - id: ask-functional-impact
+    type: speak_then_wait
+    prompt: 这种状态对您的睡眠、吃饭、上学、上班，或者和家人同学同事相处有没有明显影响？
+    extraction:
+      strategy: free_text
+      target_slot: functional_impact
+    branches:
+      normal:
+        next: ask-help-seeking
+      silence:
+        after_seconds: 6
+        next: ask-help-seeking
+      recognition_failure:
+        next: ask-help-seeking
+
+  - id: ask-help-seeking
+    type: speak_then_wait
+    prompt: 在这段时间里，您有没有去医院、学校心理中心，或者找其他专业人士咨询过？
+    extraction:
+      strategy: free_text
+      target_slot: prior_psychiatric_visit
+    branches:
+      normal:
+        next: ask-family-and-stressor
+      silence:
+        after_seconds: 6
+        next: ask-family-and-stressor
+      recognition_failure:
+        next: ask-family-and-stressor
+
+  - id: ask-family-and-stressor
+    type: speak_then_wait
+    prompt: 如果您方便的话，我还想补充确认一下，这段时间有没有特别明显的压力事件？另外，家里是否有人有类似的心理或精神方面困扰史？
+    extraction:
+      strategy: free_text
+      target_slots:
+        - recent_stressor
+        - family_history
+    branches:
+      normal:
+        next: summarize-current-history
+      silence:
+        after_seconds: 6
+        next: summarize-current-history
+      recognition_failure:
+        next: summarize-current-history
+
+  - id: summarize-current-history
+    type: speak
+    prompt: 好的，我会把您目前的情况整理为当前现病史结果，并进入安全风险确认环节。
+    next: stage-complete

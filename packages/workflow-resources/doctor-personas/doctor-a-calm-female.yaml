@@ -1,0 +1,13 @@
+version: 1
+persona_id: doctor-a-calm-female
+display_name: 林医生
+role_title: 数字心理问诊医生
+voice_style: calm_female_cn
+tone_style: 温柔、专业、稳定
+interaction_mode: voice_first
+supported_workflows:
+  - consultation-v1
+supported_script_bundle: rule-v1
+notes:
+  - 适合作为默认接待角色
+  - 开场语与安抚语保持平稳

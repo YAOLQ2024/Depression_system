@@ -1,0 +1,18 @@
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+
+class CreateConsultationRequest(BaseModel):
+    device_status: dict[str, Any] = Field(default_factory=dict)
+    audio_channel_ready: bool = True
+    consent_confirmed: bool = True
+    consultation_ready_state: str = "ready"
+
+
+class ConsultationTurnRequest(BaseModel):
+    input_type: Literal["speech", "manual_input", "continue_button", "silence", "recognition_failure"]
+    raw_input: str | None = None
+    transcript_text: str | None = None

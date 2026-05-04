@@ -1,0 +1,5 @@
+[project]
+name = "mcs-ai-service"
+version = "0.1.0"
+description = "AI Service scaffold"
+requires-python = ">=3.11"

@@ -1,0 +1,38 @@
+version: 1
+source:
+  path: /home/ZR/data2/MCS/docs/scale/社会功能缺陷量表.docx
+  extraction_status: structured_from_docx
+metadata:
+  code: SDSS
+  slug: social-function
+  name: 社会功能缺陷筛选量表
+  short_name: SDSS
+  mode: evaluator_or_guided_voice
+  item_count: 10
+answer_options:
+  - score: 0
+    label: 无缺陷
+  - score: 1
+    label: 有些缺陷
+  - score: 2
+    label: 严重缺陷
+  - score: 9
+    label: 不适合
+items:
+  - { id: q1, index: 1, text: 职业和工作 }
+  - { id: q2, index: 2, text: 婚姻职能 }
+  - { id: q3, index: 3, text: 父母职能 }
+  - { id: q4, index: 4, text: 社会性退缩 }
+  - { id: q5, index: 5, text: 家庭外的社会功能 }
+  - { id: q6, index: 6, text: 家庭内活动过少 }
+  - { id: q7, index: 7, text: 家庭职能 }
+  - { id: q8, index: 8, text: 个人生活自理 }
+  - { id: q9, index: 9, text: 对外界的兴趣和关心 }
+  - { id: q10, index: 10, text: 责任心和计划性 }
+scoring:
+  method: sum_excluding_not_applicable
+  na_value: 9
+  score_range: [0, 20]
+  notes:
+    - 当前先保留原量表离散评分体系
+    - 风险与严重度映射将在后续由 risk-service 单独定义

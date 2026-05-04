@@ -1,0 +1,5 @@
+[project]
+name = "mcs-assessment-service"
+version = "0.1.0"
+description = "Assessment Service scaffold"
+requires-python = ">=3.11"

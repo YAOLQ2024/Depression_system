@@ -1,0 +1,13 @@
+version: 1
+persona_id: doctor-b-formal-male
+display_name: 周医生
+role_title: 数字心理问诊医生
+voice_style: formal_male_cn
+tone_style: 正式、冷静、简洁
+interaction_mode: voice_first
+supported_workflows:
+  - consultation-v1
+supported_script_bundle: rule-v1
+notes:
+  - 适合更正式的问诊语气
+  - 适合后台演示时切换不同数字人角色

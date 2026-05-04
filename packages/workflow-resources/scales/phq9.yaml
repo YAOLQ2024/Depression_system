@@ -1,0 +1,78 @@
+version: 1
+source:
+  path: /home/ZR/data2/MCS/docs/scale/PHQ-9健康问卷调查量表.docx
+  extraction_status: structured_from_docx_and_old_system
+metadata:
+  code: PHQ-9
+  slug: phq9
+  name: PHQ-9 健康问卷调查量表
+  short_name: PHQ-9
+  mode: voice_self_report
+  timeframe: 最近两周
+  item_count: 9
+answer_options:
+  - score: 0
+    label: 完全没有
+  - score: 1
+    label: 几天
+  - score: 2
+    label: 一半以上的日子
+  - score: 3
+    label: 几乎每天
+items:
+  - id: q1
+    index: 1
+    text: 做事时提不起劲或没有兴趣
+  - id: q2
+    index: 2
+    text: 感到心情低落、沮丧或绝望
+  - id: q3
+    index: 3
+    text: 入睡困难、睡不安稳或睡眠过多
+  - id: q4
+    index: 4
+    text: 感觉疲倦或没有活力
+  - id: q5
+    index: 5
+    text: 食欲不振或吃太多
+  - id: q6
+    index: 6
+    text: 觉得自己很糟，或觉得自己很失败，或让自己或家人失望
+  - id: q7
+    index: 7
+    text: 对事物专注有困难，例如阅读报纸或看电视时不能集中注意力
+  - id: q8
+    index: 8
+    text: 行动或说话缓慢到引起人们的注意；或刚好相反，坐立不安、烦躁易怒、到处走动
+  - id: q9
+    index: 9
+    text: 有不如死掉或用某种方式伤害自己的念头
+scoring:
+  method: sum
+  score_range: [0, 27]
+  severity_rules:
+    - min: 0
+      max: 4
+      level: minimal
+      label: 无或极轻微抑郁症状
+    - min: 5
+      max: 9
+      level: mild
+      label: 轻度抑郁
+    - min: 10
+      max: 14
+      level: moderate
+      label: 中度抑郁
+    - min: 15
+      max: 19
+      level: moderately_severe
+      label: 中重度抑郁
+    - min: 20
+      max: 27
+      level: severe
+      label: 重度抑郁
+risk_flags:
+  - item_id: q9
+    min_score: 1
+    flag: self_harm_positive
+    label: 第9题阳性
