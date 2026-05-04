@@ -1,0 +1,5 @@
+[project]
+name = "mcs-gateway-service"
+version = "0.1.0"
+description = "Gateway Service scaffold"
+requires-python = ">=3.11"

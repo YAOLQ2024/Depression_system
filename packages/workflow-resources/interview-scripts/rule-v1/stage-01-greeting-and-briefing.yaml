@@ -1,0 +1,58 @@
+version: 1
+stage_id: stage-01-greeting-and-briefing
+title: 初始问候与流程说明
+source_document: /home/ZR/data2/MCS/docs/交互剧本.txt
+revision: teacher-confirmed-flow-2026-04
+entry_node: preparation-context-ready
+required_context:
+  - participant_profile_snapshot
+  - assigned_doctor_persona
+  - audio_channel_ready
+  - consent_state
+nodes:
+  - id: preparation-context-ready
+    type: system_gate
+    checks:
+      - participant_profile_snapshot_loaded
+      - assigned_doctor_persona_loaded
+      - audio_channel_ready
+      - consent_confirmed
+    next: greeting-open
+
+  - id: greeting-open
+    type: speak_then_wait
+    prompt: 您好，我是本次陪您完成问诊的数字医生。接下来我会先了解您这次最想解决的问题，再根据您的情况做进一步询问，之后还会邀请您完成几个量表测试。整个过程里，如果您一时不方便说话，也可以点击屏幕或使用文字输入。准备好了的话，请告诉我开始。
+    expected_inputs:
+      - speech
+      - continue_button
+    branches:
+      normal:
+        intent_examples: [好的, 开始吧, 可以, 准备好了, 开始]
+        next: acknowledge-start
+      silence:
+        after_seconds: 5
+        next: retry-hear
+      recognition_failure:
+        next: retry-hear
+
+  - id: retry-hear
+    type: speak_then_wait
+    prompt: 您好，请问您能听到我的声音吗？如果准备好了，请说开始，或者点击屏幕上的继续按钮。
+    branches:
+      normal:
+        next: acknowledge-start
+      silence:
+        after_seconds: 5
+        next: offer-text-fallback
+      recognition_failure:
+        next: offer-text-fallback
+
+  - id: offer-text-fallback
+    type: speak
+    prompt: 没关系，如果您现在不方便说话，也可以通过屏幕文字输入和我交流。我先按标准流程继续，后面您随时都可以补充。
+    next: stage-complete
+
+  - id: acknowledge-start
+    type: speak
+    prompt: 好的，我们现在开始正式问诊。我会先从您这次最想咨询的问题开始了解。
+    next: stage-complete

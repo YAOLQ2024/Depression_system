@@ -1,0 +1,5 @@
+[project]
+name = "mcs-operations-console-app-server"
+version = "0.1.0"
+description = "Operations Console App Server scaffold"
+requires-python = ">=3.11"

@@ -1,0 +1,5 @@
+[project]
+name = "mcs-consultation-service"
+version = "0.1.0"
+description = "Consultation Service scaffold"
+requires-python = ">=3.11"

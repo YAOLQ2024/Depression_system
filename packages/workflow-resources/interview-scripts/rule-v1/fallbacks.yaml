@@ -1,0 +1,18 @@
+version: 1
+revision: teacher-confirmed-flow-2026-04
+fallback_policies:
+  silence:
+    max_retries_per_node: 2
+    default_transition: manual_input_or_skip
+  recognition_failure:
+    max_retries_per_node: 2
+    default_transition: manual_input_or_skip
+  manual_input_or_skip:
+    manual_input_enabled: true
+    skip_allowed: true
+  safety_override:
+    high_risk_interrupt_enabled: true
+    preserve_partial_results_before_interrupt: true
+  logging:
+    store_raw_asr_text: true
+    store_branch_reason: true

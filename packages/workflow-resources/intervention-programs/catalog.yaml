@@ -1,0 +1,22 @@
+version: 1
+catalog_id: intervention-catalog-v1
+programs:
+  - id: breathing-relaxation
+    name: 呼吸放松训练
+    delivery_modes: [voice, animation]
+    intensity_levels: [low, medium, high]
+  - id: soothing-music
+    name: 舒缓音乐
+    delivery_modes: [audio]
+    intensity_levels: [low, medium]
+  - id: guided-video
+    name: 视频/动画引导
+    delivery_modes: [video]
+    intensity_levels: [low, medium]
+  - id: psychoeducation-card
+    name: 图文卡片
+    delivery_modes: [card]
+    intensity_levels: [low, medium]
+notes:
+  - Phase A 只建立目录和目录清单
+  - 具体适用条件与时长由 intervention-service 在后续阶段接入

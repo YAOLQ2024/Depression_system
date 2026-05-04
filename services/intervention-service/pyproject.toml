@@ -1,0 +1,5 @@
+[project]
+name = "mcs-intervention-service"
+version = "0.1.0"
+description = "Intervention Service scaffold"
+requires-python = ">=3.11"

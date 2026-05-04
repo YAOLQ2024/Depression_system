@@ -1,0 +1,16 @@
+version: 1
+source:
+  path: /home/ZR/data2/MCS/docs/scale/SCL-90.doc
+  extraction_status: source_doc_pending_manual_structuring
+metadata:
+  code: SCL-90
+  slug: scl90
+  name: SCL-90 症状自评量表
+  short_name: SCL-90
+  mode: voice_self_report
+  item_count: 90
+implementation_status: placeholder_only
+notes:
+  - 当前不纳入活跃 V1 量表主链，仅保留资源占位
+  - 源文件为老 `.doc` 格式，Phase A 仅建立资源占位
+  - Phase B 前需人工核对并结构化 90 个条目、因子维度和计分规则

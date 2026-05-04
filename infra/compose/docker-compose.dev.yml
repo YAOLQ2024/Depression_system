@@ -1,0 +1,182 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mcs
+      POSTGRES_PASSWORD: mcs
+      POSTGRES_DB: mcs
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcs -d mcs"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+  minio:
+    image: minio/minio:latest
+    command: server /data
+    ports:
+      - "9000:9000"
+
+  identity-service:
+    build:
+      context: ../../services/identity-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      CORS_ORIGINS: http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8011:8000"
+
+  consultation-service:
+    build:
+      context: ../../services/consultation-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      WORKFLOW_RESOURCES_DIR: /app/workflow-resources
+      WORKFLOW_ID: consultation-v1
+      SCRIPT_BUNDLE: rule-v1
+      DEFAULT_DOCTOR_PERSONA: doctor-a-calm-female
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../packages/workflow-resources:/app/workflow-resources:ro
+    ports:
+      - "8012:8000"
+
+  assessment-service:
+    build:
+      context: ../../services/assessment-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      WORKFLOW_RESOURCES_DIR: /app/workflow-resources
+      ACTIVE_SCALE_SET: v1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../packages/workflow-resources:/app/workflow-resources:ro
+    ports:
+      - "8013:8000"
+
+  risk-service:
+    build:
+      context: ../../services/risk-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      CONSULTATION_SERVICE_URL: http://consultation-service:8000
+      ASSESSMENT_SERVICE_URL: http://assessment-service:8000
+      MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      consultation-service:
+        condition: service_started
+      assessment-service:
+        condition: service_started
+      multimodal-service:
+        condition: service_started
+    ports:
+      - "8014:8000"
+
+  intervention-service:
+    build:
+      context: ../../services/intervention-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      WORKFLOW_RESOURCES_DIR: /app/workflow-resources
+      INTERVENTION_CATALOG_DIR: /app/workflow-resources/intervention-programs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../packages/workflow-resources:/app/workflow-resources:ro
+    ports:
+      - "8015:8000"
+
+  followup-service:
+    build:
+      context: ../../services/followup-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      REPORT_EXPORT_DIR: /app/data/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8016:8000"
+
+  multimodal-service:
+    build:
+      context: ../../services/multimodal-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      MINIO_ENDPOINT: http://minio:9000
+      MULTIMODAL_BUCKET: mcs-multimodal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8017:8000"
+
+  ai-service:
+    profiles:
+      - optional-ai
+    build:
+      context: ../../services/ai-service
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      LLM_PROVIDER: disabled
+      LLM_BASE_URL: ""
+      LLM_API_KEY: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8018:8000"
+
+  gateway-service:
+    build:
+      context: ../../services/gateway-service
+    environment:
+      IDENTITY_SERVICE_URL: http://identity-service:8000
+      CONSULTATION_SERVICE_URL: http://consultation-service:8000
+      WORKFLOW_RESOURCES_DIR: /app/workflow-resources
+      CORS_ORIGINS: http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001
+    volumes:
+      - ../../packages/workflow-resources:/app/workflow-resources:ro
+    ports:
+      - "8080:8000"
+    depends_on:
+      - identity-service
+      - consultation-service
+
+  consultation:
+    build:
+      context: ../../apps/consultation
+    ports:
+      - "3000:8000"
+    depends_on:
+      - gateway-service
+
+  operations-console:
+    build:
+      context: ../../apps/operations-console
+    ports:
+      - "3001:8000"
+    depends_on:
+      - gateway-service
+
+volumes:
+  postgres_data:

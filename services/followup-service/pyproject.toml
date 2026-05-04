@@ -1,0 +1,5 @@
+[project]
+name = "mcs-followup-service"
+version = "0.1.0"
+description = "Followup Service scaffold"
+requires-python = ">=3.11"

@@ -1,0 +1,37 @@
+version: 1
+rule_set_id: consultation-v1
+workflow_id: consultation-v1
+status: draft
+inputs:
+  - current_history_structured_result
+  - high_risk_screening_result
+  - scale_results
+  - multimodal_feature_bundle
+policy:
+  multimodal_support_only: true
+  single_modality_cannot_decide_final_risk: true
+  high_risk_screening_can_interrupt_standard_flow: true
+bands:
+  - low
+  - medium
+  - high
+  - urgent
+hard_triggers:
+  - key: high_risk_screening_positive
+    source: high_risk_screening
+    effect: immediate_manual_review_or_urgent_escalation
+  - key: self_harm_statement
+    source: interview_or_scale
+    effect: escalate_to_high_or_urgent
+  - key: suicidal_ideation_positive
+    source: phq9_q9
+    effect: escalate_to_high_or_urgent
+stage_override_policy:
+  when_high_risk_screening_positive:
+    pause_standard_scale_flow: true
+    require_human_review: true
+    preserve_partial_workflow_result: true
+aggregation_notes:
+  - 临床决策需要综合问诊结构化信息、量表结果和多模态辅助特征
+  - 高风险排查结果可以先于量表聚合结果触发安全升级
+  - 当前文件先固定输入和原则，具体数值阈值在 Phase C 和 Phase D 联调时校准

@@ -1,0 +1,105 @@
+version: 1
+stage_id: stage-04-high-risk-screening
+title: 高风险问题排查
+source_document: /home/ZR/data2/MCS/docs/交互剧本.txt
+revision: teacher-confirmed-flow-2026-04
+entry_node: screening-open
+slots:
+  - suicidal_ideation
+  - self_harm_behavior
+  - suicide_plan
+  - acute_support_state
+  - high_risk_flag
+  - high_risk_reason
+completion_outcomes:
+  - safe_to_continue
+  - human_intervention_required
+nodes:
+  - id: screening-open
+    type: speak
+    prompt: 接下来我需要例行确认几个安全相关的问题。这些问题很重要，目的是确保您现在是安全的。
+    next: ask-suicidal-ideation
+
+  - id: ask-suicidal-ideation
+    type: speak_then_wait
+    prompt: 最近这段时间，您有没有出现过想伤害自己，或者觉得不如结束生命的念头？
+    extraction:
+      strategy: risk_enum_parse
+      target_slot: suicidal_ideation
+      enums:
+        - positive
+        - negative
+        - unclear
+    branches:
+      normal:
+        next: ask-plan-or-action
+      silence:
+        after_seconds: 6
+        next: ask-plan-or-action
+      recognition_failure:
+        next: ask-plan-or-action
+
+  - id: ask-plan-or-action
+    type: speak_then_wait
+    prompt: 如果出现过类似念头，您是否已经想过要怎么做，或者最近有过差一点真的去做的情况？
+    extraction:
+      strategy: risk_enum_parse
+      target_slots:
+        - suicide_plan
+        - self_harm_behavior
+      enums:
+        - positive
+        - negative
+        - unclear
+    branches:
+      normal:
+        next: ask-support-state
+      silence:
+        after_seconds: 6
+        next: ask-support-state
+      recognition_failure:
+        next: ask-support-state
+
+  - id: ask-support-state
+    type: speak_then_wait
+    prompt: 如果您现在状态很差，您身边有没有家人、朋友、老师或同事可以及时联系和陪伴？
+    extraction:
+      strategy: risk_enum_parse
+      target_slot: acute_support_state
+      enums:
+        - available
+        - limited
+        - none
+        - unclear
+    branches:
+      normal:
+        next: evaluate-high-risk
+      silence:
+        after_seconds: 6
+        next: evaluate-high-risk
+      recognition_failure:
+        next: evaluate-high-risk
+
+  - id: evaluate-high-risk
+    type: decision
+    decision_rules:
+      human_intervention_required:
+        any:
+          - suicide_plan == positive
+          - self_harm_behavior == positive
+          - suicidal_ideation == positive and acute_support_state in [limited, none, unclear]
+      safe_to_continue:
+        default: true
+    branches:
+      human_intervention_required: high-risk-alert
+      safe_to_continue: safe-return
+
+  - id: safe-return
+    type: speak
+    prompt: 感谢您的配合。语音问诊部分先到这里，接下来我们进入量表问诊阶段。
+    next: stage-complete
+
+  - id: high-risk-alert
+    type: speak
+    prompt: 系统识别到您当前可能存在需要立即关注的安全风险。接下来我会暂停标准流程，并协助转入人工支持或进一步安全处理。
+    next: stage-complete
