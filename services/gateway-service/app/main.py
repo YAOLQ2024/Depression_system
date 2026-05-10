@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.assessments import router as assessments_router
 from app.api.auth import router as auth_router
 from app.api.catalog import router as catalog_router
 from app.api.consultations import router as consultations_router
@@ -23,6 +24,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(catalog_router)
 app.include_router(consultations_router)
+app.include_router(assessments_router)
 
 
 @app.get("/health/live")

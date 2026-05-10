@@ -6,10 +6,10 @@
 | --- | --- | --- | --- |
 | `/health/live` | `GET` | 存活检查 | 已占位 |
 | `/health/ready` | `GET` | 就绪检查 | 已占位 |
-| `/api/v1/assessment/catalog` | `GET` | 返回当前活跃量表目录 | 规划中 |
-| `/api/v1/assessment/sessions` | `POST` | 创建量表会话 | 规划中 |
-| `/api/v1/assessment/sessions/{session_id}` | `GET` | 获取量表会话状态 | 规划中 |
-| `/api/v1/assessment/sessions/{session_id}/answers` | `POST` | 提交单题答案 | 规划中 |
+| `/api/v1/assessment/catalog` | `GET` | 返回当前活跃量表目录 | 已实现 |
+| `/api/v1/assessment/sessions` | `POST` | 创建量表会话 | 已实现 |
+| `/api/v1/assessment/sessions/{session_id}` | `GET` | 获取量表会话状态 | 已实现 |
+| `/api/v1/assessment/sessions/{session_id}/answers` | `POST` | 提交单题答案 | 已实现 |
 | `/api/v1/assessment/sessions/{session_id}/next` | `GET` | 获取下一题或下一量表 | 规划中 |
 | `/api/v1/assessment/sessions/{session_id}/complete` | `POST` | 完成全部量表并生成聚合结果 | 规划中 |
 
@@ -52,10 +52,14 @@
 
 ### 3.3 assessment_result
 
+- `result_id`
+- `session_id`
 - `scale_slug`
 - `raw_score`
 - `derived_score`
-- `interpretation`
+- `interpretation_level`
+- `interpretation_label`
+- `risk_flags`
 - `completed_at`
 
 ## 4. 配置资源

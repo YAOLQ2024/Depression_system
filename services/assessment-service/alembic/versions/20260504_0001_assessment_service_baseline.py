@@ -20,3 +20,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     pass
+
+
+def downgrade() -> None:
+    pass

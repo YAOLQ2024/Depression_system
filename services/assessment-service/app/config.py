@@ -17,4 +17,12 @@ def get_settings() -> dict:
             "/home/ZR/data2/MCS/packages/workflow-resources",
         ),
         "active_scale_set": os.getenv("ACTIVE_SCALE_SET", "v1"),
+        "active_scale_slugs": [
+            slug.strip()
+            for slug in os.getenv(
+                "ACTIVE_SCALE_SLUGS",
+                "phq9,sds,sas,social-function",
+            ).split(",")
+            if slug.strip()
+        ],
     }

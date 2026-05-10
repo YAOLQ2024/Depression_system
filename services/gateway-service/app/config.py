@@ -31,6 +31,7 @@ def get_settings() -> dict:
         "app_name": os.getenv("APP_NAME", "Gateway Service"),
         "identity_service_url": os.getenv("IDENTITY_SERVICE_URL", "http://127.0.0.1:8011"),
         "consultation_service_url": os.getenv("CONSULTATION_SERVICE_URL", "http://127.0.0.1:8012"),
+        "assessment_service_url": os.getenv("ASSESSMENT_SERVICE_URL", "http://127.0.0.1:8013"),
         "session_cookie_name": os.getenv("SESSION_COOKIE_NAME", "mcs_session"),
         "workflow_resources_dir": Path(
             os.getenv(

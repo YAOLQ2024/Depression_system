@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from app.api.assessments import router as assessments_router
 from app.config import get_settings
 
 settings = get_settings()
@@ -16,3 +17,6 @@ def health_live():
 @app.get("/health/ready")
 def health_ready():
     return {"status": "ready", "service": "assessment-service"}
+
+
+app.include_router(assessments_router)
