@@ -1,6 +1,8 @@
+/*
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { apiRequest, clearSessionToken, setSessionToken } from "./api";
+import AuthPage from "./AuthPage";
 import type {
   AssessmentCatalogItem,
   AssessmentSession,
@@ -250,6 +252,7 @@ function App() {
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     resetFeedback();
+    setLoading(true);
     const formData = new FormData(event.currentTarget);
     try {
       const loginData = await apiRequest<{ user: UserRecord; session_token?: string }>("/auth/login", {
@@ -267,12 +270,15 @@ function App() {
       setMessage("登录成功。");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "登录失败");
+    } finally {
+      setLoading(false);
     }
   }
 
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     resetFeedback();
+    setLoading(true);
     const formData = new FormData(event.currentTarget);
     try {
       await apiRequest("/auth/register", {
@@ -287,6 +293,8 @@ function App() {
       setMessage("注册成功，请使用新账号登录。");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "注册失败");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -517,126 +525,19 @@ function App() {
 
   if (!user) {
     return (
-      <div className="auth-page">
-        <div className="auth-hero">
-          <div className="auth-logo">SDS</div>
-          <div>
-            <h1>SDS 抑郁自评与辅助分析系统</h1>
-            <p>3-5 分钟完成自评，生成可解释的结果与建议。</p>
-          </div>
-          <div className="auth-benefits">
-            <div>快速完成测评并查看报告，支持多维度分析</div>
-            <div>支持历史记录与趋势对比，追踪心理健康状态</div>
-            <div>可选采集表情、语音、EEG，用于辅助分析（不影响问卷提交）</div>
-          </div>
-          <p className="auth-disclaimer">自评与辅助分析仅供参考，不构成医疗诊断。</p>
-          <div className="auth-note-row">
-            <span>隐私说明</span>
-            <span>数据采集说明（摄像头/麦克风/EEG）</span>
-          </div>
-        </div>
-        <div className="auth-card">
-          <div className="auth-card-header">
-            <div>
-              <p className="eyebrow">欢迎使用</p>
-              <h2>{authMode === "login" ? "登录" : "创建账号"}</h2>
-              <p className="auth-card-copy">
-                {authMode === "login" ? "使用账号登录以继续。" : "先创建账号，再进入患者侧主流程。"}
-              </p>
-            </div>
-            <div className="auth-tabs">
-              <button
-                className={authMode === "login" ? "active" : ""}
-                onClick={() => setAuthMode("login")}
-                type="button"
-              >
-                登录
-              </button>
-              <button
-                className={authMode === "register" ? "active" : ""}
-                onClick={() => setAuthMode("register")}
-                type="button"
-              >
-                注册
-              </button>
-            </div>
-          </div>
-          {renderTopFeedback()}
-          {authMode === "login" ? (
-            <form className="auth-form" onSubmit={handleLogin}>
-              <label>
-                账号
-                <input name="email" type="email" defaultValue="participant@mcs.local" placeholder="请输入邮箱账号" />
-              </label>
-              <label>
-                密码
-                <div className="password-field">
-                  <input
-                    name="password"
-                    type={passwordVisible ? "text" : "password"}
-                    defaultValue="Participant123!"
-                    placeholder="请输入密码"
-                  />
-                  <button
-                    className="password-toggle"
-                    onClick={() => setPasswordVisible((current) => !current)}
-                    type="button"
-                  >
-                    {passwordVisible ? "隐藏" : "显示"}
-                  </button>
-                </div>
-              </label>
-              <div className="auth-inline-row">
-                <label className="checkbox-row">
-                  <input
-                    checked={keepLoggedIn}
-                    onChange={(event) => setKeepLoggedIn(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>保持登录</span>
-                </label>
-                <button className="text-link-button" type="button">
-                  忘记密码？
-                </button>
-              </div>
-              <button className="primary-button" type="submit">
-                登录
-              </button>
-            </form>
-          ) : (
-            <form className="auth-form" onSubmit={handleRegister}>
-              <label>
-                姓名
-                <input name="full_name" type="text" />
-              </label>
-              <label>
-                邮箱
-                <input name="email" type="email" placeholder="请输入邮箱账号" />
-              </label>
-              <label>
-                密码
-                <div className="password-field">
-                  <input
-                    name="password"
-                    type={passwordVisible ? "text" : "password"}
-                    placeholder="请设置登录密码"
-                  />
-                  <button
-                    className="password-toggle"
-                    onClick={() => setPasswordVisible((current) => !current)}
-                    type="button"
-                  >
-                    {passwordVisible ? "隐藏" : "显示"}
-                  </button>
-                </div>
-              </label>
-              <button className="primary-button" type="submit">
-                创建账号
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
+      <AuthPage
+        authMode={authMode}
+        passwordVisible={passwordVisible}
+        keepLoggedIn={keepLoggedIn}
+        loading={loading}
+        message={message}
+        error={error}
+        onSwitchMode={setAuthMode}
+        onTogglePassword={() => setPasswordVisible((current) => !current)}
+        onKeepLoggedInChange={setKeepLoggedIn}
+        onLogin={handleLogin}
+        onRegister={handleRegister}
+      />
     );
   }
 
@@ -1078,3 +979,5 @@ function App() {
 }
 
 export default App;
+*/
+export { default } from "./RouteApp";

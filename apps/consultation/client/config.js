@@ -1,1 +1,8 @@
-window.__MCS_API_BASE__ = window.__MCS_API_BASE__ || "http://127.0.0.1:8080/api/v1";
+(function initMcsApiBase() {
+  if (window.__MCS_API_BASE__) {
+    return;
+  }
+
+  const apiOrigin = `${window.location.protocol}//${window.location.hostname}:8080`;
+  window.__MCS_API_BASE__ = `${apiOrigin}/api/v1`;
+})();

@@ -4,7 +4,8 @@ declare global {
   }
 }
 
-const API_BASE = window.__MCS_API_BASE__ || "http://127.0.0.1:8080/api/v1";
+const API_BASE =
+  window.__MCS_API_BASE__ || `${window.location.protocol}//${window.location.hostname}:8080/api/v1`;
 const SESSION_TOKEN_STORAGE_KEY = "mcs_session_token";
 
 export function getSessionToken() {
