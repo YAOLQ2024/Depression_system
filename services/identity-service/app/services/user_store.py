@@ -19,6 +19,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def normalize_account(account: str) -> str:
+    normalized = account.strip()
+    return normalized.lower() if "@" in normalized else normalized
+
+
 def _hash_password(password: str, salt: str) -> str:
     payload = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120000)
     return payload.hex()
@@ -79,20 +84,22 @@ def ensure_seed_users() -> None:
             )
 
 
-def create_user(email: str, password: str, full_name: str, role: str = "participant") -> dict:
+def create_user(account: str, password: str, full_name: str, role: str = "participant") -> dict:
+    normalized_account = normalize_account(account)
+
     with get_db_session() as session:
-        existing = session.scalar(select(User).where(User.email == email))
+        existing = session.scalar(select(User).where(User.email == normalized_account))
         if existing:
-            raise ValueError("email already registered")
+            raise ValueError("account already registered")
 
         salt = secrets.token_hex(16)
         now = _now()
         user = User(
             id=str(uuid.uuid4()),
-            email=email,
+            email=normalized_account,
             password_hash=_hash_password(password, salt),
             password_salt=salt,
-            full_name=full_name,
+            full_name=full_name.strip(),
             role=role,
             profile_status="draft",
             created_at=now,
@@ -121,9 +128,11 @@ def _create_session(user_id: str) -> str:
     return session_token
 
 
-def authenticate_user(email: str, password: str) -> dict | None:
+def authenticate_user(account: str, password: str) -> dict | None:
+    normalized_account = normalize_account(account)
+
     with get_db_session() as session:
-        user = session.scalar(select(User).where(User.email == email))
+        user = session.scalar(select(User).where(User.email == normalized_account))
         if not user:
             return None
         if not _verify_password(password, user.password_salt, user.password_hash):
