@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Header, HTTPException, Response, status
 
+from app.api.consultations import _require_session_token
 from app.clients.identity_client import forward_json_request
 from app.config import get_settings
 from app.schemas.auth import LoginRequest, RegisterRequest
@@ -26,7 +27,7 @@ def login(payload: LoginRequest, response: Response):
 
     payload_body = upstream["payload"]
     data = dict(payload_body.get("data") or {})
-    session_token = data.pop("session_token", None)
+    session_token = data.get("session_token")
     if session_token:
         response.set_cookie(
             settings["session_cookie_name"],
@@ -39,9 +40,13 @@ def login(payload: LoginRequest, response: Response):
 
 
 @router.post("/auth/logout")
-def logout(response: Response, mcs_session: str | None = Cookie(default=None)):
+def logout(
+    response: Response,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
     settings = get_settings()
-    token = mcs_session
+    token = _require_session_token(mcs_session, authorization)
     if token:
         forward_json_request("POST", f"/api/v1/auth/logout?session_token={token}", None)
     response.delete_cookie(settings["session_cookie_name"])

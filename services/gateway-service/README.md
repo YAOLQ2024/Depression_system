@@ -20,6 +20,10 @@ Responsibilities:
 - `GET /api/v1/consultations/{id}`
 - `POST /api/v1/consultations/{id}/start`
 - `POST /api/v1/consultations/{id}/turns`
+- `GET /api/v1/assessment/catalog`
+- `POST /api/v1/assessment/sessions`
+- `GET /api/v1/assessment/sessions/{id}`
+- `POST /api/v1/assessment/sessions/{id}/answers`
 - `GET /api/v1/catalog/doctor-personas`
 - `GET /api/v1/catalog/workflow-summary`
 - `GET /api/v1/system/bootstrap`
@@ -28,6 +32,7 @@ Responsibilities:
 
 - `IDENTITY_SERVICE_URL`
 - `CONSULTATION_SERVICE_URL`
+- `ASSESSMENT_SERVICE_URL`
 - `SESSION_COOKIE_NAME`
 - `WORKFLOW_RESOURCES_DIR`
 - `CORS_ORIGINS`

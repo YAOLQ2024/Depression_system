@@ -12,6 +12,8 @@ const state = {
   user: null,
   bootstrap: null,
   consultation: null,
+  assessment: null,
+  assessmentCatalog: [],
   message: "",
   error: "",
   loading: false,
@@ -59,6 +61,34 @@ function clearSessionId() {
   window.localStorage.removeItem(key);
 }
 
+function getAssessmentStorageKey() {
+  return state.user ? `mcs_assessment_session:${state.user.id}` : null;
+}
+
+function saveAssessmentSessionId(sessionId) {
+  const key = getAssessmentStorageKey();
+  if (!key || !sessionId) {
+    return;
+  }
+  window.localStorage.setItem(key, sessionId);
+}
+
+function readAssessmentSessionId() {
+  const key = getAssessmentStorageKey();
+  if (!key) {
+    return null;
+  }
+  return window.localStorage.getItem(key);
+}
+
+function clearAssessmentSessionId() {
+  const key = getAssessmentStorageKey();
+  if (!key) {
+    return;
+  }
+  window.localStorage.removeItem(key);
+}
+
 function findPersonaName(personaId) {
   const items = state.bootstrap?.doctor_personas || [];
   const match = items.find((item) => item.persona_id === personaId);
@@ -75,6 +105,10 @@ function getCurrentStageLabel() {
 
 function consultationIsTerminal() {
   return ["handoff_ready", "paused_for_human_review"].includes(state.consultation?.status);
+}
+
+function assessmentIsCompleted() {
+  return state.assessment?.status === "completed";
 }
 
 async function apiRequest(path, options = {}) {
@@ -116,6 +150,11 @@ async function loadBootstrap() {
   state.bootstrap = await apiRequest("/system/bootstrap", { method: "GET" });
 }
 
+async function loadAssessmentCatalog() {
+  const data = await apiRequest("/assessment/catalog", { method: "GET" });
+  state.assessmentCatalog = data.catalog || [];
+}
+
 async function loadExistingConsultation() {
   state.consultation = null;
   const sessionId = readSessionId();
@@ -131,6 +170,21 @@ async function loadExistingConsultation() {
   }
 }
 
+async function loadExistingAssessment() {
+  state.assessment = null;
+  const sessionId = readAssessmentSessionId();
+  if (!sessionId) {
+    return;
+  }
+  try {
+    const data = await apiRequest(`/assessment/sessions/${sessionId}`, { method: "GET" });
+    state.assessment = data.assessment_session;
+  } catch (error) {
+    clearAssessmentSessionId();
+    state.assessment = null;
+  }
+}
+
 async function refreshConsultation() {
   const sessionId = state.consultation?.session_id || readSessionId();
   if (!sessionId) {
@@ -139,6 +193,16 @@ async function refreshConsultation() {
   const data = await apiRequest(`/consultations/${sessionId}`, { method: "GET" });
   state.consultation = data.consultation;
   saveSessionId(data.consultation.session_id);
+}
+
+async function refreshAssessment() {
+  const sessionId = state.assessment?.session_id || readAssessmentSessionId();
+  if (!sessionId) {
+    return;
+  }
+  const data = await apiRequest(`/assessment/sessions/${sessionId}`, { method: "GET" });
+  state.assessment = data.assessment_session;
+  saveAssessmentSessionId(data.assessment_session.session_id);
 }
 
 function renderShell(content) {
@@ -300,6 +364,99 @@ function renderReadinessScreen() {
   app.querySelector("#start-consultation-button").addEventListener("click", handleStartConsultation);
 }
 
+function renderAssessmentScreen() {
+  const assessment = state.assessment;
+  const currentItem = assessment.current_item;
+  const completed = assessmentIsCompleted();
+  const currentScale = state.assessmentCatalog.find((item) => item.slug === assessment.current_scale_slug);
+  const progressTotal = assessment.selected_scales?.length || 0;
+  const progressDone = assessment.results?.length || 0;
+
+  renderShell(`
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">量表问诊</p>
+          <h2>${completed ? "量表阶段已完成" : currentScale?.name || assessment.current_scale_slug || "量表进行中"}</h2>
+        </div>
+        <div class="session-meta">
+          <span class="stage-pill">状态：${assessment.status}</span>
+          <span class="stage-pill">已完成量表：${progressDone}/${progressTotal}</span>
+        </div>
+      </div>
+      <div class="consultation-layout">
+        <div class="card consultation-card">
+          ${
+            completed
+              ? `
+            <div class="alert-card success-card">
+              <h3>量表阶段已完成</h3>
+              <p>四个活跃量表已完成，聚合结果已经生成，下一步可以进入临床决策阶段。</p>
+            </div>
+            <div class="prompt-card">
+              <p class="eyebrow">聚合结果</p>
+              <pre>${JSON.stringify(assessment.aggregate_payload || {}, null, 2)}</pre>
+            </div>
+          `
+              : `
+            <div class="prompt-card">
+              <p class="eyebrow">当前题目</p>
+              <p>${currentItem?.index || assessment.current_item_index + 1}. ${currentItem?.text || "系统正在准备题目。"}</p>
+            </div>
+            <form id="assessment-form" class="card composer-card">
+              <div class="option-grid">
+                ${(currentItem?.answer_options || [])
+                  .map(
+                    (option) => `
+                    <label class="option-card">
+                      <input type="radio" name="assessment_score" value="${option.score}" />
+                      <span>${option.label}</span>
+                      <small>分值 ${option.score}</small>
+                    </label>
+                  `,
+                  )
+                  .join("")}
+              </div>
+              <label>语音/文本原始输入兜底
+                <textarea id="assessment-raw-input" name="assessment_raw_input" placeholder="可选。后续接正式语音答案时，这里会记录原始文本。"></textarea>
+              </label>
+              <div class="composer-actions">
+                <button type="submit"${state.loading ? " disabled" : ""}>提交本题答案</button>
+                <button type="button" class="ghost-button" data-assessment-action="refresh"${state.loading ? " disabled" : ""}>刷新量表状态</button>
+              </div>
+            </form>
+          `
+          }
+        </div>
+        <div class="card">
+          <h3>量表摘要</h3>
+          <div class="summary-grid">
+            <div>
+              <strong>量表顺序</strong>
+              <p>${(assessment.selected_scales || []).join(" -> ")}</p>
+            </div>
+            <div>
+              <strong>当前量表结果</strong>
+              <pre>${JSON.stringify(assessment.results || [], null, 2)}</pre>
+            </div>
+            <div>
+              <strong>问诊移交数据</strong>
+              <pre>${JSON.stringify(assessment.scale_handoff_payload || {}, null, 2)}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `);
+
+  if (!completed) {
+    app.querySelector("#assessment-form").addEventListener("submit", handleAssessmentAnswerSubmit);
+    app.querySelectorAll("[data-assessment-action]").forEach((button) => {
+      button.addEventListener("click", handleAssessmentAction);
+    });
+  }
+}
+
 function renderConsultationScreen() {
   const consultation = state.consultation;
   const prompt = consultation.current_prompt || "系统正在准备下一节点。";
@@ -342,6 +499,9 @@ function renderConsultationScreen() {
             <div class="alert-card success-card">
               <h3>已完成规则问诊</h3>
               <p>问诊主链已完成，当前可以进入量表问诊阶段。</p>
+              <div class="form-actions">
+                <button id="start-assessment-button"${state.loading ? " disabled" : ""}>进入量表问诊</button>
+              </div>
             </div>
           `
               : `
@@ -391,6 +551,9 @@ function renderConsultationScreen() {
     app.querySelectorAll("[data-turn-action]").forEach((button) => {
       button.addEventListener("click", handleTurnAction);
     });
+  }
+  if (handoffReady) {
+    app.querySelector("#start-assessment-button").addEventListener("click", handleStartAssessment);
   }
 }
 
@@ -457,7 +620,9 @@ async function handlePreparationSave(event) {
     });
     state.user = data.user;
     state.consultation = null;
+    state.assessment = null;
     clearSessionId();
+    clearAssessmentSessionId();
     await loadBootstrap();
     setMessage("问诊准备信息已保存，可以进入正式问诊。");
   } catch (error) {
@@ -485,6 +650,32 @@ async function handleStartConsultation() {
     });
     state.consultation = started.consultation;
     setMessage("正式问诊已开始。");
+  } catch (error) {
+    setError(error.message);
+  } finally {
+    setLoading(false);
+  }
+  render();
+}
+
+async function handleStartAssessment() {
+  setMessage("");
+  setError("");
+  setLoading(true);
+  try {
+    if (!state.assessmentCatalog.length) {
+      await loadAssessmentCatalog();
+    }
+    const created = await apiRequest("/assessment/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        consultation_session_id: state.consultation.session_id,
+        scale_handoff_payload: state.consultation.scale_handoff_payload || {},
+      }),
+    });
+    state.assessment = created.assessment_session;
+    saveAssessmentSessionId(state.assessment.session_id);
+    setMessage("量表问诊已开始。");
   } catch (error) {
     setError(error.message);
   } finally {
@@ -565,6 +756,59 @@ async function submitTurn(payload) {
   render();
 }
 
+async function handleAssessmentAnswerSubmit(event) {
+  event.preventDefault();
+  const checked = app.querySelector('input[name="assessment_score"]:checked');
+  if (!checked) {
+    setError("请先选择本题答案。");
+    render();
+    return;
+  }
+  setMessage("");
+  setError("");
+  setLoading(true);
+  try {
+    const data = await apiRequest(`/assessment/sessions/${state.assessment.session_id}/answers`, {
+      method: "POST",
+      body: JSON.stringify({
+        item_id: state.assessment.current_item?.item_id,
+        selected_option_score: Number(checked.value),
+        raw_input: app.querySelector("#assessment-raw-input")?.value?.trim() || null,
+      }),
+    });
+    state.assessment = data.assessment_session;
+    saveAssessmentSessionId(state.assessment.session_id);
+    if (state.assessment.status === "completed") {
+      setMessage("量表问诊已完成，已生成聚合结果。");
+    } else {
+      setMessage("量表答案已提交。");
+    }
+  } catch (error) {
+    setError(error.message);
+  } finally {
+    setLoading(false);
+  }
+  render();
+}
+
+async function handleAssessmentAction(event) {
+  const action = event.currentTarget.dataset.assessmentAction;
+  if (action !== "refresh") {
+    return;
+  }
+  setMessage("");
+  setError("");
+  setLoading(true);
+  try {
+    await refreshAssessment();
+  } catch (error) {
+    setError(error.message);
+  } finally {
+    setLoading(false);
+  }
+  render();
+}
+
 async function handleLogout() {
   try {
     await apiRequest("/auth/logout", { method: "POST" });
@@ -572,9 +816,11 @@ async function handleLogout() {
     // ignore logout API failure and still clear local state
   }
   clearSessionId();
+  clearAssessmentSessionId();
   state.user = null;
   state.bootstrap = null;
   state.consultation = null;
+  state.assessment = null;
   setMessage("已退出。");
   setError("");
   render();
@@ -588,11 +834,20 @@ async function bootstrapAuthenticatedState() {
     return;
   }
   await loadBootstrap();
+  await loadAssessmentCatalog();
   if (state.user.profile_status === "completed") {
     await loadExistingConsultation();
+    if (state.consultation?.status === "handoff_ready") {
+      await loadExistingAssessment();
+    } else {
+      state.assessment = null;
+      clearAssessmentSessionId();
+    }
   } else {
     state.consultation = null;
+    state.assessment = null;
     clearSessionId();
+    clearAssessmentSessionId();
   }
 }
 
@@ -606,6 +861,10 @@ function render() {
     return;
   }
   if (state.consultation) {
+    if (state.assessment) {
+      renderAssessmentScreen();
+      return;
+    }
     renderConsultationScreen();
     return;
   }

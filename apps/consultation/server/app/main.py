@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-CLIENT_DIR = Path(__file__).resolve().parents[2] / "client"
+CLIENT_DIST_DIR = Path(__file__).resolve().parents[2] / "client" / "dist"
+CLIENT_ASSETS_DIR = CLIENT_DIST_DIR / "assets"
 
 app = FastAPI(title="Consultation App Server")
 
@@ -21,7 +22,20 @@ def health_ready():
 
 @app.get("/")
 def index():
-    return FileResponse(CLIENT_DIR / "index.html")
+    return FileResponse(CLIENT_DIST_DIR / "index.html")
 
 
-app.mount("/", StaticFiles(directory=CLIENT_DIR, html=True), name="consultation-client")
+app.mount("/assets", StaticFiles(directory=CLIENT_ASSETS_DIR), name="consultation-assets")
+
+
+@app.get("/config.js")
+def config_script():
+    return FileResponse(CLIENT_DIST_DIR / "config.js")
+
+
+@app.get("/{full_path:path}")
+def spa_routes(full_path: str):
+    candidate = CLIENT_DIST_DIR / full_path
+    if candidate.is_file():
+        return FileResponse(candidate)
+    return FileResponse(CLIENT_DIST_DIR / "index.html")
