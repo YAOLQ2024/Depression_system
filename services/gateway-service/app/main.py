@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from urllib import error, request
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.assessments import router as assessments_router
@@ -35,4 +37,20 @@ def health_live():
 
 @app.get("/health/ready")
 def health_ready():
+    upstreams = [
+        ("identity-service", settings["identity_service_url"]),
+        ("consultation-service", settings["consultation_service_url"]),
+        ("assessment-service", settings["assessment_service_url"]),
+    ]
+
+    for service_name, base_url in upstreams:
+        try:
+            with request.urlopen(f"{base_url}/health/ready", timeout=5) as response:
+                if response.status >= 400:
+                    raise HTTPException(status_code=503, detail={"message": f"{service_name} not ready"})
+        except HTTPException:
+            raise
+        except error.URLError as exc:
+            raise HTTPException(status_code=503, detail={"message": f"{service_name} unavailable: {exc.reason}"}) from exc
+
     return {"status": "ready", "service": "gateway-service"}
