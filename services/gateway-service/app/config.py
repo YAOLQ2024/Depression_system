@@ -47,4 +47,5 @@ def get_settings() -> dict:
             ).split(",")
             if origin.strip()
         ],
+        "cors_origin_regex": os.getenv("CORS_ORIGIN_REGEX") or None,
     }

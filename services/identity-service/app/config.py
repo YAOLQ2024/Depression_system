@@ -20,5 +20,6 @@ def get_settings() -> dict:
             ).split(",")
             if origin.strip()
         ],
+        "cors_origin_regex": os.getenv("CORS_ORIGIN_REGEX") or None,
         "session_ttl_hours": int(os.getenv("SESSION_TTL_HOURS", "24")),
     }

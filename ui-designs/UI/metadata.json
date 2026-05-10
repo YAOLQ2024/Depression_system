@@ -1,0 +1,13 @@
+{
+  "name": "MCS 多模态心理健康问诊系统",
+  "description": "医疗级多模态心理健康评估工作台，集成数字人交互、量表评估与情感计算技术。",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "HEALTH_TECH",
+    "AI_INTERACTION",
+    "DATA_VISUALIZATION"
+  ]
+}

@@ -1,3 +1,9 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
 :root {
   color-scheme: light;
   font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -608,7 +614,8 @@ textarea {
 }
 
 .consultation-page,
-.assessment-page {
+.assessment-page,
+.result-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 20px;
@@ -616,7 +623,8 @@ textarea {
 }
 
 .consultation-main,
-.assessment-main {
+.assessment-main,
+.result-main {
   display: grid;
   gap: 20px;
 }
@@ -1167,6 +1175,79 @@ textarea {
   line-height: 1.7;
 }
 
+.result-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.result-summary-card,
+.result-scale-card {
+  border-radius: 24px;
+  border: 1px solid #dce9ff;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.result-summary-card {
+  padding: 18px;
+}
+
+.result-summary-card span {
+  display: block;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.result-summary-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 24px;
+}
+
+.result-section {
+  display: grid;
+  gap: 14px;
+}
+
+.result-section h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.result-scale-list {
+  display: grid;
+  gap: 14px;
+}
+
+.result-scale-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+}
+
+.result-scale-card strong,
+.result-scale-card span {
+  display: block;
+}
+
+.result-scale-card span {
+  margin-top: 6px;
+  color: #64748b;
+}
+
+.result-scale-metrics {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  color: #1e3a8a;
+  font-weight: 700;
+  text-align: right;
+}
+
 .metric-list {
   display: grid;
   gap: 12px;
@@ -1202,7 +1283,8 @@ textarea {
   }
 
   .consultation-page,
-  .assessment-page {
+  .assessment-page,
+  .result-page {
     grid-template-columns: 1fr;
   }
 }
@@ -1220,7 +1302,8 @@ textarea {
 
   .prep-form,
   .answer-grid,
-  .emotion-grid {
+  .emotion-grid,
+  .result-summary-grid {
     grid-template-columns: 1fr;
   }
 
