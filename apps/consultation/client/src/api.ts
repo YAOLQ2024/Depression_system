@@ -4,20 +4,85 @@ declare global {
   }
 }
 
-const API_BASE =
-  window.__MCS_API_BASE__ || `${window.location.protocol}//${window.location.hostname}:8080/api/v1`;
-const SESSION_TOKEN_STORAGE_KEY = "mcs_session_token";
+type SessionPersistenceMode = "local" | "session";
 
-export function getSessionToken() {
-  return window.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY);
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const SESSION_TOKEN_STORAGE_KEY = "mcs_session_token";
+const SESSION_PERSISTENCE_STORAGE_KEY = "mcs_session_persistence";
+
+function isLoopbackHost(hostname: string) {
+  return LOOPBACK_HOSTS.has(hostname);
 }
 
-export function setSessionToken(token: string) {
-  window.localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
+function normalizeApiBase(url: string) {
+  try {
+    const parsed = new URL(url, window.location.origin);
+
+    if (!isLoopbackHost(window.location.hostname) && isLoopbackHost(parsed.hostname)) {
+      parsed.hostname = window.location.hostname;
+      parsed.protocol = window.location.protocol;
+    }
+
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return `${window.location.protocol}//${window.location.hostname}:8080/api/v1`;
+  }
+}
+
+function getStorage(mode: SessionPersistenceMode) {
+  return mode === "local" ? window.localStorage : window.sessionStorage;
+}
+
+function getStoredPersistenceMode(): SessionPersistenceMode {
+  if (window.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY)) {
+    return "local";
+  }
+
+  if (window.sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY)) {
+    return "session";
+  }
+
+  return window.localStorage.getItem(SESSION_PERSISTENCE_STORAGE_KEY) === "session" ? "session" : "local";
+}
+
+const API_BASE = normalizeApiBase(
+  window.__MCS_API_BASE__ || `${window.location.protocol}//${window.location.hostname}:8080/api/v1`,
+);
+
+export function getSessionToken() {
+  return (
+    window.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) ||
+    window.sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY)
+  );
+}
+
+export function hasSessionToken() {
+  return Boolean(getSessionToken());
+}
+
+export function getSessionPersistenceMode() {
+  return getStoredPersistenceMode();
+}
+
+export function getSessionPersistencePreference() {
+  return getStoredPersistenceMode() === "local";
+}
+
+export function setSessionPersistencePreference(keepLoggedIn: boolean) {
+  window.localStorage.setItem(SESSION_PERSISTENCE_STORAGE_KEY, keepLoggedIn ? "local" : "session");
+}
+
+export function setSessionToken(token: string, options?: { persist?: boolean }) {
+  const mode = options?.persist === false ? "session" : "local";
+  window.localStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+  window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+  getStorage(mode).setItem(SESSION_TOKEN_STORAGE_KEY, token);
+  setSessionPersistencePreference(mode === "local");
 }
 
 export function clearSessionToken() {
   window.localStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+  window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
 }
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {

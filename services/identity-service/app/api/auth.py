@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/v1", tags=["auth"])
 def register(payload: RegisterRequest):
     try:
         user = create_user(
-            email=payload.email,
+            account=payload.account,
             password=payload.password,
             full_name=payload.full_name,
             role="participant",
@@ -33,7 +33,7 @@ def register(payload: RegisterRequest):
 
 @router.post("/auth/login")
 def login(payload: LoginRequest):
-    auth_result = authenticate_user(payload.email, payload.password)
+    auth_result = authenticate_user(payload.account, payload.password)
     if not auth_result:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

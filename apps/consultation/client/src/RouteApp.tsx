@@ -1,8 +1,16 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
-import { apiRequest, clearSessionToken, setSessionToken } from "./api";
-import AuthPage from "./AuthPage";
+import {
+  apiRequest,
+  clearSessionToken,
+  getSessionPersistenceMode,
+  getSessionPersistencePreference,
+  hasSessionToken,
+  setSessionPersistencePreference,
+  setSessionToken,
+} from "./api";
+import AuthPage, { type AuthLoginPayload, type AuthRegisterPayload } from "./AuthPage";
 import ConsultationShell from "./layouts/ConsultationShell";
 import ConsultationEntryPage from "./pages/ConsultationEntryPage";
 import ConsultationPage from "./pages/ConsultationPage";
@@ -32,7 +40,7 @@ function RouteApp() {
   const [loading, setLoading] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [keepLoggedIn, setKeepLoggedIn] = useState(true);
+  const [keepLoggedIn, setKeepLoggedIn] = useState(() => getSessionPersistencePreference());
   const [consultationInput, setConsultationInput] = useState("");
   const [assessmentRawInput, setAssessmentRawInput] = useState("");
   const [selectedAssessmentScore, setSelectedAssessmentScore] = useState<number | null>(null);
@@ -72,41 +80,59 @@ function RouteApp() {
     return userId ? `mcs_assessment_session:${userId}` : null;
   }
 
+  function writeScopedStorageValue(key: string, value: string, persist = keepLoggedIn) {
+    const primaryStorage = persist ? window.localStorage : window.sessionStorage;
+    const secondaryStorage = persist ? window.sessionStorage : window.localStorage;
+    secondaryStorage.removeItem(key);
+    primaryStorage.setItem(key, value);
+  }
+
+  function readScopedStorageValue(key: string) {
+    const primaryStorage = getSessionPersistenceMode() === "session" ? window.sessionStorage : window.localStorage;
+    const secondaryStorage = primaryStorage === window.localStorage ? window.sessionStorage : window.localStorage;
+    return primaryStorage.getItem(key) ?? secondaryStorage.getItem(key);
+  }
+
+  function clearScopedStorageValue(key: string) {
+    window.localStorage.removeItem(key);
+    window.sessionStorage.removeItem(key);
+  }
+
   function saveConsultationSessionId(sessionId: string, userId?: string | null) {
     const key = getSessionStorageKey(userId || user?.id);
     if (key) {
-      window.localStorage.setItem(key, sessionId);
+      writeScopedStorageValue(key, sessionId);
     }
   }
 
   function readConsultationSessionId(userId?: string | null) {
     const key = getSessionStorageKey(userId || user?.id);
-    return key ? window.localStorage.getItem(key) : null;
+    return key ? readScopedStorageValue(key) : null;
   }
 
   function clearConsultationSessionId(userId?: string | null) {
     const key = getSessionStorageKey(userId || user?.id);
     if (key) {
-      window.localStorage.removeItem(key);
+      clearScopedStorageValue(key);
     }
   }
 
   function saveAssessmentSessionId(sessionId: string, userId?: string | null) {
     const key = getAssessmentStorageKey(userId || user?.id);
     if (key) {
-      window.localStorage.setItem(key, sessionId);
+      writeScopedStorageValue(key, sessionId);
     }
   }
 
   function readAssessmentSessionId(userId?: string | null) {
     const key = getAssessmentStorageKey(userId || user?.id);
-    return key ? window.localStorage.getItem(key) : null;
+    return key ? readScopedStorageValue(key) : null;
   }
 
   function clearAssessmentSessionId(userId?: string | null) {
     const key = getAssessmentStorageKey(userId || user?.id);
     if (key) {
-      window.localStorage.removeItem(key);
+      clearScopedStorageValue(key);
     }
   }
 
@@ -116,10 +142,15 @@ function RouteApp() {
   }
 
   async function fetchCurrentUser(): Promise<UserRecord | null> {
+    if (!hasSessionToken()) {
+      return null;
+    }
+
     try {
       const data = await apiRequest<{ user: UserRecord }>("/users/me", { method: "GET" });
       return data.user;
     } catch {
+      clearSessionToken();
       return null;
     }
   }
@@ -216,28 +247,30 @@ function RouteApp() {
     }
   }
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function handleKeepLoggedInChange(checked: boolean) {
+    setKeepLoggedIn(checked);
+    setSessionPersistencePreference(checked);
+  }
+
+  async function handleLogin(payload: AuthLoginPayload) {
     resetFeedback();
     setLoading(true);
-    const formData = new FormData(event.currentTarget);
 
     try {
       const loginData = await apiRequest<{ user: UserRecord; session_token?: string }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({
-          email: formData.get("email"),
-          password: formData.get("password"),
+          account: payload.account,
+          password: payload.password,
         }),
       });
 
       if (loginData.session_token) {
-        setSessionToken(loginData.session_token);
+        setSessionToken(loginData.session_token, { persist: keepLoggedIn });
       }
 
       await new Promise((resolve) => window.setTimeout(resolve, 120));
       await hydrateAuthenticatedState(loginData.user);
-      setMessage("登录成功。");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "登录失败");
     } finally {
@@ -245,19 +278,17 @@ function RouteApp() {
     }
   }
 
-  async function handleRegister(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleRegister(payload: AuthRegisterPayload) {
     resetFeedback();
     setLoading(true);
-    const formData = new FormData(event.currentTarget);
 
     try {
       await apiRequest("/auth/register", {
         method: "POST",
         body: JSON.stringify({
-          full_name: formData.get("full_name"),
-          email: formData.get("email"),
-          password: formData.get("password"),
+          full_name: payload.full_name,
+          account: payload.account,
+          password: payload.password,
         }),
       });
       setAuthMode("login");
@@ -500,7 +531,7 @@ function RouteApp() {
     setBootstrap(null);
     setConsultation(null);
     setAssessment(null);
-    setMessage("已退出。");
+    setMessage("");
     setError("");
   }
 
@@ -517,9 +548,12 @@ function RouteApp() {
             loading={loading}
             message={message}
             error={error}
-            onSwitchMode={setAuthMode}
+            onSwitchMode={(mode) => {
+              resetFeedback();
+              setAuthMode(mode);
+            }}
             onTogglePassword={() => setPasswordVisible((current) => !current)}
-            onKeepLoggedInChange={setKeepLoggedIn}
+            onKeepLoggedInChange={handleKeepLoggedInChange}
             onLogin={handleLogin}
             onRegister={handleRegister}
           />
