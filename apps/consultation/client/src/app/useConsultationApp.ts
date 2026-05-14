@@ -1,5 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
   apiRequest,
@@ -9,27 +8,18 @@ import {
   hasSessionToken,
   setSessionPersistencePreference,
   setSessionToken,
-} from "./api";
-import AuthPage, { type AuthLoginPayload, type AuthRegisterPayload } from "./AuthPage";
-import ConsultationShell from "./layouts/ConsultationShell";
-import ConsultationEntryPage from "./pages/ConsultationEntryPage";
-import ConsultationPage from "./pages/ConsultationPage";
-import PreparationPage from "./pages/PreparationPage";
-import ResultPage from "./pages/ResultPage";
-import AssessmentPage from "./pages/AssessmentPage";
-import { APP_PATHS, resolveAppPath } from "./routes";
+} from "../api";
+import type { AuthLoginPayload, AuthRegisterPayload } from "../features/auth/AuthPage";
+import { resolveAppPath } from "../routes";
 import type {
   AssessmentCatalogItem,
   AssessmentSession,
   BootstrapPayload,
   ConsultationSession,
   UserRecord,
-} from "./types";
+} from "../types";
 
-function RouteApp() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
+export function useConsultationApp() {
   const [user, setUser] = useState<UserRecord | null>(null);
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
   const [consultation, setConsultation] = useState<ConsultationSession | null>(null);
@@ -63,12 +53,6 @@ function RouteApp() {
       }),
     [assessment, consultation, user],
   );
-
-  useEffect(() => {
-    if (location.pathname !== resolvedPath) {
-      navigate(resolvedPath, { replace: true });
-    }
-  }, [location.pathname, navigate, resolvedPath]);
 
   const currentScaleMeta = assessmentCatalog.find((item) => item.slug === assessment?.current_scale_slug) || null;
 
@@ -535,153 +519,44 @@ function RouteApp() {
     setError("");
   }
 
-  return (
-    <Routes>
-      <Route path="/" element={<Navigate to={resolvedPath} replace />} />
-      <Route
-        path={APP_PATHS.login}
-        element={
-          <AuthPage
-            authMode={authMode}
-            passwordVisible={passwordVisible}
-            keepLoggedIn={keepLoggedIn}
-            loading={loading}
-            message={message}
-            error={error}
-            onSwitchMode={(mode) => {
-              resetFeedback();
-              setAuthMode(mode);
-            }}
-            onTogglePassword={() => setPasswordVisible((current) => !current)}
-            onKeepLoggedInChange={handleKeepLoggedInChange}
-            onLogin={handleLogin}
-            onRegister={handleRegister}
-          />
-        }
-      />
-      <Route
-        path={APP_PATHS.preparation}
-        element={
-          user ? (
-            <ConsultationShell
-              breadcrumb="患者端主链"
-              error={error}
-              message={message}
-              onLogout={() => void handleLogout()}
-              sidebarStep={0}
-              title="问诊准备"
-              user={user}
-            >
-              <PreparationPage loading={loading} onSubmit={handlePreparationSave} user={user} />
-            </ConsultationShell>
-          ) : (
-            <Navigate to={resolvedPath} replace />
-          )
-        }
-      />
-      <Route
-        path={APP_PATHS.consultationEntry}
-        element={
-          user ? (
-            <ConsultationShell
-              breadcrumb="患者端主链"
-              error={error}
-              message={message}
-              onLogout={() => void handleLogout()}
-              sidebarStep={0}
-              title="正式问诊入口"
-              user={user}
-            >
-              <ConsultationEntryPage loading={loading} onStart={handleStartConsultation} />
-            </ConsultationShell>
-          ) : (
-            <Navigate to={resolvedPath} replace />
-          )
-        }
-      />
-      <Route
-        path={APP_PATHS.consultation}
-        element={
-          user && consultation ? (
-            <ConsultationShell
-              breadcrumb="AI 数字医生交互"
-              error={error}
-              message={message}
-              onLogout={() => void handleLogout()}
-              sidebarStep={1}
-              title="数字人问诊"
-              user={user}
-            >
-              <ConsultationPage
-                bootstrap={bootstrap}
-                consultation={consultation}
-                consultationInput={consultationInput}
-                loading={loading}
-                onConsultationInputChange={setConsultationInput}
-                onRefresh={refreshConsultation}
-                onStartAssessment={handleStartAssessment}
-                onSubmitManualTurn={submitManualConsultationTurn}
-                onSubmitTurn={submitConsultationTurn}
-              />
-            </ConsultationShell>
-          ) : (
-            <Navigate to={resolvedPath} replace />
-          )
-        }
-      />
-      <Route
-        path={APP_PATHS.assessment}
-        element={
-          user && assessment ? (
-            <ConsultationShell
-              breadcrumb={currentScaleMeta?.name || "量表问诊"}
-              error={error}
-              message={message}
-              onLogout={() => void handleLogout()}
-              sidebarStep={2}
-              title={`${currentScaleMeta?.short_name || assessment.current_scale_slug || "量表"} 量表问诊`}
-              user={user}
-            >
-              <AssessmentPage
-                assessment={assessment}
-                assessmentCatalog={assessmentCatalog}
-                assessmentRawInput={assessmentRawInput}
-                loading={loading}
-                onAssessmentRawInputChange={setAssessmentRawInput}
-                onRefresh={refreshAssessment}
-                onSelectAssessmentScore={setSelectedAssessmentScore}
-                onSubmit={handleSubmitAssessment}
-                selectedAssessmentScore={selectedAssessmentScore}
-              />
-            </ConsultationShell>
-          ) : (
-            <Navigate to={resolvedPath} replace />
-          )
-        }
-      />
-      <Route
-        path={APP_PATHS.result}
-        element={
-          user && assessment ? (
-            <ConsultationShell
-              breadcrumb="评估结果与建议"
-              error={error}
-              message={message}
-              onLogout={() => void handleLogout()}
-              sidebarStep={3}
-              title="结果分析"
-              user={user}
-            >
-              <ResultPage assessment={assessment} assessmentCatalog={assessmentCatalog} onRefresh={refreshAssessment} />
-            </ConsultationShell>
-          ) : (
-            <Navigate to={resolvedPath} replace />
-          )
-        }
-      />
-      <Route path="*" element={<Navigate to={resolvedPath} replace />} />
-    </Routes>
-  );
+  return {
+    state: {
+      user,
+      bootstrap,
+      consultation,
+      assessment,
+      assessmentCatalog,
+      currentScaleMeta,
+      message,
+      error,
+      loading,
+      authMode,
+      passwordVisible,
+      keepLoggedIn,
+      consultationInput,
+      assessmentRawInput,
+      selectedAssessmentScore,
+      resolvedPath,
+    },
+    actions: {
+      setAuthMode,
+      setPasswordVisible,
+      setConsultationInput,
+      setAssessmentRawInput,
+      setSelectedAssessmentScore,
+      resetFeedback,
+      handleKeepLoggedInChange,
+      handleLogin,
+      handleRegister,
+      handlePreparationSave,
+      handleStartConsultation,
+      submitConsultationTurn,
+      submitManualConsultationTurn,
+      refreshConsultation,
+      handleStartAssessment,
+      handleSubmitAssessment,
+      refreshAssessment,
+      handleLogout,
+    },
+  };
 }
-
-export default RouteApp;

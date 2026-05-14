@@ -1,6 +1,7 @@
 import type { AssessmentSession, ConsultationSession, UserRecord } from "./types";
 
 export const APP_PATHS = {
+  cover: "/",
   login: "/login",
   preparation: "/prepare",
   consultationEntry: "/consultation/start",
@@ -37,4 +38,8 @@ export function resolveAppPath({ user, consultation, assessment }: ResolveAppPat
   }
 
   return APP_PATHS.consultationEntry;
+}
+
+export function isPublicPath(pathname: string) {
+  return pathname === APP_PATHS.cover || pathname === APP_PATHS.login;
 }
