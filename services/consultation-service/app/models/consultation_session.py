@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -15,9 +15,18 @@ class ConsultationSession(Base):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
     script_bundle: Mapped[str] = mapped_column(String(128), nullable=False)
+    playlist_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     workflow_stage_id: Mapped[str] = mapped_column(String(128), nullable=False)
     current_stage_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     current_node_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_prompt_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_prompt_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_prompt_video_asset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_prompt_video_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_prompt_question_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_prompt_subtitle_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    total_prompt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_prompt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     assigned_doctor_persona: Mapped[str] = mapped_column(String(128), nullable=False)
     requires_human_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

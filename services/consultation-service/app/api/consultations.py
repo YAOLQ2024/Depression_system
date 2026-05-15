@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException, status
 from app.schemas.consultations import ConsultationTurnRequest, CreateConsultationSessionRequest
 from app.services.consultation_engine import (
     ConsultationServiceError,
+    complete_system_question_item,
     create_consultation_session,
     get_consultation_session,
     start_consultation_session,
@@ -50,6 +51,23 @@ def post_consultation_start(session_id: str, x_mcs_user_id: str | None = Header(
     except ConsultationServiceError as exc:
         raise _translate_error(exc) from exc
     return success_response({"consultation": session_payload}, message="consultation started")
+
+
+@router.post("/consultations/{session_id}/question-items/{question_key}/complete")
+def post_system_question_item_complete(
+    session_id: str,
+    question_key: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        session_payload = complete_system_question_item(
+            session_id,
+            question_key=question_key,
+            acting_user_id=x_mcs_user_id,
+        )
+    except ConsultationServiceError as exc:
+        raise _translate_error(exc) from exc
+    return success_response({"consultation": session_payload}, message="system question item completed")
 
 
 @router.post("/consultations/{session_id}/turns")

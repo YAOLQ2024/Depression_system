@@ -1,16 +1,26 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
-  apiRequest,
   clearSessionToken,
   getSessionPersistenceMode,
   getSessionPersistencePreference,
   hasSessionToken,
   setSessionPersistencePreference,
   setSessionToken,
-} from "../api";
+} from "../services/api/client";
 import type { AuthLoginPayload, AuthRegisterPayload } from "../features/auth/AuthPage";
-import { resolveAppPath } from "../routes";
+import { resolveHomeEntryLabel, resolveHomeEntryPath, resolvePostLoginPath, resolveResumePath } from "../routes";
+import { getAssessmentCatalog, getAssessmentSession, createAssessmentSession, submitAssessmentAnswer } from "../services/api/assessment.api";
+import { login, logout, register } from "../services/api/auth.api";
+import { getBootstrapSummary } from "../services/api/bootstrap.api";
+import {
+  createConsultationSession,
+  getConsultationSession,
+  startConsultationSession,
+  submitConsultationTurn as submitConsultationTurnRequest,
+} from "../services/api/consultation.api";
+import type { SubmitConsultationTurnPayload, UpdateUserProfilePayload } from "../services/api/contracts";
+import { getCurrentUser, updateCurrentUserProfile } from "../services/api/user.api";
 import type {
   AssessmentCatalogItem,
   AssessmentSession,
@@ -44,9 +54,31 @@ export function useConsultationApp() {
     setAssessmentRawInput("");
   }, [assessment?.current_item?.item_id]);
 
-  const resolvedPath = useMemo(
+  const resumePath = useMemo(
     () =>
-      resolveAppPath({
+      resolveResumePath({
+        user,
+        consultation,
+        assessment,
+      }),
+    [assessment, consultation, user],
+  );
+
+  const postLoginPath = useMemo(() => resolvePostLoginPath(user), [user]);
+
+  const homeEntryPath = useMemo(
+    () =>
+      resolveHomeEntryPath({
+        user,
+        consultation,
+        assessment,
+      }),
+    [assessment, consultation, user],
+  );
+
+  const homeEntryLabel = useMemo(
+    () =>
+      resolveHomeEntryLabel({
         user,
         consultation,
         assessment,
@@ -131,8 +163,7 @@ export function useConsultationApp() {
     }
 
     try {
-      const data = await apiRequest<{ user: UserRecord }>("/users/me", { method: "GET" });
-      return data.user;
+      return await getCurrentUser();
     } catch {
       clearSessionToken();
       return null;
@@ -140,12 +171,11 @@ export function useConsultationApp() {
   }
 
   async function fetchBootstrap(): Promise<BootstrapPayload> {
-    return apiRequest<BootstrapPayload>("/system/bootstrap", { method: "GET" });
+    return getBootstrapSummary();
   }
 
   async function fetchAssessmentCatalog(): Promise<AssessmentCatalogItem[]> {
-    const data = await apiRequest<{ catalog: AssessmentCatalogItem[] }>("/assessment/catalog", { method: "GET" });
-    return data.catalog || [];
+    return getAssessmentCatalog();
   }
 
   async function fetchExistingConsultation(currentUserId: string) {
@@ -155,10 +185,7 @@ export function useConsultationApp() {
     }
 
     try {
-      const data = await apiRequest<{ consultation: ConsultationSession }>(`/consultations/${sessionId}`, {
-        method: "GET",
-      });
-      return data.consultation;
+      return await getConsultationSession(sessionId);
     } catch {
       clearConsultationSessionId(currentUserId);
       return null;
@@ -172,10 +199,7 @@ export function useConsultationApp() {
     }
 
     try {
-      const data = await apiRequest<{ assessment_session: AssessmentSession }>(`/assessment/sessions/${sessionId}`, {
-        method: "GET",
-      });
-      return data.assessment_session;
+      return await getAssessmentSession(sessionId);
     } catch {
       clearAssessmentSessionId(currentUserId);
       return null;
@@ -241,12 +265,9 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const loginData = await apiRequest<{ user: UserRecord; session_token?: string }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          account: payload.account,
-          password: payload.password,
-        }),
+      const loginData = await login({
+        account: payload.account,
+        password: payload.password,
       });
 
       if (loginData.session_token) {
@@ -267,13 +288,10 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      await apiRequest("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          full_name: payload.full_name,
-          account: payload.account,
-          password: payload.password,
-        }),
+      await register({
+        full_name: payload.full_name,
+        account: payload.account,
+        password: payload.password,
       });
       setAuthMode("login");
       setMessage("注册成功，请使用新账号登录。");
@@ -284,28 +302,13 @@ export function useConsultationApp() {
     }
   }
 
-  async function handlePreparationSave(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function savePreparationProfile(payload: UpdateUserProfilePayload) {
     resetFeedback();
     setLoading(true);
-    const formData = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(formData.entries()) as Record<string, unknown>;
-
-    ["age", "height_cm", "weight_kg"].forEach((field) => {
-      const value = payload[field];
-      if (value === "") {
-        delete payload[field];
-      } else if (typeof value === "string") {
-        payload[field] = Number(value);
-      }
-    });
 
     try {
-      const data = await apiRequest<{ user: UserRecord }>("/users/me/profile", {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-      setUser(data.user);
+      const updatedUser = await updateCurrentUserProfile(payload);
+      setUser(updatedUser);
       setConsultation(null);
       setAssessment(null);
       clearConsultationSessionId();
@@ -313,8 +316,10 @@ export function useConsultationApp() {
       setBootstrap(await fetchBootstrap());
       setAssessmentCatalog(await fetchAssessmentCatalog());
       setMessage("问诊准备信息已保存，可以进入正式问诊。");
+      return updatedUser;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "资料保存失败");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -325,30 +330,23 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const created = await apiRequest<{ consultation: ConsultationSession }>("/consultations", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      saveConsultationSessionId(created.consultation.session_id);
+      const created = await createConsultationSession();
+      saveConsultationSessionId(created.session_id);
 
-      const started = await apiRequest<{ consultation: ConsultationSession }>(
-        `/consultations/${created.consultation.session_id}/start`,
-        {
-          method: "POST",
-          body: JSON.stringify({}),
-        },
-      );
+      const started = await startConsultationSession(created.session_id);
 
-      setConsultation(started.consultation);
+      setConsultation(started);
       setMessage("正式问诊已开始。");
+      return started;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "创建问诊失败");
+      return null;
     } finally {
       setLoading(false);
     }
   }
 
-  async function submitConsultationTurn(payload: Record<string, unknown>) {
+  async function submitConsultationTurn(payload: SubmitConsultationTurnPayload) {
     if (!consultation) {
       return;
     }
@@ -357,18 +355,12 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const data = await apiRequest<{ consultation: ConsultationSession }>(
-        `/consultations/${consultation.session_id}/turns`,
-        {
-          method: "POST",
-          body: JSON.stringify(payload),
-        },
-      );
+      const updatedConsultation = await submitConsultationTurnRequest(consultation.session_id, payload);
 
-      setConsultation(data.consultation);
-      if (data.consultation.status === "handoff_ready") {
+      setConsultation(updatedConsultation);
+      if (updatedConsultation.status === "handoff_ready") {
         setMessage("规则问诊已完成，当前可以进入量表问诊。");
-      } else if (data.consultation.status === "paused_for_human_review") {
+      } else if (updatedConsultation.status === "paused_for_human_review") {
         setError("系统已触发高风险人工复核，标准问诊主链已暂停。");
       } else {
         setMessage("本轮输入已提交。");
@@ -404,10 +396,7 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const data = await apiRequest<{ consultation: ConsultationSession }>(`/consultations/${consultation.session_id}`, {
-        method: "GET",
-      });
-      setConsultation(data.consultation);
+      setConsultation(await getConsultationSession(consultation.session_id));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "刷新失败");
     } finally {
@@ -424,15 +413,12 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const data = await apiRequest<{ assessment_session: AssessmentSession }>("/assessment/sessions", {
-        method: "POST",
-        body: JSON.stringify({
-          consultation_session_id: consultation.session_id,
-          scale_handoff_payload: consultation.scale_handoff_payload || {},
-        }),
+      const assessmentSession = await createAssessmentSession({
+        consultation_session_id: consultation.session_id,
+        scale_handoff_payload: consultation.scale_handoff_payload || {},
       });
-      setAssessment(data.assessment_session);
-      saveAssessmentSessionId(data.assessment_session.session_id);
+      setAssessment(assessmentSession);
+      saveAssessmentSessionId(assessmentSession.session_id);
       setMessage("量表问诊已开始。");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "创建量表会话失败");
@@ -452,21 +438,15 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const data = await apiRequest<{ assessment_session: AssessmentSession }>(
-        `/assessment/sessions/${assessment.session_id}/answers`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            item_id: assessment.current_item?.item_id,
-            selected_option_score: selectedAssessmentScore,
-            raw_input: assessmentRawInput || null,
-          }),
-        },
-      );
+      const updatedAssessment = await submitAssessmentAnswer(assessment.session_id, {
+        item_id: assessment.current_item?.item_id,
+        selected_option_score: selectedAssessmentScore,
+        raw_input: assessmentRawInput || null,
+      });
 
-      setAssessment(data.assessment_session);
-      saveAssessmentSessionId(data.assessment_session.session_id);
-      if (data.assessment_session.status === "completed") {
+      setAssessment(updatedAssessment);
+      saveAssessmentSessionId(updatedAssessment.session_id);
+      if (updatedAssessment.status === "completed") {
         setMessage("量表阶段已完成，已生成聚合结果。");
       } else {
         setMessage("本题答案已提交。");
@@ -487,13 +467,7 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const data = await apiRequest<{ assessment_session: AssessmentSession }>(
-        `/assessment/sessions/${assessment.session_id}`,
-        {
-          method: "GET",
-        },
-      );
-      setAssessment(data.assessment_session);
+      setAssessment(await getAssessmentSession(assessment.session_id));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "刷新量表失败");
     } finally {
@@ -503,7 +477,7 @@ export function useConsultationApp() {
 
   async function handleLogout() {
     try {
-      await apiRequest("/auth/logout", { method: "POST" });
+      await logout();
     } catch {
       // ignore
     }
@@ -536,7 +510,10 @@ export function useConsultationApp() {
       consultationInput,
       assessmentRawInput,
       selectedAssessmentScore,
-      resolvedPath,
+      resumePath,
+      postLoginPath,
+      homeEntryPath,
+      homeEntryLabel,
     },
     actions: {
       setAuthMode,
@@ -548,7 +525,7 @@ export function useConsultationApp() {
       handleKeepLoggedInChange,
       handleLogin,
       handleRegister,
-      handlePreparationSave,
+      savePreparationProfile,
       handleStartConsultation,
       submitConsultationTurn,
       submitManualConsultationTurn,
@@ -560,3 +537,5 @@ export function useConsultationApp() {
     },
   };
 }
+
+export type ConsultationAppStore = ReturnType<typeof useConsultationApp>;

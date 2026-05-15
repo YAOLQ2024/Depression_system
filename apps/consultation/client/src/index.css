@@ -1,13 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+
+  --font-sans: "SF Pro Display", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+
+  --shadow-soft: 0 4px 20px -2px rgba(139, 161, 203, 0.15);
+  --shadow-glass: 0 8px 32px 0 rgba(100, 120, 160, 0.1);
 }
 
 :root {
   color-scheme: light;
-  font-family: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  background-color: #091126;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top left, rgba(96, 165, 250, 0.2), transparent 35%),
+    radial-gradient(circle at bottom right, rgba(129, 140, 248, 0.18), transparent 30%),
+    #f4f7fe;
 }
 
 *,
@@ -25,9 +39,10 @@ body,
 body {
   margin: 0;
   min-height: 100vh;
-  background: #091126;
-  color: #eef4ff;
+  color: #0f172a;
   font-family: inherit;
+  background: inherit;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -49,6 +64,53 @@ button {
 }
 
 ::selection {
-  background: rgba(147, 179, 255, 0.35);
+  background: rgba(96, 165, 250, 0.3);
   color: #ffffff;
+}
+
+@layer base {
+  body {
+    @apply antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .bg-tech-gradient {
+    background: linear-gradient(135deg, #eef2ff 0%, #f0f5ff 50%, #eef1fef0 100%);
+    background-attachment: fixed;
+  }
+
+  .glass-panel {
+    @apply bg-white/30 backdrop-blur-2xl border border-white/40 shadow-[0_8px_32px_rgba(100,120,160,0.15)] rounded-3xl;
+  }
+
+  .glass-card {
+    @apply bg-white/40 backdrop-blur-xl border border-white/50 shadow-[0_4px_20px_-2px_rgba(139,161,203,0.1)] rounded-2xl transition-all duration-300;
+  }
+
+  .floating-controls {
+    @apply bg-white/50 backdrop-blur-2xl border border-white/40 shadow-[0_8px_32px_rgba(59,130,246,0.1)] rounded-full;
+  }
+
+  .bg-radial-glow {
+    background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 60%);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-300;
+  }
 }

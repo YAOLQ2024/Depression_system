@@ -1,229 +1,182 @@
-import { Mic, Shield, Video } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ConsultationLayout } from "../layouts";
+import { APP_PATHS } from "../routes";
+import { mockConsultationService } from "../services/consultationService";
+import { ConsultationState, MultimodalData } from "../types/consultation";
 
-import {
-  ActionButton,
-  FormField,
-  ProgressSteps,
-  SideCard,
-  StatusPill,
-  SurfaceCard,
-  TextArea,
-} from "../components/patient-ui";
-import type { BootstrapPayload, ConsultationSession } from "../types";
-import { CONSULTATION_VISUAL_STEPS, getConsultationStageName, getConsultationVisualStep } from "../workflow";
+import { ConsultationProgress } from "../components/ConsultationProgress";
+import { CameraPreview } from "../components/CameraPreview";
+import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
+import { FloatingControlBar } from "../components/FloatingControlBar";
+import { MultimodalPanel } from "../components/MultimodalPanel";
+import { cn } from "../lib/utils";
 
-type ConsultationPageProps = {
-  bootstrap: BootstrapPayload | null;
-  consultation: ConsultationSession;
-  loading: boolean;
-  consultationInput: string;
-  onConsultationInputChange: (value: string) => void;
-  onSubmitTurn: (payload: Record<string, unknown>) => Promise<void>;
-  onSubmitManualTurn: () => Promise<void>;
-  onRefresh: () => Promise<void>;
-  onStartAssessment: () => Promise<void>;
-};
+export default function ConsultationPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const sessionId = location.state?.sessionId || "mock_session";
 
-function ConsultationPage({
-  bootstrap,
-  consultation,
-  loading,
-  consultationInput,
-  onConsultationInputChange,
-  onSubmitTurn,
-  onSubmitManualTurn,
-  onRefresh,
-  onStartAssessment,
-}: ConsultationPageProps) {
-  const consultationVisualStep = getConsultationVisualStep(consultation.current_stage_id);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [state, setState] = useState<ConsultationState | null>(null);
+  const [multiData, setMultiData] = useState<MultimodalData | null>(null);
+  const [dhState, setDhState] = useState<'idle' | 'speaking'>('idle');
 
-  function findPersonaName(personaId?: string | null) {
-    const match = bootstrap?.doctor_personas?.find((item) => item.persona_id === personaId);
-    return match?.display_name || "张小雨";
+  // Load initial state
+  useEffect(() => {
+    mockConsultationService.getState(sessionId).then(res => {
+      setState(res);
+    });
+  }, [sessionId]);
+
+  // Polling multimodal data when panel is open
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (isOpen) {
+      mockConsultationService.getMultimodalData(sessionId).then(setMultiData);
+      interval = setInterval(() => {
+        mockConsultationService.getMultimodalData(sessionId).then(setMultiData);
+      }, 2500);
+    }
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isOpen, sessionId]);
+
+  const handleToggleRecord = async () => {
+    if (isRecording) {
+      // Stop recording and send message
+      setIsRecording(false);
+      if (state) {
+        // Simulate sending a generic hardcoded user transcript just for UI flow
+        const response = await mockConsultationService.sendMessage(sessionId, "我最近感觉压力有点大");
+        setState({
+          ...state,
+          currentStep: response.currentStep,
+          assistantMessage: response.assistantMessage
+        });
+        setDhState(response.digitalHumanState);
+        
+        // Return to idle after a few seconds simulator
+        setTimeout(() => setDhState('idle'), 4000);
+      }
+    } else {
+      setIsRecording(true);
+    }
+  };
+
+  const handleEnd = async () => {
+    await mockConsultationService.endConsultation(sessionId);
+    navigate(APP_PATHS.assessment, { state: { sessionId } });
+  };
+
+  if (!state) {
+    return (
+      <ConsultationLayout title="智能评估">
+        <div className="w-full h-full flex items-center justify-center text-slate-500">
+           正在初始化问诊环境...
+        </div>
+      </ConsultationLayout>
+    );
   }
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <SurfaceCard className="grid gap-6 p-5 md:p-6">
-        <ProgressSteps currentStep={consultationVisualStep} items={CONSULTATION_VISUAL_STEPS} />
+    <ConsultationLayout backgroundImage="/bg.png" title="智能评估">
+      
+      {/* Progress Bar (Fixed top center) */}
+      <div className="absolute top-0 inset-x-0 z-50 pointer-events-none">
+        <div className="pointer-events-auto">
+          <ConsultationProgress currentStep={state.currentStep} />
+        </div>
+      </div>
+      
+      <div className="flex w-full h-full relative z-10 bg-transparent pt-8 overflow-hidden [perspective:2000px]">
+        
+        {/* Left Side: Digital Human & Controls */}
+        <div 
+          className="flex-1 relative h-full flex flex-col items-center transition-all duration-[800ms] min-h-0 perspective-[1200px]"
+          style={{ marginRight: isOpen ? 'min(45vw, 650px)' : '0px' }}
+        >
+          {/* Digital Human Image/Video Container */}
+          <div className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-10 z-10 pointer-events-none">
+             {/* Empty state or minimal glow ring for the "Digital Human" spot */}
+             <div className={`w-64 h-64 md:w-96 md:h-96 rounded-full mb-12 flex items-center justify-center transition-all duration-300 pointer-events-auto ${dhState === 'speaking' ? 'bg-primary-400/20 shadow-[0_0_80px_rgba(59,130,246,0.3)] animate-pulse' : 'bg-primary-100/10 shadow-[0_0_50px_rgba(59,130,246,0.1)]'}`}>
+               <div className="w-1/2 h-1/2 rounded-full border-[1PX] border-primary-200/50 flex items-center justify-center">
+                 <div className="w-1/2 h-1/2 rounded-full border-[1PX] border-primary-300/30"></div>
+               </div>
+             </div>
+             
+             <div className="absolute bottom-1/4 w-[80%] h-[2px] bg-gradient-to-r from-transparent via-primary-300/40 to-transparent"></div>
+          </div>
 
-        <div className="grid gap-5 2xl:grid-cols-[minmax(360px,1.08fr)_minmax(340px,0.92fr)]">
-          <div className="rounded-[28px] border border-slate-200 bg-white/84 p-4 shadow-[0_16px_36px_rgba(10,18,40,0.08)] backdrop-blur-md">
-            <StatusPill tone="positive">AI 数字医生 · 在线</StatusPill>
-            <div className="mt-4 flex min-h-[540px] flex-col justify-end rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(228,236,255,0.8)),radial-gradient(circle_at_top,rgba(202,220,255,0.7),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.58)_0%,rgba(188,205,255,0.4)_100%)] p-6">
-              <div className="mx-auto flex h-[320px] w-[240px] items-center justify-center rounded-[140px_140px_100px_100px] bg-[radial-gradient(circle_at_50%_30%,rgba(255,255,255,0.72),rgba(238,245,255,0.34)),linear-gradient(180deg,rgba(255,255,255,0.42),rgba(213,224,255,0.22))] shadow-[inset_0_0_0_12px_rgba(255,255,255,0.16),0_30px_60px_rgba(61,73,180,0.2)]">
-                <div className="flex h-[132px] w-[132px] items-center justify-center rounded-full bg-[linear-gradient(135deg,#2563eb,#38bdf8)] text-6xl font-semibold text-white">
-                  医
-                </div>
-              </div>
-              <div className="mt-6 rounded-[24px] border border-slate-200 bg-white/88 px-5 py-4 text-[1.05rem] leading-8 text-slate-900 shadow-[0_10px_28px_rgba(10,18,40,0.06)]">
-                {consultation.current_prompt || "您好，我将陪您完成本次心理问诊。"}
-              </div>
-              <div className="mt-3 inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
-                <Mic size={14} />
-                语音连接正常
+          {/* Floating UI Container at the bottom */}
+          <div className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm">
+            <FloatingControlBar 
+              isRecording={isRecording} 
+              onToggleRecord={handleToggleRecord} 
+              onEnd={handleEnd}
+            />
+          </div>
+
+          <div className="absolute left-[5%] lg:left-[10%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
+            <DraggableMessagePanel message={state.assistantMessage} />
+          </div>
+          
+        </div>
+
+        {/* Edge Toggle Button */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
+            isOpen 
+              ? "translate-x-1/2 rounded-full w-8 h-16 border border-white/80" 
+              : "right-0 rounded-l-xl w-8 py-4 border border-r-0 border-white/80 pr-0.5 hover:-translate-x-1"
+          )}
+          style={isOpen ? { right: 'min(45vw, 650px)' } : undefined}
+        >
+          {!isOpen ? (
+            <>
+              <span className="text-[11px] font-bold tracking-widest px-0.5 text-slate-600 mb-1" style={{ writingMode: 'vertical-rl' }}>实时结果</span>
+              <ChevronLeft className="w-5 h-5 text-slate-500" />
+            </>
+          ) : (
+            <ChevronRight className="w-5 h-5 text-slate-500" />
+          )}
+        </button>
+
+        {/* Right Side: Multimodal Panel */}
+        <div 
+          className={cn(
+             "absolute top-[2%] bottom-[2%] z-20 transition-all duration-[800ms] pointer-events-auto origin-right w-[45vw] max-w-[650px]",
+             isOpen ? "right-0 opacity-100" : "-right-[600px] opacity-0"
+          )}
+          style={isOpen ? { transform: "rotateY(-15deg)" } : undefined}
+        >
+          {/* The actual floating card */}
+          <div className="absolute inset-0 w-full h-full">
+            <div className="w-full h-full bg-slate-900/10 transition-all duration-500 backdrop-blur-md rounded-3xl border border-indigo-400/60 shadow-[0_0_40px_rgba(99,102,241,0.6),inset_0_0_20px_rgba(165,180,252,0.4)] overflow-hidden flex flex-col relative z-30 ring-1 ring-indigo-400/30">
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-500/5 to-transparent pointer-events-none"></div>
+              <div className="w-full h-full flex flex-col overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent relative z-10"> 
+                 <div className="w-full shrink-0">
+                   <MultimodalPanel data={multiData} onClose={() => setIsOpen(false)} />
+                 </div>
               </div>
             </div>
           </div>
-
-          <div className="rounded-[28px] border border-slate-200 bg-white/84 p-4 shadow-[0_16px_36px_rgba(10,18,40,0.08)] backdrop-blur-md">
-            <div className="mb-5 flex flex-wrap gap-2">
-              {["问诊对话", "高风险问题排查", "问诊笔记"].map((tab, index) => (
-                <button
-                  key={tab}
-                  className={`rounded-full px-4 py-2.5 text-sm font-medium transition ${
-                    index === 0 ? "bg-[#315CFF] text-white shadow-[0_10px_24px_rgba(49,92,255,0.22)]" : "border border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-white"
-                  }`}
-                  type="button"
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(10,18,40,0.05)]">
-              <p className="mb-3 text-sm font-semibold text-slate-500">{findPersonaName(consultation.assigned_doctor_persona)}</p>
-              <p className="text-lg leading-8 text-slate-900">{consultation.current_prompt || "系统正在准备当前问诊提示。"}</p>
-            </div>
-
-            {consultation.status === "handoff_ready" ? (
-              <div className="mt-5 rounded-[26px] border border-emerald-200 bg-emerald-50 p-5">
-                <h3 className="text-xl font-semibold text-emerald-900">规则问诊已完成</h3>
-                <p className="mt-2 text-sm leading-7 text-emerald-800">当前可以进入量表问诊阶段。</p>
-                <div className="mt-5">
-                  <ActionButton disabled={loading} onClick={() => void onStartAssessment()}>
-                    进入量表问诊
-                  </ActionButton>
-                </div>
-              </div>
-            ) : consultation.status === "paused_for_human_review" ? (
-              <div className="mt-5 rounded-[26px] border border-orange-200 bg-orange-50 p-5">
-                <h3 className="text-xl font-semibold text-orange-900">已触发人工复核</h3>
-                <p className="mt-2 text-sm leading-7 text-orange-800">系统检测到高风险信号，请转人工支持处理。</p>
-              </div>
-            ) : (
-              <>
-                <div className="mt-5">
-                  <FormField label="您的回答（按住下方按钮说话）">
-                    <TextArea
-                      placeholder="如果暂时不接语音，可以直接输入本轮患者回答。"
-                      value={consultationInput}
-                      onChange={(event) => onConsultationInputChange(event.target.value)}
-                    />
-                  </FormField>
-                </div>
-
-                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                  <p className="mb-4 text-sm font-semibold text-slate-600">实时语音识别</p>
-                  <div className="flex h-14 items-end gap-[5px]">
-                    {Array.from({ length: 24 }).map((_, index) => (
-                      <span
-                        key={index}
-                        className="w-[5px] rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.7),rgba(146,171,255,0.88))]"
-                        style={{ height: `${18 + ((index * 13) % 42)}px` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <ActionButton disabled variant="secondary">
-            暂停问诊
-          </ActionButton>
-          <ActionButton onClick={() => void onSubmitTurn({ input_type: "continue_button" })} variant="secondary">
-            重说上一句
-          </ActionButton>
-          <button
-            className="flex h-24 w-24 items-center justify-center rounded-full bg-[linear-gradient(180deg,#3b82f6,#1d4ed8)] text-sm font-semibold text-white shadow-[0_26px_50px_rgba(37,99,235,0.28)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={loading}
-            onClick={() => void onSubmitManualTurn()}
-            type="button"
-          >
-            按住说话
-          </button>
-          <ActionButton className="min-w-[164px]" disabled={loading} onClick={() => void onSubmitManualTurn()}>
-            下一步
-          </ActionButton>
+        <div className={`absolute transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] z-40 ${isOpen ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'} right-4 md:right-8 top-4 md:top-6`}>
+          <CameraPreview 
+            className="w-[25vw] min-w-[160px] max-w-[260px] aspect-[4/3] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.4)] border border-white/20 ml-auto" 
+          />
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2">
-          <ActionButton onClick={() => void onSubmitTurn({ input_type: "silence" })} variant="ghost">
-            模拟沉默
-          </ActionButton>
-          <ActionButton onClick={() => void onSubmitTurn({ input_type: "recognition_failure" })} variant="ghost">
-            模拟识别失败
-          </ActionButton>
-          <ActionButton onClick={() => void onRefresh()} variant="ghost">
-            刷新状态
-          </ActionButton>
-        </div>
-      </SurfaceCard>
-
-      <aside className="grid gap-4">
-        <SideCard>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <strong className="text-base font-semibold text-slate-900">实时监测</strong>
-            <StatusPill tone="positive">监测中</StatusPill>
-          </div>
-          <div className="flex min-h-[188px] items-end justify-center rounded-[24px] border border-slate-200 bg-[radial-gradient(circle_at_top,rgba(207,220,255,0.45),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(221,231,255,0.76)_100%)] p-4 text-sm font-semibold text-slate-700">
-            <Video size={16} className="mr-2 text-[#315CFF]" />
-            用户视频
-          </div>
-        </SideCard>
-
-        <SideCard>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <strong className="text-base font-semibold text-slate-900">会话进度</strong>
-            <span className="text-sm text-slate-500">{consultationVisualStep}/6</span>
-          </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full rounded-full bg-[linear-gradient(90deg,#315CFF,#5B7CFF_52%,#89A1FF)]" style={{ width: `${(consultationVisualStep / 6) * 100}%` }} />
-          </div>
-          <p className="mt-3 text-sm leading-7 text-slate-600">当前阶段：{getConsultationStageName(consultation.current_stage_id)}</p>
-        </SideCard>
-
-        <SideCard>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <strong className="text-base font-semibold text-slate-900">情绪状态</strong>
-            <StatusPill tone="positive">实时更新</StatusPill>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              ["情绪倾向", consultation.chief_complaint_summary ? "平和" : "待评估"],
-              ["焦虑水平", consultation.current_history_structured_result ? "轻度" : "待评估"],
-              ["压力指数", consultation.high_risk_screening_result ? "中等" : "待评估"],
-              ["疲劳程度", "较低"],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm text-slate-500">{label}</p>
-                <p className="mt-2 text-base font-semibold text-slate-900">{value}</p>
-              </div>
-            ))}
-          </div>
-        </SideCard>
-
-        <SideCard>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <strong className="text-base font-semibold text-slate-900">问诊提示</strong>
-          </div>
-          <ul className="grid gap-3 pl-5 text-sm leading-7 text-slate-600">
-            <li>倾听真实感受，如实表达更有助于医生理解您。</li>
-            <li>如有不适可随时暂停或结束问诊。</li>
-            <li>
-              <span className="inline-flex items-center gap-2 text-slate-600">
-                <Shield size={14} />
-                信息仅用于医疗评估，系统会保护您的隐私与安全。
-              </span>
-            </li>
-          </ul>
-        </SideCard>
-      </aside>
-    </section>
+      </div>
+    </ConsultationLayout>
   );
 }
-
-export default ConsultationPage;

@@ -42,6 +42,7 @@ def _public_user(user: User) -> dict:
         "role": user.role,
         "profile_status": user.profile_status,
         "profile": {
+            "gender": user.gender,
             "age": user.age,
             "height_cm": user.height_cm,
             "weight_kg": user.weight_kg,
@@ -49,7 +50,6 @@ def _public_user(user: User) -> dict:
             "parents_marital_status": user.parents_marital_status,
             "parents_occupation": user.parents_occupation,
             "prior_psychiatric_visit": user.prior_psychiatric_visit,
-            "family_history": user.family_history,
         },
         "created_at": user.created_at.isoformat(),
         "updated_at": user.updated_at.isoformat(),
@@ -166,6 +166,7 @@ def revoke_session(session_token: str) -> None:
 def update_profile(user_id: str, payload: dict) -> dict:
     allowed_fields = {
         "full_name",
+        "gender",
         "age",
         "height_cm",
         "weight_kg",
@@ -173,7 +174,6 @@ def update_profile(user_id: str, payload: dict) -> dict:
         "parents_marital_status",
         "parents_occupation",
         "prior_psychiatric_visit",
-        "family_history",
     }
     updates = {key: value for key, value in payload.items() if key in allowed_fields}
 

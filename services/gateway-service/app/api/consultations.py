@@ -117,6 +117,25 @@ def start_consultation(
     return upstream["payload"]
 
 
+@router.post("/consultations/{session_id}/question-items/{question_key}/complete")
+def complete_system_question_item(
+    session_id: str,
+    question_key: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "POST",
+        f"/api/v1/consultations/{session_id}/question-items/{question_key}/complete",
+        {},
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
 @router.post("/consultations/{session_id}/turns")
 def submit_consultation_turn(
     session_id: str,

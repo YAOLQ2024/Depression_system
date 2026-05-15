@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db_session
 from app.models import ConsultationSession, ConsultationTurn
 from app.schemas.consultations import ConsultationTurnRequest, CreateConsultationSessionRequest
-from app.services.workflow_loader import ScriptNode, WorkflowBundle, get_workflow_loader
+from app.services.workflow_loader import QuestionItem, ScriptNode, WorkflowBundle, get_workflow_loader
 
 
 class ConsultationServiceError(Exception):
@@ -39,6 +39,114 @@ def _default_engine_state() -> dict[str, Any]:
         "waiting_node_type": None,
         "completed_stages": [],
         "last_branch_taken": None,
+    }
+
+
+def _serialize_question_item(question_item: QuestionItem) -> dict[str, Any]:
+    return {
+        "question_key": question_item.question_key,
+        "stage_id": question_item.stage_id,
+        "stage_label": question_item.stage_label,
+        "stage_order": question_item.stage_order,
+        "order": question_item.order,
+        "node_id": question_item.node_id,
+        "video_asset_id": question_item.video_asset_id,
+        "video_uri": question_item.video_uri,
+        "question_text": question_item.question_text,
+        "subtitle_text": question_item.subtitle_text or question_item.question_text,
+        "response_required": question_item.response_required,
+    }
+
+
+def _get_total_prompt_count(bundle: WorkflowBundle) -> int:
+    return sum(len(stage.question_items) for stage in bundle.digital_human_playlist.stages_in_order)
+
+
+def _resolve_current_question_item_object(
+    session_record: ConsultationSession,
+    bundle: WorkflowBundle,
+) -> QuestionItem | None:
+    if not session_record.current_stage_id:
+        return None
+    playlist_stage = bundle.digital_human_playlist.stages_by_id.get(session_record.current_stage_id)
+    if not playlist_stage:
+        return None
+
+    if session_record.current_node_id:
+        direct_match = playlist_stage.question_items_by_node_id.get(session_record.current_node_id)
+        if direct_match:
+            return direct_match
+
+    if playlist_stage.question_items:
+        return playlist_stage.question_items[0]
+    return None
+
+
+def _resolve_current_question_item(
+    session_record: ConsultationSession,
+    bundle: WorkflowBundle,
+) -> dict[str, Any] | None:
+    question_item = _resolve_current_question_item_object(session_record, bundle)
+    return _serialize_question_item(question_item) if question_item else None
+
+
+def _count_prompt_items_before(question_item: QuestionItem, bundle: WorkflowBundle) -> int:
+    completed = 0
+    for stage in bundle.digital_human_playlist.stages_in_order:
+        if stage.stage_order < question_item.stage_order:
+            completed += len(stage.question_items)
+            continue
+        if stage.stage_order == question_item.stage_order:
+            completed += sum(1 for item in stage.question_items if item.order < question_item.order)
+            break
+    return completed
+
+
+def _sync_playlist_state(session_record: ConsultationSession, bundle: WorkflowBundle) -> None:
+    total_prompt_count = _get_total_prompt_count(bundle)
+    session_record.playlist_version = bundle.digital_human_playlist.playlist_version or None
+    session_record.total_prompt_count = total_prompt_count
+
+    current_question_item = _resolve_current_question_item_object(session_record, bundle)
+    if not current_question_item:
+        session_record.current_prompt_key = None
+        session_record.current_prompt_order = None
+        session_record.current_prompt_video_asset_id = None
+        session_record.current_prompt_video_uri = None
+        session_record.current_prompt_question_text = None
+        session_record.current_prompt_subtitle_text = None
+        session_record.completed_prompt_count = (
+            total_prompt_count
+            if session_record.status in {"handoff_ready", "paused_for_human_review"} or session_record.completed_at
+            else 0
+        )
+        return
+
+    session_record.current_prompt_key = current_question_item.question_key
+    session_record.current_prompt_order = current_question_item.order
+    session_record.current_prompt_video_asset_id = current_question_item.video_asset_id
+    session_record.current_prompt_video_uri = current_question_item.video_uri
+    session_record.current_prompt_question_text = current_question_item.question_text
+    session_record.current_prompt_subtitle_text = (
+        current_question_item.subtitle_text or current_question_item.question_text
+    )
+    session_record.completed_prompt_count = _count_prompt_items_before(current_question_item, bundle)
+
+
+def _resolve_current_stage_progress(
+    session_record: ConsultationSession,
+    bundle: WorkflowBundle,
+) -> dict[str, Any] | None:
+    if not session_record.current_stage_id:
+        return None
+    playlist_stage = bundle.digital_human_playlist.stages_by_id.get(session_record.current_stage_id)
+    if not playlist_stage:
+        return None
+    return {
+        "stage_id": playlist_stage.stage_id,
+        "stage_label": playlist_stage.stage_label,
+        "stage_order": playlist_stage.stage_order,
+        "total_stages": len(bundle.digital_human_playlist.stages_in_order),
     }
 
 
@@ -349,6 +457,12 @@ def _auto_advance(session_record: ConsultationSession, bundle: WorkflowBundle) -
             _set_current_prompt(session_record, prompt, node.type)
             return
 
+        if node.type == "speak_then_complete":
+            prompt = _render_prompt(node, _ensure_json_dict(session_record.slot_values))
+            session_record.status = "waiting_system_completion"
+            _set_current_prompt(session_record, prompt, node.type)
+            return
+
         raise ConsultationServiceError(f"unsupported node type: {node.type}", code=5001, status_code=500)
 
 
@@ -363,18 +477,33 @@ def _infer_branch(payload: ConsultationTurnRequest) -> str:
 def _serialize_session(session_record: ConsultationSession, bundle: WorkflowBundle) -> dict[str, Any]:
     engine_state = _ensure_json_dict(session_record.engine_state)
     current_prompt = engine_state.get("current_prompt")
+    current_question_item = _resolve_current_question_item(session_record, bundle)
+    current_stage_progress = _resolve_current_stage_progress(session_record, bundle)
     return {
         "session_id": session_record.id,
         "user_id": session_record.user_id,
         "workflow_id": session_record.workflow_id,
         "script_bundle": session_record.script_bundle,
+        "playlist_version": session_record.playlist_version or bundle.digital_human_playlist.playlist_version,
+        "playlist_manifest_status": bundle.digital_human_playlist.manifest_status,
+        "delivery_mode": bundle.digital_human_playlist.delivery_mode,
+        "total_prompt_count": session_record.total_prompt_count,
+        "completed_prompt_count": session_record.completed_prompt_count,
         "workflow_stage_id": session_record.workflow_stage_id,
         "current_stage_id": session_record.current_stage_id,
         "current_node_id": session_record.current_node_id,
+        "current_prompt_key": session_record.current_prompt_key,
+        "current_prompt_order": session_record.current_prompt_order,
+        "current_prompt_video_asset_id": session_record.current_prompt_video_asset_id,
+        "current_prompt_video_uri": session_record.current_prompt_video_uri,
+        "current_prompt_question_text": session_record.current_prompt_question_text,
+        "current_prompt_subtitle_text": session_record.current_prompt_subtitle_text,
+        "current_stage": current_stage_progress,
         "status": session_record.status,
         "assigned_doctor_persona": session_record.assigned_doctor_persona,
         "requires_human_review": session_record.requires_human_review,
         "current_prompt": current_prompt,
+        "current_question_item": current_question_item,
         "participant_profile_snapshot": _ensure_json_dict(session_record.participant_profile_snapshot),
         "slot_values": _ensure_json_dict(session_record.slot_values),
         "chief_complaint_summary": session_record.chief_complaint_summary,
@@ -429,6 +558,7 @@ def create_consultation_session(payload: CreateConsultationSessionRequest, actin
         user_id=payload.user_id,
         workflow_id=bundle.workflow_id,
         script_bundle=bundle.script_bundle,
+        playlist_version=bundle.digital_human_playlist.playlist_version or None,
         workflow_stage_id=bundle.consultation_stage_id,
         current_stage_id=first_stage_id,
         current_node_id=first_stage.entry_node,
@@ -442,6 +572,7 @@ def create_consultation_session(payload: CreateConsultationSessionRequest, actin
         created_at=now,
         updated_at=now,
     )
+    _sync_playlist_state(session_record, bundle)
 
     with get_db_session() as db_session:
         db_session.add(session_record)
@@ -457,6 +588,7 @@ def get_consultation_session(session_id: str, acting_user_id: str | None) -> dic
         session_record = _get_session_or_raise(db_session, session_id)
         if session_record.user_id != acting_user_id:
             raise ConsultationServiceError("consultation session forbidden", code=4032, status_code=403)
+        _sync_playlist_state(session_record, bundle)
         return _serialize_session(session_record, bundle)
 
 
@@ -474,6 +606,57 @@ def start_consultation_session(session_id: str, acting_user_id: str | None) -> d
         session_record.status = "running"
         session_record.updated_at = _now()
         _auto_advance(session_record, bundle)
+        _sync_playlist_state(session_record, bundle)
+        db_session.flush()
+        db_session.refresh(session_record)
+        return _serialize_session(session_record, bundle)
+
+
+def complete_system_question_item(
+    session_id: str,
+    question_key: str,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    bundle = get_workflow_loader().load_bundle()
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError("consultation session forbidden", code=4032, status_code=403)
+        if (
+            session_record.status != "waiting_system_completion"
+            or not session_record.current_stage_id
+            or not session_record.current_node_id
+        ):
+            raise ConsultationServiceError(
+                "consultation session is not waiting for system completion",
+                code=4093,
+                status_code=409,
+            )
+
+        stage = bundle.stage_scripts[session_record.current_stage_id]
+        node = stage.nodes[session_record.current_node_id]
+        current_question_item = _resolve_current_question_item_object(session_record, bundle)
+        if not current_question_item or current_question_item.question_key != question_key:
+            raise ConsultationServiceError("system question item mismatch", code=4008, status_code=409)
+        if current_question_item.response_required:
+            raise ConsultationServiceError(
+                "question item requires user response and cannot be auto-completed",
+                code=4094,
+                status_code=409,
+            )
+        if node.type != "speak_then_complete":
+            raise ConsultationServiceError("current node does not support system completion", code=4095, status_code=409)
+
+        session_record.status = "running"
+        session_record.updated_at = _now()
+        engine_state = _ensure_json_dict(session_record.engine_state)
+        engine_state["last_branch_taken"] = "system_complete"
+        session_record.engine_state = engine_state
+
+        _move_to_target(session_record, node.payload.get("next"), bundle)
+        _auto_advance(session_record, bundle)
+        _sync_playlist_state(session_record, bundle)
         db_session.flush()
         db_session.refresh(session_record)
         return _serialize_session(session_record, bundle)
@@ -498,6 +681,15 @@ def submit_consultation_turn(session_id: str, payload: ConsultationTurnRequest, 
 
         normalized_text = _normalize_text(payload.raw_input, payload.transcript_text, payload.input_type)
         extracted_fields = _apply_extraction(session_record, node, normalized_text)
+        current_question_item = _resolve_current_question_item_object(session_record, bundle)
+        turn_timestamp = _now()
+        current_prompt_text = _ensure_json_dict(session_record.engine_state).get("current_prompt")
+        turn_index = (
+            db_session.query(ConsultationTurn)
+            .filter(ConsultationTurn.session_id == session_record.id)
+            .count()
+            + 1
+        )
 
         db_session.add(
             ConsultationTurn(
@@ -506,13 +698,26 @@ def submit_consultation_turn(session_id: str, payload: ConsultationTurnRequest, 
                 workflow_stage_id=session_record.workflow_stage_id,
                 stage_id=session_record.current_stage_id,
                 node_id=session_record.current_node_id,
+                turn_index=turn_index,
+                prompt_key=current_question_item.question_key if current_question_item else None,
+                prompt_order=current_question_item.order if current_question_item else None,
+                prompt_video_asset_id=current_question_item.video_asset_id if current_question_item else None,
+                prompt_video_uri=current_question_item.video_uri if current_question_item else None,
+                prompt_question_text=current_question_item.question_text if current_question_item else current_prompt_text,
+                prompt_subtitle_text=(
+                    (current_question_item.subtitle_text or current_question_item.question_text)
+                    if current_question_item
+                    else current_prompt_text
+                ),
                 input_type=payload.input_type,
-                prompt_text=_ensure_json_dict(session_record.engine_state).get("current_prompt"),
+                prompt_text=current_prompt_text,
                 raw_input=payload.raw_input,
                 transcript_text=payload.transcript_text,
                 structured_fields=extracted_fields or None,
                 branch_taken=branch_name,
-                created_at=_now(),
+                response_started_at=turn_timestamp,
+                response_completed_at=turn_timestamp,
+                created_at=turn_timestamp,
             )
         )
 
@@ -524,6 +729,7 @@ def submit_consultation_turn(session_id: str, payload: ConsultationTurnRequest, 
 
         _move_to_target(session_record, branch_payload.get("next"), bundle)
         _auto_advance(session_record, bundle)
+        _sync_playlist_state(session_record, bundle)
         db_session.flush()
         db_session.refresh(session_record)
         return _serialize_session(session_record, bundle)

@@ -7,6 +7,7 @@
 - PostgreSQL + Alembic migration
 - `consultation_sessions` / `consultation_turns` 两张核心表
 - workflow / interview script 资源装载
+- digital human playlist manifest 装载
 - 四段规则问诊的最小状态机骨架
 - 会话创建、启动、获取状态、提交一轮输入
 
