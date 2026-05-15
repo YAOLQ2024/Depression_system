@@ -18,6 +18,7 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     profile_status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    gender: Mapped[str | None] = mapped_column(Text, nullable=True)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -25,7 +26,6 @@ class User(Base):
     parents_marital_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     parents_occupation: Mapped[str | None] = mapped_column(Text, nullable=True)
     prior_psychiatric_visit: Mapped[str | None] = mapped_column(Text, nullable=True)
-    family_history: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

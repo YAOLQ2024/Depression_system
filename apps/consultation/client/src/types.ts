@@ -1,10 +1,21 @@
+export type UserPreparationProfile = {
+  gender?: string | null;
+  age?: number | null;
+  height_cm?: number | null;
+  weight_kg?: number | null;
+  marital_status?: string | null;
+  parents_marital_status?: string | null;
+  parents_occupation?: string | null;
+  prior_psychiatric_visit?: string | null;
+};
+
 export type UserRecord = {
   id: string;
   email: string;
   full_name: string;
   role: string;
   profile_status: string;
-  profile?: Record<string, unknown>;
+  profile?: UserPreparationProfile | null;
 };
 
 export type WorkflowStageSummary = {

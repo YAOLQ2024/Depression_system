@@ -1,0 +1,64 @@
+workflow_id: consultation-v1
+manifest_contract: digital-human-playlist/v1
+playlist_version: draft-pending-assets
+manifest_status: placeholder
+delivery_mode: fixed-video-playlist
+notes:
+  - "TODO: waiting for final video list and subtitle text from product/teacher review."
+  - "Each question item maps to one fixed video file."
+  - "question_text is the authoritative text stored with each consultation turn."
+  - "subtitle_text is an optional UI/display override; if omitted, UI can fall back to question_text."
+  - "Video binaries stay in static assets or object storage; this manifest stores only metadata."
+
+stages:
+  - stage_id: stage-01-greeting-and-briefing
+    stage_label: 问候说明
+    stage_order: 1
+    question_items:
+      - question_key: greeting-001
+        order: 1
+        node_id: greeting-open
+        video_asset_id: greeting-001
+        video_uri: /digital-human/consultation-v1/greeting-001.webm
+        question_text: 您好，我是您的专属AI辅助问诊医生。在接下来的10到15分钟里，我会先向您了解一些基本情况，然后会邀请您完成几个简单的测试，最后为您提供专属的调节建议。希望您能放松身心，根据实际情况作答。接下来，我们正式开始吧。
+        subtitle_text: null
+        response_required: false
+
+  - stage_id: stage-02-chief-complaint
+    stage_label: 主诉采集
+    stage_order: 2
+    question_items:
+      - question_key: chief-complaint-001
+        order: 1
+        node_id: ask-chief-complaint
+        video_asset_id: TBD
+        video_uri: TBD
+        question_text: TBD
+        subtitle_text: null
+        response_required: true
+
+  - stage_id: stage-03-current-history-followup
+    stage_label: 现病史
+    stage_order: 3
+    question_items:
+      - question_key: current-history-001
+        order: 1
+        node_id: general-track-open
+        video_asset_id: TBD
+        video_uri: TBD
+        question_text: TBD
+        subtitle_text: null
+        response_required: true
+
+  - stage_id: stage-04-high-risk-screening
+    stage_label: 风险筛查
+    stage_order: 4
+    question_items:
+      - question_key: risk-screening-001
+        order: 1
+        node_id: ask-suicidal-ideation
+        video_asset_id: TBD
+        video_uri: TBD
+        question_text: TBD
+        subtitle_text: null
+        response_required: true

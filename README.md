@@ -75,6 +75,8 @@
 
 ## 本地运行
 
+以下命令默认都在仓库根目录 `depression-system/` 下执行。
+
 核心链路：
 
 ```bash
@@ -98,6 +100,53 @@ make up-ai
 ```bash
 make compose-config
 make phase-check
+```
+
+常用 Docker Compose 命令：
+
+整套开发环境一行重建并启动：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml up -d --build
+```
+
+整套开发环境拆成两步：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml build
+docker compose -f infra/compose/docker-compose.dev.yml up -d
+```
+
+只重建并启动 `consultation` 及其依赖：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml up -d --build consultation
+```
+
+只启动 `consultation` 拆成两步：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml build consultation
+docker compose -f infra/compose/docker-compose.dev.yml up -d consultation
+```
+
+查看容器状态：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml ps
+```
+
+查看常用日志：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml logs -f consultation
+docker compose -f infra/compose/docker-compose.dev.yml logs -f gateway-service
+```
+
+停止并移除当前 compose 环境：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml down
 ```
 
 ## 主要文档

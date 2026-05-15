@@ -14,6 +14,7 @@
 *.log
 *.db
 *.sqlite3
+apps/consultation/client/src/assets/digital-human/**/*.mkv
 
 aic-coralreef
 Depression

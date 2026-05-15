@@ -38,6 +38,7 @@
 - `full_name`
 - `role`
 - `profile_status`
+- `gender`
 - `age`
 - `height_cm`
 - `weight_kg`
@@ -45,9 +46,14 @@
 - `parents_marital_status`
 - `parents_occupation`
 - `prior_psychiatric_visit`
-- `family_history`
 - `created_at`
 - `updated_at`
+
+说明：
+
+- `full_name` 仍是顶层用户字段
+- 问诊准备相关字段后续统一按 `full_name`、`age`、`gender`、`height_cm`、`weight_kg`、`marital_status`、`parents_marital_status`、`parents_occupation`、`prior_psychiatric_visit` 收口
+- `/api/v1/users/me/profile` 只基于当前 session token 解析出的用户执行更新，不接受客户端指定其他用户 id
 
 ### 3.2 sessions
 

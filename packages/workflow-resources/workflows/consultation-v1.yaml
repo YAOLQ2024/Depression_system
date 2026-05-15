@@ -43,6 +43,7 @@ stages:
     engine: rule-v1
     doctor_personas_dir: /home/ZR/data2/MCS/packages/workflow-resources/doctor-personas
     script_dir: /home/ZR/data2/MCS/packages/workflow-resources/interview-scripts/rule-v1
+    playlist_manifest: consultation-v1
     substeps:
       - stage-01-greeting-and-briefing
       - stage-02-chief-complaint

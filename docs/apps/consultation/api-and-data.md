@@ -28,13 +28,19 @@
 | `/api/v1/consultations/{id}` | `GET` | 获取问诊状态 | `gateway-service` |
 | `/api/v1/consultations/{id}/start` | `POST` | 启动正式问诊 | `gateway-service` |
 | `/api/v1/consultations/{id}/turns` | `POST` | 提交患者问答轮次 | `gateway-service` |
+| `/api/v1/assessment/catalog` | `GET` | 拉取量表目录 | `gateway-service` |
+| `/api/v1/assessment/sessions` | `POST` | 创建量表会话 | `gateway-service` |
+| `/api/v1/assessment/sessions/{id}` | `GET` | 获取量表会话状态 | `gateway-service` |
+| `/api/v1/assessment/sessions/{id}/answers` | `POST` | 提交量表答案 | `gateway-service` |
 
-## 3. 规划中的新增接口
+## 3. 后续扩展接口
 
-| 接口 | 方法 | 用途 | 目标服务 |
-| --- | --- | --- | --- |
-| `/api/v1/assessment/sessions` | `POST` | 创建量表会话 | `gateway-service` 转发到 `assessment-service` |
-| `/api/v1/assessment/sessions/{id}/answers` | `POST` | 提交量表答案 | `gateway-service` 转发到 `assessment-service` |
+当前前端接入链路已覆盖量表目录、会话创建、会话状态读取和单题答案提交。
+
+后续如需扩展，可再补：
+
+- 量表会话完成后的结果导出接口
+- 更细粒度的量表目录筛选和后台配置接口
 
 ## 4. 前端状态
 
@@ -65,14 +71,14 @@
   "role": "participant",
   "profile_status": "draft|completed",
   "profile": {
+    "gender": "女",
     "age": 25,
     "height_cm": 170,
     "weight_kg": 60,
     "marital_status": "未婚",
     "parents_marital_status": "已婚",
     "parents_occupation": "教师",
-    "prior_psychiatric_visit": "无",
-    "family_history": "无"
+    "prior_psychiatric_visit": "无"
   }
 }
 ```
@@ -100,13 +106,20 @@
 
 - `full_name`
 - `age`
+- `gender`
 - `height_cm`
 - `weight_kg`
 - `marital_status`
 - `parents_marital_status`
 - `parents_occupation`
 - `prior_psychiatric_visit`
-- `family_history`
+
+约定：
+
+- `full_name` 更新顶层用户字段 `user.full_name`
+- 其余字段进入 `user.profile`
+- `PUT /users/me/profile` 只允许更新当前登录用户资料，不接受外部 `user_id`
+- 不同登录用户之间的资料隔离由服务端认证态保证，不能依赖前端过滤
 
 校验原则：
 
