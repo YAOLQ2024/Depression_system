@@ -1,0 +1,9 @@
+{
+  "name": "抑郁症数字人辅助评估与调节系统",
+  "description": "面向心理健康辅助评估与调节的医疗AI网页系统，支持数字人多模态问诊、脑电波与表情实时监测分析。",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
