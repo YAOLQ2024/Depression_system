@@ -89,10 +89,8 @@ export default function HomePage() {
   return (
     <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-[#9eaaf5] relative z-0">
       <div className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-40 mix-blend-overlay" style={{ backgroundImage: "url('/4K.png')" }} />
-      <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-500/30 via-purple-400/20 to-blue-400/30" />
 
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-300/30 blur-[120px] rounded-full pointer-events-none" />
-      <div className="absolute top-[20%] right-[-10%] w-[60%] h-[60%] bg-purple-400/20 blur-[150px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] bg-indigo-500/20 blur-[130px] rounded-full pointer-events-none" />
 
       <div className="relative z-20 w-full">
@@ -102,9 +100,9 @@ export default function HomePage() {
       <main className="flex-1 relative flex z-10 overflow-hidden w-full max-w-[1440px] mx-auto">
         <div className="absolute left-0 bottom-0 w-[45%] h-[90%] md:h-[95%] lg:h-[105%] flex items-end justify-center pointer-events-none z-20 xl:left-[2%]">
           <img
-            src="/SZR.png"
-            alt="AI Digital Human"
-            className="w-auto h-full object-contain object-bottom scale-x-[-1] md:scale-x-100"
+            src="/home-digital-human.png"
+            alt="首页数字人形象"
+            className="w-auto h-[88%] md:h-[90%] lg:h-[92%] object-contain object-bottom scale-x-[-1] drop-shadow-[0_24px_48px_rgba(31,41,95,0.22)] md:scale-x-100"
           />
         </div>
 
