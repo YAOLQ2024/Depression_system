@@ -16,7 +16,47 @@ import { APP_PATHS } from "../routes";
 import type { ConsultationSession } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
-const RECORDING_MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+const CAMERA_CAPTURE_INTERVAL_MS = 2500;
+
+type BrowserSpeechRecognitionResult = {
+  0: {
+    transcript: string;
+  };
+  isFinal: boolean;
+  length: number;
+};
+
+type BrowserSpeechRecognitionEvent = Event & {
+  resultIndex: number;
+  results: ArrayLike<BrowserSpeechRecognitionResult>;
+};
+
+type BrowserSpeechRecognitionErrorEvent = Event & {
+  error?: string;
+};
+
+type BrowserSpeechRecognition = EventTarget & {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onend: ((event: Event) => void) | null;
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+declare global {
+  interface Window {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
 
 function resolvePlayableVideoUri(session: ConsultationSession | null) {
   const candidate = session?.current_prompt_video_uri ?? session?.current_question_item?.video_uri ?? "";
@@ -99,6 +139,136 @@ function pickSupportedRecordingMimeType() {
   return RECORDING_MIME_CANDIDATES.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "";
 }
 
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function mapMimeTypeToAudioFormat(mimeType: string) {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("wav")) {
+    return "wav";
+  }
+  if (normalized.includes("ogg")) {
+    return "ogg";
+  }
+  if (normalized.includes("flac")) {
+    return "flac";
+  }
+  return null;
+}
+
+async function blobToBase64(blob: Blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return window.btoa(binary);
+}
+
+function encodeWav(audioBuffer: AudioBuffer) {
+  const channelCount = Math.min(audioBuffer.numberOfChannels, 1);
+  const sampleRate = audioBuffer.sampleRate;
+  const samples = audioBuffer.length;
+  const bytesPerSample = 2;
+  const dataSize = samples * channelCount * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  function writeString(value: string) {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset, value.charCodeAt(index));
+      offset += 1;
+    }
+  }
+
+  writeString("RIFF");
+  view.setUint32(offset, 36 + dataSize, true);
+  offset += 4;
+  writeString("WAVE");
+  writeString("fmt ");
+  view.setUint32(offset, 16, true);
+  offset += 4;
+  view.setUint16(offset, 1, true);
+  offset += 2;
+  view.setUint16(offset, channelCount, true);
+  offset += 2;
+  view.setUint32(offset, sampleRate, true);
+  offset += 4;
+  view.setUint32(offset, sampleRate * channelCount * bytesPerSample, true);
+  offset += 4;
+  view.setUint16(offset, channelCount * bytesPerSample, true);
+  offset += 2;
+  view.setUint16(offset, 16, true);
+  offset += 2;
+  writeString("data");
+  view.setUint32(offset, dataSize, true);
+  offset += 4;
+
+  const channelData = audioBuffer.getChannelData(0);
+  for (let index = 0; index < samples; index += 1) {
+    const sample = Math.max(-1, Math.min(1, channelData[index] || 0));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  return buffer;
+}
+
+async function convertRecordedBlobToUpload(blob: Blob, mimeType: string) {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+
+  if (AudioContextCtor) {
+    try {
+      const context = new AudioContextCtor();
+      const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+      const wavBuffer = encodeWav(decoded);
+      await context.close();
+      return {
+        audioBase64: await blobToBase64(new Blob([wavBuffer], { type: "audio/wav" })),
+        audioFormat: "wav",
+        samplingRate: decoded.sampleRate,
+      };
+    } catch {
+      // fall back below
+    }
+  }
+
+  const directFormat = mapMimeTypeToAudioFormat(mimeType);
+  if (!directFormat) {
+    throw new Error("当前浏览器录音格式无法直接提交，建议使用 Chrome 并允许 OGG/Opus 或 WAV 转换。");
+  }
+
+  return {
+    audioBase64: await blobToBase64(blob),
+    audioFormat: directFormat,
+    samplingRate: null,
+  };
+}
+
+async function captureVideoFrame(videoElement: HTMLVideoElement, mimeType = "image/jpeg") {
+  if (!videoElement.videoWidth || !videoElement.videoHeight) {
+    return null;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = videoElement.videoWidth;
+  canvas.height = videoElement.videoHeight;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+  context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), mimeType, 0.85);
+  });
+}
+
 function formatDuration(durationMs: number) {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
@@ -130,20 +300,36 @@ export default function ConsultationPage() {
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [answerWindowOpenedAt, setAnswerWindowOpenedAt] = useState<string | null>(null);
   const [lastRecording, setLastRecording] = useState<LocalRecordingSnapshot | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [speechTranscript, setSpeechTranscript] = useState("");
+  const [recognitionInterimTranscript, setRecognitionInterimTranscript] = useState("");
   const { toast, pushToast } = useTimedToast();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<Date | null>(null);
   const answerWindowPromptKeyRef = useRef<string | null>(null);
   const lastRecordingUrlRef = useRef<string | null>(null);
   const isUnmountingRef = useRef(false);
+  const frameIndexRef = useRef(0);
+  const captureInFlightRef = useRef(false);
+  const speechTranscriptRef = useRef("");
+  const recognitionInterimRef = useRef("");
 
   const playableVideoUri = useMemo(() => resolvePlayableVideoUri(consultation), [consultation]);
   const promptText = useMemo(() => resolvePromptText(consultation), [consultation]);
   const subtitleText = useMemo(() => resolveSubtitleText(consultation), [consultation]);
+  const liveTranscriptText = useMemo(
+    () => `${speechTranscript}${recognitionInterimTranscript}`.trim(),
+    [recognitionInterimTranscript, speechTranscript],
+  );
   const currentPromptKey = consultation?.current_question_item?.question_key ?? consultation?.current_prompt_key ?? null;
   const responseWindowStatusText = useMemo(() => {
     if (!consultation?.current_question_item?.response_required) {
@@ -224,6 +410,12 @@ export default function ConsultationPage() {
   }, [videoError]);
 
   useEffect(() => {
+    if (cameraError) {
+      pushToast(cameraError, "warning");
+    }
+  }, [cameraError, pushToast]);
+
+  useEffect(() => {
     if (consultation?.status === "waiting_user_input" && currentPromptKey) {
       if (answerWindowPromptKeyRef.current !== currentPromptKey) {
         answerWindowPromptKeyRef.current = currentPromptKey;
@@ -241,6 +433,14 @@ export default function ConsultationPage() {
   }, [consultation?.status, currentPromptKey, isRecording]);
 
   useEffect(() => {
+    speechTranscriptRef.current = speechTranscript;
+  }, [speechTranscript]);
+
+  useEffect(() => {
+    recognitionInterimRef.current = recognitionInterimTranscript;
+  }, [recognitionInterimTranscript]);
+
+  useEffect(() => {
     if (!isRecording) {
       return;
     }
@@ -256,12 +456,88 @@ export default function ConsultationPage() {
   }, [isRecording]);
 
   useEffect(() => {
+    if (!consultation) {
+      return;
+    }
+
+    void actions.refreshConsultationMultimodalLive();
+    const timer = window.setInterval(() => {
+      void actions.refreshConsultationMultimodalLive();
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [actions, consultation?.session_id]);
+
+  useEffect(() => {
+    if (!consultation?.current_question_item?.question_key || !cameraReady) {
+      return;
+    }
+    if (!["waiting_user_input", "recording_response", "processing_response", "running"].includes(consultation.status)) {
+      return;
+    }
+
+    void submitCameraCaptures();
+    const timer = window.setInterval(() => {
+      void submitCameraCaptures();
+    }, CAMERA_CAPTURE_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [cameraReady, consultation?.current_question_item?.question_key, consultation?.status]);
+
+  useEffect(() => {
     return () => {
       isUnmountingRef.current = true;
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      speechRecognitionRef.current?.abort();
       if (lastRecordingUrlRef.current) {
         URL.revokeObjectURL(lastRecordingUrlRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError("当前浏览器不支持摄像头采集。");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function setupCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+          },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        cameraStreamRef.current = stream;
+        setCameraStream(stream);
+        setCameraReady(true);
+        setCameraError("");
+      } catch (caught) {
+        if (!cancelled) {
+          setCameraReady(false);
+          setCameraStream(null);
+          setCameraError(caught instanceof Error ? caught.message : "摄像头授权失败。");
+        }
+      }
+    }
+
+    void setupCamera();
+
+    return () => {
+      cancelled = true;
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      setCameraStream(null);
+      setCameraReady(false);
     };
   }, []);
 
@@ -325,6 +601,7 @@ export default function ConsultationPage() {
 
   async function handleRefresh() {
     await actions.refreshConsultation();
+    await actions.refreshConsultationMultimodalLive();
   }
 
   function cleanupRecorderResources() {
@@ -332,6 +609,105 @@ export default function ConsultationPage() {
     mediaStreamRef.current = null;
     mediaRecorderRef.current = null;
     audioChunksRef.current = [];
+  }
+
+  function stopSpeechRecognition() {
+    const recognition = speechRecognitionRef.current;
+    if (!recognition) {
+      return;
+    }
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try {
+      recognition.stop();
+    } catch {
+      recognition.abort();
+    }
+    speechRecognitionRef.current = null;
+  }
+
+  function startSpeechRecognition() {
+    const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
+    if (!SpeechRecognitionCtor) {
+      pushToast("当前浏览器不支持内置语音转写，文本模态可能无法同步出结果。", "warning");
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "zh-CN";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript?.trim() || "";
+        if (!transcript) {
+          continue;
+        }
+        if (result.isFinal) {
+          finalText += transcript;
+        } else {
+          interimText += transcript;
+        }
+      }
+      speechTranscriptRef.current = finalText;
+      recognitionInterimRef.current = interimText;
+      setSpeechTranscript(finalText);
+      setRecognitionInterimTranscript(interimText);
+    };
+    recognition.onerror = (event) => {
+      if (event.error && event.error !== "no-speech" && event.error !== "aborted") {
+        pushToast(`浏览器语音识别不可用：${event.error}`, "warning");
+      }
+    };
+    recognition.onend = () => {
+      speechRecognitionRef.current = null;
+    };
+    speechRecognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  async function submitCameraCaptures(turnId?: string | null) {
+    if (!consultation?.current_question_item?.question_key || !cameraVideoRef.current || captureInFlightRef.current) {
+      return;
+    }
+    if (!cameraReady) {
+      return;
+    }
+
+    captureInFlightRef.current = true;
+    const startedAt = new Date().toISOString();
+
+    try {
+      const blob = await captureVideoFrame(cameraVideoRef.current);
+      if (!blob) {
+        return;
+      }
+
+      frameIndexRef.current += 1;
+      const frameIndex = frameIndexRef.current;
+      const endedAt = new Date().toISOString();
+      const imageFile = new File([blob], `capture-${frameIndex}.jpg`, { type: blob.type || "image/jpeg" });
+      const payload = {
+        question_key: consultation.current_question_item.question_key,
+        turn_id: turnId || null,
+        capture_started_at: startedAt,
+        capture_ended_at: endedAt,
+        frame_index: frameIndex,
+        mime_type: imageFile.type || "image/jpeg",
+        image_file: imageFile,
+      };
+
+      await Promise.all([
+        actions.submitConsultationFaceCapture(payload),
+        actions.submitConsultationPoseCapture(payload),
+      ]);
+    } finally {
+      captureInFlightRef.current = false;
+    }
   }
 
   async function startBrowserRecording() {
@@ -360,8 +736,13 @@ export default function ConsultationPage() {
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       recordingStartedAtRef.current = startedAt;
+      speechTranscriptRef.current = "";
+      recognitionInterimRef.current = "";
+      setSpeechTranscript("");
+      setRecognitionInterimTranscript("");
       setRecordingElapsedMs(0);
       setIsRecording(true);
+      startSpeechRecognition();
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -381,12 +762,14 @@ export default function ConsultationPage() {
         if (isUnmountingRef.current) {
           cleanupRecorderResources();
           recordingStartedAtRef.current = null;
+          stopSpeechRecognition();
           return;
         }
 
         const completedAt = new Date();
         const responseStartedAt = recordingStartedAtRef.current || completedAt;
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const transcriptText = `${speechTranscriptRef.current}${recognitionInterimRef.current}`.trim() || null;
         const objectUrl = URL.createObjectURL(blob);
 
         if (lastRecordingUrlRef.current) {
@@ -407,15 +790,21 @@ export default function ConsultationPage() {
         setIsRecording(false);
         setRecordingElapsedMs(0);
         setIsSubmittingResponse(true);
+        stopSpeechRecognition();
 
         try {
+          const upload = await convertRecordedBlobToUpload(blob, recorder.mimeType || blob.type || "audio/webm");
           await actions.submitConsultationTurn({
             input_type: "speech",
-            raw_input: null,
-            transcript_text: null,
+            raw_input: transcriptText,
+            transcript_text: transcriptText,
+            audio_base64: upload.audioBase64,
+            audio_format: upload.audioFormat,
+            sampling_rate: upload.samplingRate,
             response_started_at: responseStartedAt.toISOString(),
             response_completed_at: completedAt.toISOString(),
           });
+          await submitCameraCaptures();
         } finally {
           setIsSubmittingResponse(false);
         }
@@ -425,6 +814,7 @@ export default function ConsultationPage() {
     } catch (caught) {
       cleanupRecorderResources();
       recordingStartedAtRef.current = null;
+      stopSpeechRecognition();
       setIsRecording(false);
       setRecordingElapsedMs(0);
       pushToast(caught instanceof Error ? caught.message : "麦克风授权失败，无法开始录音。", "error");
@@ -436,6 +826,7 @@ export default function ConsultationPage() {
     if (!recorder || recorder.state === "inactive") {
       cleanupRecorderResources();
       recordingStartedAtRef.current = null;
+      stopSpeechRecognition();
       setIsRecording(false);
       setRecordingElapsedMs(0);
       return;
@@ -626,6 +1017,10 @@ export default function ConsultationPage() {
                     onRefresh={handleRefresh}
                     refreshing={state.loading}
                     isRecording={isRecording}
+                    cameraStream={cameraStream}
+                    cameraReady={cameraReady}
+                    cameraError={cameraError}
+                    localTranscript={liveTranscriptText}
                     className="h-full"
                   />
                 </div>
@@ -635,7 +1030,15 @@ export default function ConsultationPage() {
         </div>
 
         <div className={`absolute transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] z-40 ${isOpen ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"} right-4 md:right-8 top-4 md:top-6`}>
-          <CameraPreview className="w-[25vw] min-w-[160px] max-w-[260px] aspect-[4/3] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.4)] border border-white/20 ml-auto" />
+          <CameraPreview
+            className="w-[25vw] min-w-[160px] max-w-[260px] aspect-[4/3] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.4)] border border-white/20 ml-auto"
+            videoRef={cameraVideoRef}
+            stream={cameraStream}
+            cameraReady={cameraReady}
+            audioActive={isRecording}
+            detailText={cameraReady ? "摄像头已接入，正在采样" : "等待摄像头授权"}
+            errorText={cameraError}
+          />
         </div>
       </div>
     </ConsultationLayout>

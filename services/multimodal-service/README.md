@@ -58,9 +58,16 @@
 - `MODEL_PROVIDER`
 - `POSE_WINDOW`
 
+## 当前 Step 4D 已完成
+
+- `audio-turns` 后内部补齐 `speech_emotion` / `text_emotion`
+- `captures/face` / `captures/pose` 的连续采样接入
+- `/live` 的前端看板稳定结构
+- `/turns/{turn_id}/bundle` 的 turn 级聚合输出
+
 ## 下一步尚未完成
 
-- 会话级多模态采集接口
-- 每个问诊 turn 的标准化 bundle 落库
-- 面向前端面板的 live / history 查询接口
+- EEG 模态
+- Dolphin ASR
+- MinIO 音频落盘
 - 和 `consultation-service`、`risk-service` 的正式联调

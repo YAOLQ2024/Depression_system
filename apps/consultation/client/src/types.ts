@@ -58,6 +58,64 @@ export type ConsultationQuestionItem = {
   response_required: boolean;
 };
 
+export type MultimodalRankedLabel = {
+  label: string;
+  score: number;
+};
+
+export type SpeechMultimodalLive = {
+  status: string;
+  primary_label?: string | null;
+  primary_score?: number | null;
+  top_3_labels?: MultimodalRankedLabel[];
+  arousal?: number | null;
+  valence?: number | null;
+  audio_uri?: string | null;
+  captured_at?: string | null;
+};
+
+export type TextMultimodalLive = {
+  status: string;
+  primary_label?: string | null;
+  primary_score?: number | null;
+  top_3_labels?: MultimodalRankedLabel[];
+  negative_terms?: string[];
+  transcript_text?: string | null;
+  captured_at?: string | null;
+};
+
+export type FacePoseQualityFlags = Record<string, number | boolean | null>;
+
+export type FacePoseMultimodalLive = {
+  status: string;
+  primary_label?: string | null;
+  primary_score?: number | null;
+  top_3_labels?: MultimodalRankedLabel[];
+  quality_flags?: FacePoseQualityFlags;
+  latest_capture_at?: string | null;
+  sample_count?: number | null;
+};
+
+export type ConsultationMultimodalLive = {
+  speech: SpeechMultimodalLive;
+  text: TextMultimodalLive;
+  face: FacePoseMultimodalLive;
+  pose: FacePoseMultimodalLive;
+  updated_at?: string | null;
+};
+
+export type ConsultationTurnMultimodalBundle = {
+  turn_id?: string | null;
+  session_id?: string | null;
+  question_key?: string | null;
+  generated_at?: string | null;
+  speech_features?: Record<string, unknown>;
+  text_features?: Record<string, unknown>;
+  face_features?: Record<string, unknown>;
+  pose_features?: Record<string, unknown>;
+  updated_at?: string | null;
+};
+
 export type ConsultationSession = {
   session_id: string;
   user_id: string;
@@ -90,6 +148,9 @@ export type ConsultationSession = {
   high_risk_screening_result?: Record<string, unknown>;
   scale_handoff_payload?: Record<string, unknown>;
   required_scales?: string[];
+  multimodal_session_id?: string | null;
+  multimodal_live?: ConsultationMultimodalLive;
+  multimodal_live_updated_at?: string | null;
   created_at?: string;
   updated_at?: string;
   started_at?: string | null;

@@ -7,6 +7,14 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.clients.multimodal_client import (
+    create_multimodal_session as create_upstream_multimodal_session,
+    get_multimodal_live as fetch_upstream_multimodal_live,
+    get_multimodal_turn_bundle as fetch_upstream_multimodal_turn_bundle,
+    submit_face_capture as submit_upstream_face_capture,
+    submit_audio_turn as submit_upstream_audio_turn,
+    submit_pose_capture as submit_upstream_pose_capture,
+)
 from app.database import get_db_session
 from app.models import ConsultationSession, ConsultationTurn
 from app.schemas.consultations import (
@@ -39,6 +47,24 @@ def _ensure_json_dict(value: dict[str, Any] | None) -> dict[str, Any]:
 
 def _ensure_json_list(value: list[Any] | None) -> list[Any]:
     return list(value or [])
+
+
+def _extract_upstream_data(upstream: dict, *, error_code: int) -> dict[str, Any]:
+    if upstream["status"] >= 400:
+        payload = upstream.get("payload") or {}
+        raise ConsultationServiceError(
+            str(payload.get("message") or "multimodal service request failed"),
+            code=int(payload.get("code") or error_code),
+            status_code=int(upstream["status"]),
+        )
+    data = (upstream.get("payload") or {}).get("data") or {}
+    if not isinstance(data, dict):
+        raise ConsultationServiceError(
+            "multimodal service returned invalid payload",
+            code=error_code,
+            status_code=502,
+        )
+    return data
 
 
 def _default_engine_state() -> dict[str, Any]:
@@ -689,6 +715,13 @@ def _serialize_session(
         "high_risk_screening_result": (
             session_record.high_risk_screening_result or {}
         ),
+        "multimodal_session_id": session_record.multimodal_session_id,
+        "multimodal_live": session_record.multimodal_live_payload or {},
+        "multimodal_live_updated_at": (
+            session_record.multimodal_live_updated_at.isoformat()
+            if session_record.multimodal_live_updated_at
+            else None
+        ),
         "scale_handoff_payload": session_record.scale_handoff_payload or {},
         "required_scales": bundle.required_scales,
         "created_at": session_record.created_at.isoformat(),
@@ -721,6 +754,29 @@ def _require_acting_user_id(acting_user_id: str | None) -> str:
     return acting_user_id
 
 
+def _refresh_multimodal_live_snapshot(
+    session_record: ConsultationSession,
+    *,
+    acting_user_id: str,
+) -> dict[str, Any]:
+    if not session_record.multimodal_session_id:
+        raise ConsultationServiceError(
+            "multimodal session not initialized",
+            code=4096,
+            status_code=409,
+        )
+    live_data = _extract_upstream_data(
+        fetch_upstream_multimodal_live(
+            multimodal_session_id=session_record.multimodal_session_id,
+            acting_user_id=acting_user_id,
+        ),
+        error_code=5024,
+    )
+    session_record.multimodal_live_payload = live_data
+    session_record.multimodal_live_updated_at = _now()
+    return live_data
+
+
 def create_consultation_session(
     payload: CreateConsultationSessionRequest, acting_user_id: str | None
 ) -> dict[str, Any]:
@@ -741,6 +797,23 @@ def create_consultation_session(
             "doctor persona not found", code=4006, status_code=404
         )
 
+    consultation_session_id = str(uuid.uuid4())
+    multimodal_data = _extract_upstream_data(
+        create_upstream_multimodal_session(
+            owner_session_id=consultation_session_id,
+            user_id=payload.user_id,
+        ),
+        error_code=5021,
+    )
+    multimodal_session = multimodal_data.get("multimodal_session") or {}
+    multimodal_session_id = multimodal_session.get("id")
+    if not multimodal_session_id:
+        raise ConsultationServiceError(
+            "multimodal session id missing",
+            code=5022,
+            status_code=502,
+        )
+
     first_stage_id = bundle.substeps[0]
     first_stage = bundle.stage_scripts[first_stage_id]
     now = _now()
@@ -755,7 +828,7 @@ def create_consultation_session(
         "consultation_ready_state": payload.consultation_ready_state,
     }
     session_record = ConsultationSession(
-        id=str(uuid.uuid4()),
+        id=consultation_session_id,
         user_id=payload.user_id,
         workflow_id=bundle.workflow_id,
         script_bundle=bundle.script_bundle,
@@ -771,6 +844,9 @@ def create_consultation_session(
         context_snapshot=context_snapshot,
         slot_values={},
         engine_state=_default_engine_state(),
+        multimodal_session_id=multimodal_session_id,
+        multimodal_live_payload={},
+        multimodal_live_updated_at=None,
         created_at=now,
         updated_at=now,
     )
@@ -945,10 +1021,10 @@ def submit_consultation_turn(
             .count()
             + 1
         )
+        turn_id = str(uuid.uuid4())
 
-        db_session.add(
-            ConsultationTurn(
-                id=str(uuid.uuid4()),
+        consultation_turn = ConsultationTurn(
+                id=turn_id,
                 session_id=session_record.id,
                 workflow_stage_id=session_record.workflow_stage_id,
                 stage_id=session_record.current_stage_id,
@@ -982,12 +1058,41 @@ def submit_consultation_turn(
                 raw_input=payload.raw_input,
                 transcript_text=payload.transcript_text,
                 structured_fields=extracted_fields or None,
+                multimodal_bundle_payload=None,
                 branch_taken=branch_name,
                 response_started_at=response_started_at,
                 response_completed_at=response_completed_at,
                 created_at=turn_timestamp,
             )
-        )
+        db_session.add(consultation_turn)
+
+        if (
+            payload.input_type == "speech"
+            and payload.audio_base64
+            and payload.audio_format
+            and session_record.multimodal_session_id
+        ):
+            audio_turn_data = _extract_upstream_data(
+                submit_upstream_audio_turn(
+                    multimodal_session_id=session_record.multimodal_session_id,
+                    consultation_session_id=session_record.id,
+                    consultation_turn_id=turn_id,
+                    question_key=current_question_item.question_key if current_question_item else None,
+                    transcript_text=payload.transcript_text,
+                    audio_base64=payload.audio_base64,
+                    audio_format=payload.audio_format,
+                    sampling_rate=payload.sampling_rate,
+                    audio_uri=payload.audio_uri,
+                    captured_at=response_completed_at.isoformat(),
+                    acting_user_id=acting_user_id,
+                ),
+                error_code=5023,
+            )
+            consultation_turn.multimodal_bundle_payload = audio_turn_data.get("turn_bundle")
+            _refresh_multimodal_live_snapshot(
+                session_record,
+                acting_user_id=acting_user_id,
+            )
 
         session_record.status = "running"
         session_record.updated_at = _now()
@@ -1001,3 +1106,171 @@ def submit_consultation_turn(
         db_session.flush()
         db_session.refresh(session_record)
         return _serialize_session(session_record, bundle)
+
+
+def get_consultation_multimodal_live(
+    session_id: str,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        live_data = _refresh_multimodal_live_snapshot(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        db_session.flush()
+        return live_data
+
+
+def get_consultation_turn_multimodal_bundle(
+    session_id: str,
+    consultation_turn_id: str,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        consultation_turn = db_session.get(ConsultationTurn, consultation_turn_id)
+        if not consultation_turn or consultation_turn.session_id != session_record.id:
+            raise ConsultationServiceError(
+                "consultation turn not found", code=4043, status_code=404
+            )
+        if consultation_turn.multimodal_bundle_payload:
+            return consultation_turn.multimodal_bundle_payload
+        if not session_record.multimodal_session_id:
+            raise ConsultationServiceError(
+                "multimodal session not initialized",
+                code=4096,
+                status_code=409,
+            )
+        bundle_data = _extract_upstream_data(
+            fetch_upstream_multimodal_turn_bundle(
+                multimodal_session_id=session_record.multimodal_session_id,
+                consultation_turn_id=consultation_turn.id,
+                acting_user_id=acting_user_id,
+            ),
+            error_code=5025,
+        )
+        consultation_turn.multimodal_bundle_payload = bundle_data
+        db_session.add(consultation_turn)
+        db_session.flush()
+        return bundle_data
+
+
+def submit_consultation_face_capture(
+    session_id: str,
+    *,
+    question_key: str,
+    consultation_turn_id: str | None,
+    capture_started_at: str,
+    capture_ended_at: str,
+    frame_index: int,
+    mime_type: str,
+    filename: str,
+    file_bytes: bytes,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        if not session_record.multimodal_session_id:
+            raise ConsultationServiceError(
+                "multimodal session not initialized",
+                code=4096,
+                status_code=409,
+            )
+        capture_data = _extract_upstream_data(
+            submit_upstream_face_capture(
+                multimodal_session_id=session_record.multimodal_session_id,
+                consultation_session_id=session_record.id,
+                question_key=question_key,
+                turn_id=consultation_turn_id,
+                capture_started_at=capture_started_at,
+                capture_ended_at=capture_ended_at,
+                frame_index=frame_index,
+                mime_type=mime_type,
+                file_bytes=file_bytes,
+                filename=filename,
+                acting_user_id=acting_user_id,
+            ),
+            error_code=5026,
+        )
+        if consultation_turn_id:
+            consultation_turn = db_session.get(ConsultationTurn, consultation_turn_id)
+            if consultation_turn and consultation_turn.session_id == session_record.id:
+                consultation_turn.multimodal_bundle_payload = capture_data.get("turn_bundle")
+                db_session.add(consultation_turn)
+        _refresh_multimodal_live_snapshot(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        db_session.flush()
+        return capture_data
+
+
+def submit_consultation_pose_capture(
+    session_id: str,
+    *,
+    question_key: str,
+    consultation_turn_id: str | None,
+    capture_started_at: str,
+    capture_ended_at: str,
+    frame_index: int,
+    mime_type: str,
+    filename: str,
+    file_bytes: bytes,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        if not session_record.multimodal_session_id:
+            raise ConsultationServiceError(
+                "multimodal session not initialized",
+                code=4096,
+                status_code=409,
+            )
+        capture_data = _extract_upstream_data(
+            submit_upstream_pose_capture(
+                multimodal_session_id=session_record.multimodal_session_id,
+                consultation_session_id=session_record.id,
+                question_key=question_key,
+                turn_id=consultation_turn_id,
+                capture_started_at=capture_started_at,
+                capture_ended_at=capture_ended_at,
+                frame_index=frame_index,
+                mime_type=mime_type,
+                file_bytes=file_bytes,
+                filename=filename,
+                acting_user_id=acting_user_id,
+            ),
+            error_code=5027,
+        )
+        if consultation_turn_id:
+            consultation_turn = db_session.get(ConsultationTurn, consultation_turn_id)
+            if consultation_turn and consultation_turn.session_id == session_record.id:
+                consultation_turn.multimodal_bundle_payload = capture_data.get("turn_bundle")
+                db_session.add(consultation_turn)
+        _refresh_multimodal_live_snapshot(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        db_session.flush()
+        return capture_data

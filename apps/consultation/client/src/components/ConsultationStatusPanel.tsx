@@ -3,28 +3,15 @@ import { Activity, AudioLines, BrainCircuit, RefreshCw, ScanFace, Sparkles } fro
 import { Line, LineChart, ResponsiveContainer, YAxis } from "recharts";
 
 import { cn } from "../lib/utils";
-import type { ConsultationSession } from "../types";
+import type {
+  ConsultationMultimodalLive,
+  ConsultationSession,
+  FacePoseMultimodalLive,
+  MultimodalRankedLabel,
+  SpeechMultimodalLive,
+  TextMultimodalLive,
+} from "../types";
 import { CameraPreview } from "./CameraPreview";
-
-type MetricDistribution = {
-  label: string;
-  value: number;
-};
-
-type MonitorSnapshot = {
-  facePrimaryLabel: string;
-  facePrimaryConfidence: number;
-  faceDistribution: MetricDistribution[];
-  poseLabel: string;
-  poseConfidence: number;
-  voiceLabel: string;
-  voiceConfidence: number;
-  textLabel: string;
-  textConfidence: number;
-  transcriptText: string;
-  negativeWords: string[];
-  eegSeries: Array<{ idx: number; alpha: number; beta: number; theta: number }>;
-};
 
 function buildEegSeries(stageOrder: number) {
   return Array.from({ length: 30 }, (_, idx) => {
@@ -40,89 +27,71 @@ function buildEegSeries(stageOrder: number) {
   });
 }
 
-function buildMonitorSnapshot(consultation: ConsultationSession, isRecording: boolean): MonitorSnapshot {
-  const stageOrder = consultation.current_stage?.stage_order ?? consultation.current_question_item?.stage_order ?? 1;
-
-  const stagePresets: Record<number, Omit<MonitorSnapshot, "eegSeries">> = {
-    1: {
-      facePrimaryLabel: "平静",
-      facePrimaryConfidence: 76,
-      faceDistribution: [
-        { label: "中性", value: 15 },
-        { label: "轻度悲伤", value: 7 },
-        { label: "焦虑", value: 2 },
-        { label: "其他", value: 0 },
-      ],
-      poseLabel: "坐姿稳定",
-      poseConfidence: 92,
-      voiceLabel: isRecording ? "语音平稳" : "等待输入",
-      voiceConfidence: isRecording ? 88 : 0,
-      textLabel: "待输入",
-      textConfidence: 0,
-      transcriptText: isRecording ? "语音输入中..." : "当前暂无患者语音转写文本。",
-      negativeWords: [],
-    },
-    2: {
-      facePrimaryLabel: "专注",
-      facePrimaryConfidence: 73,
-      faceDistribution: [
-        { label: "平静", value: 18 },
-        { label: "紧张", value: 9 },
-        { label: "轻度悲伤", value: 6 },
-        { label: "其他", value: 4 },
-      ],
-      poseLabel: "轻微前倾",
-      poseConfidence: 81,
-      voiceLabel: isRecording ? "语速平稳" : "等待输入",
-      voiceConfidence: isRecording ? 84 : 0,
-      textLabel: "待输入",
-      textConfidence: 0,
-      transcriptText: isRecording ? "语音输入中..." : "等待患者开始本轮语音回答。",
-      negativeWords: ["暂无"],
-    },
-    3: {
-      facePrimaryLabel: "低落",
-      facePrimaryConfidence: 61,
-      faceDistribution: [
-        { label: "平静", value: 14 },
-        { label: "悲伤", value: 19 },
-        { label: "疲惫", value: 11 },
-        { label: "其他", value: 6 },
-      ],
-      poseLabel: "动作减缓",
-      poseConfidence: 69,
-      voiceLabel: isRecording ? "语音偏弱" : "等待输入",
-      voiceConfidence: isRecording ? 67 : 0,
-      textLabel: "待输入",
-      textConfidence: 0,
-      transcriptText: isRecording ? "语音输入中..." : "等待患者开始本轮语音回答。",
-      negativeWords: ["暂无"],
-    },
-    4: {
-      facePrimaryLabel: "警觉",
-      facePrimaryConfidence: 68,
-      faceDistribution: [
-        { label: "平静", value: 12 },
-        { label: "焦虑", value: 18 },
-        { label: "担忧", value: 10 },
-        { label: "其他", value: 5 },
-      ],
-      poseLabel: "姿态紧绷",
-      poseConfidence: 74,
-      voiceLabel: isRecording ? "波动明显" : "等待输入",
-      voiceConfidence: isRecording ? 71 : 0,
-      textLabel: "待输入",
-      textConfidence: 0,
-      transcriptText: isRecording ? "语音输入中..." : "等待患者开始本轮语音回答。",
-      negativeWords: ["暂无"],
-    },
-  };
-
-  const preset = stagePresets[stageOrder] || stagePresets[1];
+function buildPendingLive(): ConsultationMultimodalLive {
   return {
-    ...preset,
-    eegSeries: buildEegSeries(stageOrder),
+    speech: { status: "pending", top_3_labels: [] },
+    text: { status: "pending", top_3_labels: [], negative_terms: [] },
+    face: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
+    pose: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
+    updated_at: null,
   };
+}
+
+function resolveLiveData(consultation: ConsultationSession): ConsultationMultimodalLive {
+  return consultation.multimodal_live || buildPendingLive();
+}
+
+function formatPercent(score?: number | null) {
+  if (typeof score !== "number" || Number.isNaN(score)) {
+    return "0%";
+  }
+  const normalized = score <= 1 ? score * 100 : score;
+  return `${Math.max(0, Math.min(100, Math.round(normalized)))}%`;
+}
+
+function getPrimaryLabel(label?: string | null, status?: string) {
+  if (label) {
+    return label;
+  }
+  return status === "ready" ? "已采样" : "等待中";
+}
+
+function getTopLabels(labels?: MultimodalRankedLabel[]) {
+  return (labels || []).slice(0, 4);
+}
+
+function getFaceDetail(live: FacePoseMultimodalLive) {
+  const parts: string[] = [];
+  if (typeof live.sample_count === "number" && live.sample_count > 0) {
+    parts.push(`样本 ${live.sample_count}`);
+  }
+  if (live.latest_capture_at) {
+    parts.push("已更新");
+  }
+  return parts.join(" · ") || "等待采样";
+}
+
+function getPoseDetail(live: FacePoseMultimodalLive) {
+  const flags = live.quality_flags || {};
+  const ratios = Object.entries(flags)
+    .filter(([, value]) => typeof value === "number" && (value as number) > 0)
+    .slice(0, 2)
+    .map(([key, value]) => `${key}:${formatPercent(value as number)}`);
+  return ratios.join(" · ") || "等待采样";
+}
+
+function getVoiceDetail(live: SpeechMultimodalLive, isRecording: boolean) {
+  if (isRecording) {
+    return "录音与识别进行中";
+  }
+  if (live.captured_at) {
+    return "本轮语音已入库";
+  }
+  return "等待语音提交";
+}
+
+function getTextBody(live: TextMultimodalLive, localTranscript?: string) {
+  return localTranscript?.trim() || live.transcript_text?.trim() || "等待患者语音转写文本。";
 }
 
 function SectionCard({
@@ -156,13 +125,14 @@ function SectionCard({
 }
 
 function DistributionBar({ label, value }: { label: string; value: number }) {
+  const percentage = Math.max(0, Math.min(100, Math.round(value <= 1 ? value * 100 : value)));
   return (
     <div className="flex items-center gap-2 text-[11px]">
       <span className="w-14 shrink-0 text-slate-400">{label}</span>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/80">
-        <div className="h-full rounded-full bg-blue-500" style={{ width: `${value}%` }} />
+        <div className="h-full rounded-full bg-blue-500" style={{ width: `${percentage}%` }} />
       </div>
-      <span className="w-8 shrink-0 text-right text-slate-400">{value}%</span>
+      <span className="w-8 shrink-0 text-right text-slate-400">{percentage}%</span>
     </div>
   );
 }
@@ -175,10 +145,7 @@ function WaveBars({ active }: { active: boolean }) {
       {barHeights.map((height, index) => (
         <span
           key={`${height}-${index}`}
-          className={cn(
-            "w-[3px] rounded-full bg-blue-500/90 transition-all duration-300",
-            active && "animate-pulse",
-          )}
+          className={cn("w-[3px] rounded-full bg-blue-500/90 transition-all duration-300", active && "animate-pulse")}
           style={{
             height,
             animationDelay: `${index * 90}ms`,
@@ -191,14 +158,8 @@ function WaveBars({ active }: { active: boolean }) {
 }
 
 function NegativeWordBadge({ word }: { word: string }) {
-  const isEmpty = word === "暂无";
   return (
-    <span
-      className={cn(
-        "rounded-full border px-2 py-0.5 text-[10px]",
-        isEmpty ? "border-white/12 text-slate-400" : "border-rose-300/20 bg-rose-500/10 text-rose-200",
-      )}
-    >
+    <span className="rounded-full border border-rose-300/20 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-200">
       {word}
     </span>
   );
@@ -210,14 +171,26 @@ export function ConsultationStatusPanel({
   refreshing = false,
   isRecording = false,
   className,
+  cameraStream = null,
+  cameraReady = false,
+  cameraError = null,
+  localTranscript = "",
 }: {
   consultation: ConsultationSession;
   onRefresh: () => void;
   refreshing?: boolean;
   isRecording?: boolean;
   className?: string;
+  cameraStream?: MediaStream | null;
+  cameraReady?: boolean;
+  cameraError?: string | null;
+  localTranscript?: string;
 }) {
-  const snapshot = buildMonitorSnapshot(consultation, isRecording);
+  const snapshot = resolveLiveData(consultation);
+  const stageOrder = consultation.current_stage?.stage_order ?? consultation.current_question_item?.stage_order ?? 1;
+  const eegSeries = buildEegSeries(stageOrder);
+  const faceLabels = getTopLabels(snapshot.face.top_3_labels);
+  const textWords = snapshot.text.negative_terms || [];
 
   return (
     <div className={cn("w-full h-full min-h-0 font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
@@ -236,10 +209,17 @@ export function ConsultationStatusPanel({
       </div>
 
       <div className="flex-1 flex flex-col gap-[3px] p-[3px]">
-        <SectionCard title="表情检测">
+        <SectionCard title="表情检测" rightStatus={snapshot.face.status === "ready" ? "ready" : "pending"}>
           <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[180px]">
             <div className="h-full overflow-hidden rounded-[16px] border border-white/8">
-              <CameraPreview className="h-full w-full !rounded-none !border-none !shadow-none" />
+              <CameraPreview
+                className="h-full w-full !rounded-none !border-none !shadow-none"
+                stream={cameraStream}
+                cameraReady={cameraReady}
+                audioActive={isRecording}
+                detailText={getFaceDetail(snapshot.face)}
+                errorText={cameraError}
+              />
             </div>
             <div className="flex h-full flex-col justify-between rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex items-center gap-2">
@@ -247,14 +227,20 @@ export function ConsultationStatusPanel({
                   <ScanFace className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-[19px] font-bold leading-none text-emerald-400">{snapshot.facePrimaryLabel}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-300">{snapshot.facePrimaryConfidence}% 置信度</div>
+                  <div className="text-[19px] font-bold leading-none text-emerald-400">
+                    {getPrimaryLabel(snapshot.face.primary_label, snapshot.face.status)}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-slate-300">{formatPercent(snapshot.face.primary_score)} 置信度</div>
                 </div>
               </div>
               <div className="mt-2 space-y-1.5">
-                {snapshot.faceDistribution.map((item) => (
-                  <DistributionBar key={item.label} label={item.label} value={item.value} />
-                ))}
+                {faceLabels.length > 0 ? (
+                  faceLabels.map((item) => <DistributionBar key={item.label} label={item.label} value={item.score} />)
+                ) : (
+                  <div className="rounded-[14px] border border-dashed border-white/10 px-3 py-4 text-center text-[11px] text-slate-400">
+                    摄像头已开启后会持续上传表情帧并在这里显示结果。
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -264,7 +250,7 @@ export function ConsultationStatusPanel({
           <div className="grid grid-cols-[2fr_1fr] gap-[3px] h-[180px]">
             <div className="rounded-[16px] bg-white/[0.03] px-1 py-1">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={snapshot.eegSeries} margin={{ top: 10, right: 8, bottom: 4, left: -24 }}>
+                <LineChart data={eegSeries} margin={{ top: 10, right: 8, bottom: 4, left: -24 }}>
                   <YAxis hide domain={[0, 1]} />
                   <Line type="monotone" dataKey="alpha" stroke="#60a5fa" strokeWidth={1.7} dot={false} />
                   <Line type="monotone" dataKey="beta" stroke="#34d399" strokeWidth={1.6} dot={false} />
@@ -276,43 +262,47 @@ export function ConsultationStatusPanel({
               <div className="text-center">
                 <BrainCircuit className="mx-auto h-8 w-8 text-indigo-200/80" />
                 <p className="mt-2 text-[11px] text-slate-300">脑电地形图</p>
-                <p className="mt-1 text-[10px] text-slate-500">占位区</p>
+                <p className="mt-1 text-[10px] text-slate-500">当前前端未接 EEG</p>
               </div>
             </div>
           </div>
         </SectionCard>
 
         <div className="grid grid-cols-2 gap-[3px]">
-          <SectionCard title="姿态情绪检测">
+          <SectionCard title="姿态情绪检测" rightStatus={snapshot.pose.status === "ready" ? "ready" : "pending"}>
             <div className="flex h-full items-center gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
                 <Activity className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[18px] font-semibold text-slate-100">{snapshot.poseLabel}</div>
-                <div className="mt-1 text-[12px] text-emerald-300">{snapshot.poseConfidence}% 置信度</div>
+                <div className="text-[18px] font-semibold text-slate-100">{getPrimaryLabel(snapshot.pose.primary_label, snapshot.pose.status)}</div>
+                <div className="mt-1 text-[12px] text-emerald-300">{formatPercent(snapshot.pose.primary_score)} 置信度</div>
+                <div className="mt-1 text-[11px] text-slate-400">{getPoseDetail(snapshot.pose)}</div>
               </div>
             </div>
           </SectionCard>
 
-          <SectionCard title="语音情绪检测">
+          <SectionCard title="语音情绪检测" rightStatus={snapshot.speech.status === "ready" ? "ready" : "pending"}>
             <div className="flex h-full items-center gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex-1">
                 <WaveBars active={isRecording} />
               </div>
-              <div className="min-w-[84px] text-right">
+              <div className="min-w-[100px] text-right">
                 <div className="flex items-center justify-end gap-1 text-blue-300">
                   <AudioLines className="h-4 w-4" />
                   <span className="text-[11px]">语音</span>
                 </div>
-                <div className="mt-1 text-[16px] font-semibold text-slate-100">{snapshot.voiceLabel}</div>
-                <div className="mt-1 text-[12px] text-emerald-300">{snapshot.voiceConfidence}% 置信度</div>
+                <div className="mt-1 text-[16px] font-semibold text-slate-100">
+                  {getPrimaryLabel(snapshot.speech.primary_label, snapshot.speech.status)}
+                </div>
+                <div className="mt-1 text-[12px] text-emerald-300">{formatPercent(snapshot.speech.primary_score)} 置信度</div>
+                <div className="mt-1 text-[11px] text-slate-400">{getVoiceDetail(snapshot.speech, isRecording)}</div>
               </div>
             </div>
           </SectionCard>
         </div>
 
-        <SectionCard title="文本情绪分析" className="flex-1 min-h-[140px]">
+        <SectionCard title="文本情绪分析" className="flex-1 min-h-[140px]" rightStatus={snapshot.text.status === "ready" ? "ready" : "pending"}>
           <div className="flex h-full flex-col rounded-[16px] bg-white/[0.03] px-2 py-2">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -320,18 +310,16 @@ export function ConsultationStatusPanel({
                   <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-[16px] font-semibold text-slate-100">{snapshot.textLabel}</div>
-                  <div className="text-[12px] text-emerald-300">{snapshot.textConfidence}% 置信度</div>
+                  <div className="text-[16px] font-semibold text-slate-100">{getPrimaryLabel(snapshot.text.primary_label, snapshot.text.status)}</div>
+                  <div className="text-[12px] text-emerald-300">{formatPercent(snapshot.text.primary_score)} 置信度</div>
                 </div>
               </div>
               <div className="flex flex-wrap justify-end gap-1.5 max-w-[46%]">
-                {snapshot.negativeWords.map((word) => (
-                  <NegativeWordBadge key={word} word={word} />
-                ))}
+                {textWords.length > 0 ? textWords.map((word) => <NegativeWordBadge key={word} word={word} />) : null}
               </div>
             </div>
             <div className="mt-2 flex-1 rounded-[14px] border border-white/8 bg-slate-950/20 px-2 py-2 text-[12px] leading-6 text-slate-200">
-              {snapshot.transcriptText}
+              {getTextBody(snapshot.text, localTranscript)}
             </div>
           </div>
         </SectionCard>

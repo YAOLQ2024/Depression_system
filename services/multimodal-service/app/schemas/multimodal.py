@@ -21,19 +21,27 @@ class WarmupMultimodalSessionRequest(BaseModel):
 
 class SubmitAudioTurnRequest(BaseModel):
     consultation_turn_id: str = Field(min_length=1)
+    consultation_session_id: str | None = None
+    question_key: str | None = None
     audio_base64: str = Field(min_length=1)
     audio_format: str = Field(min_length=1)
     sampling_rate: int | None = None
     transcript_text: str | None = None
+    audio_uri: str | None = None
     captured_at: datetime | None = None
     frame_id: str | None = None
 
 
 class SubmitFrameCaptureRequest(BaseModel):
+    consultation_session_id: str = Field(min_length=1)
+    question_key: str = Field(min_length=1)
     image_base64: str = Field(min_length=1)
     image_format: str = Field(min_length=1)
+    mime_type: str = Field(min_length=1)
     consultation_turn_id: str | None = None
-    captured_at: datetime | None = None
+    capture_started_at: datetime
+    capture_ended_at: datetime
+    frame_index: int = Field(ge=0)
     frame_id: str | None = None
 
 

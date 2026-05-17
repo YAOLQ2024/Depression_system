@@ -53,12 +53,20 @@ def predict_text(engine: TextRuntimeEngine, text: str) -> Dict:
     outputs = engine.session.run(["logits"], {"input_ids": input_ids, "attention_mask": attention_mask})[0]
     probs = np.exp(outputs[0] - np.max(outputs[0]))
     probs = probs / np.sum(probs)
+    order = np.argsort(-probs)
     idx = int(np.argmax(probs))
     raw_label = engine.id2label.get(idx, f"LABEL_{idx}")
+    topk = []
+    for top_idx in order[:3]:
+        label = engine.id2label.get(int(top_idx), f"LABEL_{int(top_idx)}")
+        topk.append((normalize_label(label), float(probs[int(top_idx)])))
     return {
         "modality": "text",
         "label": normalize_label(raw_label),
         "score": float(probs[idx]),
-        "extra": {"text": text},
+        "extra": {
+            "text": text,
+            "topk": topk,
+        },
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
