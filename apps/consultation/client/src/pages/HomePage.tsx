@@ -88,7 +88,7 @@ export default function HomePage() {
 
   return (
     <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-[#9eaaf5] relative z-0">
-      <div className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-40 mix-blend-overlay" style={{ backgroundImage: "url('/bg.png')" }} />
+      <div className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-40 mix-blend-overlay" style={{ backgroundImage: "url('/4K.png')" }} />
       <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-500/30 via-purple-400/20 to-blue-400/30" />
 
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-300/30 blur-[120px] rounded-full pointer-events-none" />

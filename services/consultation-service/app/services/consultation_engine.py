@@ -175,6 +175,14 @@ def _normalize_text(raw_input: str | None, transcript_text: str | None, input_ty
     return ""
 
 
+def _resolve_response_window(payload: ConsultationTurnRequest) -> tuple[datetime, datetime]:
+    started_at = payload.response_started_at or _now()
+    completed_at = payload.response_completed_at or started_at
+    if completed_at < started_at:
+        completed_at = started_at
+    return started_at, completed_at
+
+
 def _extract_chief_complaint_keywords(text: str) -> list[str]:
     normalized = text.lower()
     keywords: list[str] = []
@@ -683,6 +691,7 @@ def submit_consultation_turn(session_id: str, payload: ConsultationTurnRequest, 
         extracted_fields = _apply_extraction(session_record, node, normalized_text)
         current_question_item = _resolve_current_question_item_object(session_record, bundle)
         turn_timestamp = _now()
+        response_started_at, response_completed_at = _resolve_response_window(payload)
         current_prompt_text = _ensure_json_dict(session_record.engine_state).get("current_prompt")
         turn_index = (
             db_session.query(ConsultationTurn)
@@ -715,8 +724,8 @@ def submit_consultation_turn(session_id: str, payload: ConsultationTurnRequest, 
                 transcript_text=payload.transcript_text,
                 structured_fields=extracted_fields or None,
                 branch_taken=branch_name,
-                response_started_at=turn_timestamp,
-                response_completed_at=turn_timestamp,
+                response_started_at=response_started_at,
+                response_completed_at=response_completed_at,
                 created_at=turn_timestamp,
             )
         )

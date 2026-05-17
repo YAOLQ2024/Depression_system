@@ -147,7 +147,7 @@ def submit_consultation_turn(
     upstream = forward_consultation_request(
         "POST",
         f"/api/v1/consultations/{session_id}/turns",
-        payload.model_dump(exclude_none=True),
+        payload.model_dump(mode="json", exclude_none=True),
         acting_user_id=user["id"],
     )
     if upstream["status"] >= 400:

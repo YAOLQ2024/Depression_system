@@ -28,10 +28,12 @@ export function ConsultationLayout({ children, backgroundImage, title }: { child
       {backgroundImage ? (
         <div 
           className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-1000"
-          style={{ backgroundImage: `url('${backgroundImage}')` }}
+          style={{
+            backgroundImage: `url('${backgroundImage}')`,
+            backgroundPosition: "center center",
+          }}
         >
-          {/* Overlay to ensure readability and mood */}
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,18,34,0.14),rgba(10,18,34,0.22))]" />
         </div>
       ) : (
         <GlobalBackground />

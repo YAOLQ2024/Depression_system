@@ -8,7 +8,7 @@ export default function ResultPage() {
   const navigate = useNavigate();
 
   return (
-    <ConsultationLayout backgroundImage="/bg.png" title="评估结果">
+    <ConsultationLayout backgroundImage="/4K.png" title="评估结果">
       <div className="w-full h-full flex flex-col items-center overflow-y-auto pt-6 pb-12 px-4 md:px-8">
         
         {/* Title */}
