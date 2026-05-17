@@ -12,6 +12,10 @@ def get_settings() -> dict:
             "DATABASE_URL",
             "postgresql://mcs:mcs@127.0.0.1:5432/mcs",
         ),
+        "multimodal_service_url": os.getenv(
+            "MULTIMODAL_SERVICE_URL",
+            "http://127.0.0.1:8017",
+        ),
         "workflow_resources_dir": os.getenv(
             "WORKFLOW_RESOURCES_DIR",
             "/home/ZR/data2/MCS/packages/workflow-resources",

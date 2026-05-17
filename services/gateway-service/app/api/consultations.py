@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Header, HTTPException, status
+from fastapi import APIRouter, Cookie, File, Form, Header, HTTPException, UploadFile, status
 
-from app.clients.consultation_client import forward_consultation_request
+from app.clients.consultation_client import (
+    forward_consultation_multipart_request,
+    forward_consultation_request,
+)
 from app.clients.identity_client import forward_json_request
 from app.schemas.consultations import (
     ConsultationTurnRequest,
@@ -175,6 +178,111 @@ def submit_consultation_turn(
         "POST",
         f"/api/v1/consultations/{session_id}/turns",
         payload.model_dump(mode="json", exclude_none=True),
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.get("/consultations/{session_id}/multimodal/live")
+def get_consultation_multimodal_live(
+    session_id: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "GET",
+        f"/api/v1/consultations/{session_id}/multimodal/live",
+        None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.get("/consultations/{session_id}/turns/{turn_id}/multimodal/bundle")
+def get_consultation_turn_multimodal_bundle(
+    session_id: str,
+    turn_id: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "GET",
+        f"/api/v1/consultations/{session_id}/turns/{turn_id}/multimodal/bundle",
+        None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.post("/consultations/{session_id}/multimodal/captures/face")
+async def submit_consultation_face_capture(
+    session_id: str,
+    question_key: str = Form(...),
+    turn_id: str | None = Form(default=None),
+    capture_started_at: str = Form(...),
+    capture_ended_at: str = Form(...),
+    frame_index: int = Form(...),
+    mime_type: str = Form(...),
+    image_file: UploadFile = File(...),
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_multipart_request(
+        f"/api/v1/consultations/{session_id}/multimodal/captures/face",
+        fields={
+            "question_key": question_key,
+            "capture_started_at": capture_started_at,
+            "capture_ended_at": capture_ended_at,
+            "frame_index": str(frame_index),
+            "mime_type": mime_type,
+            **({"turn_id": turn_id} if turn_id else {}),
+        },
+        filename=image_file.filename or f"face-{frame_index}.bin",
+        content_type=mime_type,
+        file_bytes=await image_file.read(),
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.post("/consultations/{session_id}/multimodal/captures/pose")
+async def submit_consultation_pose_capture(
+    session_id: str,
+    question_key: str = Form(...),
+    turn_id: str | None = Form(default=None),
+    capture_started_at: str = Form(...),
+    capture_ended_at: str = Form(...),
+    frame_index: int = Form(...),
+    mime_type: str = Form(...),
+    image_file: UploadFile = File(...),
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_multipart_request(
+        f"/api/v1/consultations/{session_id}/multimodal/captures/pose",
+        fields={
+            "question_key": question_key,
+            "capture_started_at": capture_started_at,
+            "capture_ended_at": capture_ended_at,
+            "frame_index": str(frame_index),
+            "mime_type": mime_type,
+            **({"turn_id": turn_id} if turn_id else {}),
+        },
+        filename=image_file.filename or f"pose-{frame_index}.bin",
+        content_type=mime_type,
+        file_bytes=await image_file.read(),
         acting_user_id=user["id"],
     )
     if upstream["status"] >= 400:
