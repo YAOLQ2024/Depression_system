@@ -25,7 +25,7 @@
 ### P1：模态接入与标准输出
 
 - MM-11（刘倩）：实现多模态会话创建接口
-- MM-12（刘倩）：实现语音转写、语音特征、表情/姿态占位接口
+- MM-12（刘倩）：实现文本情感、语音情感、表情/姿态本地推理接入
 - MM-13（金伟）：实现 EEG 模态输入适配、脑电帽数据采集与标准化输出
 - MM-14（刘倩 + 金伟）：合并输出为统一特征包，并产出示例 payload
 
@@ -47,3 +47,28 @@
 - `risk-service` 能基于统一特征包消费所有模态，不需要区分开发者来源
 - 刘倩负责的非 EEG 模态链路和金伟负责的 EEG 链路都能单独自测
 - 时间戳、质量标记、模态来源字段完整，足以支撑后续风险分析和调试
+
+## 当前推进状态（2026-05-17）
+
+已完成：
+
+- 非 EEG 四模态模型已并入 `services/multimodal-service/app/models/non_eeg/`
+- 已实现本地推理接口与旧版兼容接口
+- 已实现 `multimodal_sessions` / `multimodal_captures` / `multimodal_inference_results` / `multimodal_turn_bundles`
+- 已实现：
+  - `POST /api/v1/multimodal/sessions`
+  - `GET /api/v1/multimodal/sessions/{session_id}`
+  - `POST /api/v1/multimodal/sessions/{session_id}/warmup`
+  - `POST /api/v1/multimodal/sessions/{session_id}/audio-turns`
+  - `POST /api/v1/multimodal/sessions/{session_id}/captures/face`
+  - `POST /api/v1/multimodal/sessions/{session_id}/captures/pose`
+  - `GET /api/v1/multimodal/sessions/{session_id}/live`
+  - `GET /api/v1/multimodal/sessions/{session_id}/turns/{turn_id}/bundle`
+
+明确未做：
+
+- ASR 语音转写
+- EEG 模态
+- 对象存储落盘
+- 前端页面接线
+- `risk-service` 正式消费
