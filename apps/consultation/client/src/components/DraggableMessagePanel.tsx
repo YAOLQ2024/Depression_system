@@ -2,9 +2,10 @@ import { motion, useDragControls } from "motion/react";
 
 interface DraggableMessagePanelProps {
   message: string;
+  title?: string;
 }
 
-export function DraggableMessagePanel({ message }: DraggableMessagePanelProps) {
+export function DraggableMessagePanel({ message, title = "AI 数字人医生" }: DraggableMessagePanelProps) {
   const dragControls = useDragControls();
 
   return (
@@ -26,11 +27,11 @@ export function DraggableMessagePanel({ message }: DraggableMessagePanelProps) {
         >
           <p className="text-white/80 text-xs font-bold tracking-widest flex items-center gap-2 shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-primary-400 shadow-[0_0_8px_rgba(96,165,250,0.8)] animate-[pulse_2s_ease-in-out_infinite]"></span>
-            AI 数字人医生
+            {title}
           </p>
         </div>
         <div className="flex-1 overflow-y-auto w-full pointer-events-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 pr-2 mask-image-b pb-2 text-wrap break-words">
-          <p className="text-slate-100 text-[13px] md:text-sm leading-relaxed tracking-wide min-h-[60px] drop-shadow-sm pointer-events-auto cursor-text">
+          <p className="text-slate-100 text-[13px] md:text-sm leading-relaxed tracking-wide min-h-[60px] drop-shadow-sm pointer-events-auto cursor-text whitespace-pre-wrap">
             {message}
           </p>
         </div>

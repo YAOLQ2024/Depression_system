@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
@@ -16,7 +16,9 @@ import {
   X,
 } from "lucide-react";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
+import { AppToast } from "../components/AppToast";
 import { ConsultationLayout } from "../layouts";
+import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
 import type { UpdateUserProfilePayload } from "../services/api/contracts";
@@ -164,6 +166,7 @@ function validateAndBuildProfilePayload(
 export default function PreparationPage() {
   const { state, actions } = useConsultationAppContext();
   const navigate = useNavigate();
+  const { toast, pushToast } = useTimedToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeviceAuth, setIsDeviceAuth] = useState(false);
   const [isDataAuth, setIsDataAuth] = useState(false);
@@ -175,6 +178,20 @@ export default function PreparationPage() {
   const hasSavedProfile = Boolean(profile.full_name.trim());
   const isReady = hasSavedProfile && isDeviceAuth && isDataAuth && isDoctorSelected;
   const readyCount = [hasSavedProfile, isDeviceAuth, isDataAuth, isDoctorSelected].filter(Boolean).length;
+
+  useEffect(() => {
+    if (state.message) {
+      pushToast(state.message, "success");
+      actions.resetFeedback();
+    }
+  }, [actions, pushToast, state.message]);
+
+  useEffect(() => {
+    if (state.error) {
+      pushToast(state.error, "error");
+      actions.resetFeedback();
+    }
+  }, [actions, pushToast, state.error]);
 
   const openProfileModal = () => {
     actions.resetFeedback();
@@ -213,21 +230,9 @@ export default function PreparationPage() {
   };
 
   return (
-    <ConsultationLayout backgroundImage="/bg.webp" title="问诊准备">
+    <ConsultationLayout backgroundImage="/4K.png" title="问诊准备">
+      <AppToast toast={toast} />
       <div className="w-full h-full px-4 pt-2 pb-4 md:px-8 md:pt-2 md:pb-2 flex flex-col items-center z-10 text-white font-sans overflow-y-auto">
-        <div className="w-full max-w-6xl flex flex-col gap-4 mb-4">
-          {state.error ? (
-            <div className="bg-red-500/15 border border-red-400/30 text-red-100 rounded-2xl px-5 py-3 backdrop-blur-md">
-              {state.error}
-            </div>
-          ) : null}
-          {state.message ? (
-            <div className="bg-emerald-500/15 border border-emerald-400/30 text-emerald-100 rounded-2xl px-5 py-3 backdrop-blur-md">
-              {state.message}
-            </div>
-          ) : null}
-        </div>
-
         <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-4 md:gap-6 mt-0">
           <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-6 shadow-2xl relative overflow-hidden flex flex-col">
             <div className="absolute top-0 right-0 p-8 opacity-20 pointer-events-none">

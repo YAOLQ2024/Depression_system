@@ -1,17 +1,19 @@
-import { useState, useEffect, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Info } from "lucide-react";
+
+import { useConsultationAppContext } from "../app/ConsultationAppContext";
+import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { ConsultationLayout } from "../layouts";
+import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
 import { mockConsultationService } from "../services/consultationService";
-import { MultimodalData } from "../types/consultation";
+import type { ConsultationSession } from "../types";
 
 import { CameraPreview } from "../components/CameraPreview";
 import { FloatingControlBar } from "../components/FloatingControlBar";
-import { MultimodalPanel } from "../components/MultimodalPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
 import { ConsultationProgress } from "../components/ConsultationProgress";
-import { cn } from "../lib/utils";
 
 // Mock Scale Questions
 const SCALE_QUESTIONS = [
@@ -50,12 +52,12 @@ const SCALE_QUESTIONS = [
 export default function ScaleQuestionnairePage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { state, actions } = useConsultationAppContext();
   const sessionId = location.state?.sessionId || "mock_session";
 
   const [isOpen, setIsOpen] = useState(false);
   const [isScaleOpen, setIsScaleOpen] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
-  const [multiData, setMultiData] = useState<MultimodalData | null>(null);
   const [dhState, setDhState] = useState<'idle' | 'speaking'>('idle');
   
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -67,22 +69,6 @@ export default function ScaleQuestionnairePage() {
     setDhState('speaking');
     setTimeout(() => setDhState('idle'), 4000);
   }, []);
-
-  // Polling multimodal data when panel is open
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
-    if (isOpen) {
-      mockConsultationService.getMultimodalData(sessionId).then(setMultiData);
-      interval = setInterval(() => {
-        mockConsultationService.getMultimodalData(sessionId).then(setMultiData);
-      }, 2500);
-    }
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [isOpen, sessionId]);
 
   const handleToggleRecord = async () => {
     if (isRecording) {
@@ -102,6 +88,43 @@ export default function ScaleQuestionnairePage() {
   };
 
   const currentQuestion = SCALE_QUESTIONS[currentQuestionIndex];
+  const multimodalConsultation = useMemo<ConsultationSession>(() => {
+    if (state.consultation) {
+      return state.consultation;
+    }
+
+    const stageOrder = Math.min(4, Math.max(1, currentQuestionIndex + 1));
+    return {
+      session_id: sessionId,
+      user_id: "assessment-preview-user",
+      status: "waiting_user_input",
+      workflow_id: "assessment-preview",
+      current_prompt_key: `assessment-${currentQuestion.id}`,
+      current_prompt_question_text: currentQuestion.text,
+      current_prompt_subtitle_text: currentQuestion.text,
+      current_stage: {
+        stage_id: "assessment",
+        stage_label: "量表评估",
+        stage_order: stageOrder,
+        total_stages: 4,
+      },
+      current_question_item: {
+        question_key: `assessment-${currentQuestion.id}`,
+        stage_id: "assessment",
+        stage_label: "量表评估",
+        stage_order: stageOrder,
+        order: currentQuestion.id,
+        node_id: `assessment-${currentQuestion.id}`,
+        question_text: currentQuestion.text,
+        subtitle_text: currentQuestion.text,
+        response_required: true,
+      },
+    };
+  }, [currentQuestion.id, currentQuestion.text, currentQuestionIndex, sessionId, state.consultation]);
+
+  async function handleRefresh() {
+    await actions.refreshConsultation();
+  }
 
   const handleOptionSelect = (optionIndex: number) => {
     if (currentQuestionIndex < SCALE_QUESTIONS.length - 1) {
@@ -117,7 +140,7 @@ export default function ScaleQuestionnairePage() {
   };
 
   return (
-    <ConsultationLayout backgroundImage="/bg.png" title="量表问诊">
+    <ConsultationLayout backgroundImage="/4K.png" title="量表问诊">
       
       {/* Progress Bar (Fixed top center) */}
       <div className="absolute top-0 inset-x-0 z-50 pointer-events-none">
@@ -296,8 +319,14 @@ export default function ScaleQuestionnairePage() {
             <div className="w-full h-full bg-slate-900/10 transition-all duration-500 backdrop-blur-md rounded-3xl border border-indigo-400/60 shadow-[0_0_40px_rgba(99,102,241,0.6),inset_0_0_20px_rgba(165,180,252,0.4)] overflow-hidden flex flex-col relative z-30 ring-1 ring-indigo-400/30">
               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-500/5 to-transparent pointer-events-none"></div>
               <div className="w-full h-full flex flex-col overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent relative z-10"> 
-                 <div className="w-full shrink-0">
-                   <MultimodalPanel data={multiData} onClose={() => setIsOpen(false)} />
+                 <div className="w-full h-full min-h-0">
+                   <ConsultationStatusPanel
+                     consultation={multimodalConsultation}
+                     onRefresh={handleRefresh}
+                     refreshing={state.loading}
+                     isRecording={isRecording}
+                     className="h-full"
+                   />
                  </div>
               </div>
             </div>

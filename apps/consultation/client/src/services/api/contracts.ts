@@ -50,6 +50,8 @@ export type SubmitConsultationTurnPayload = {
   input_type: string;
   raw_input?: string | null;
   transcript_text?: string | null;
+  response_started_at?: string | null;
+  response_completed_at?: string | null;
   [key: string]: unknown;
 };
 

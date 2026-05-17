@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import json
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -23,6 +24,10 @@ def get_database_url() -> str:
     return normalize_database_url(get_settings()["database_url"])
 
 
+def _serialize_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -38,6 +43,7 @@ def get_engine() -> Engine:
             get_database_url(),
             pool_pre_ping=True,
             future=True,
+            json_serializer=_serialize_json,
         )
     return _engine
 

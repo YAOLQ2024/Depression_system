@@ -14,6 +14,7 @@ import { getAssessmentCatalog, getAssessmentSession, createAssessmentSession, su
 import { login, logout, register } from "../services/api/auth.api";
 import { getBootstrapSummary } from "../services/api/bootstrap.api";
 import {
+  completeConsultationQuestionItem,
   createConsultationSession,
   getConsultationSession,
   startConsultationSession,
@@ -404,9 +405,36 @@ export function useConsultationApp() {
     }
   }
 
+  async function completeConsultationSystemQuestionItem(questionKey: string) {
+    if (!consultation) {
+      return null;
+    }
+
+    resetFeedback();
+    setLoading(true);
+
+    try {
+      const updatedConsultation = await completeConsultationQuestionItem(consultation.session_id, questionKey);
+      setConsultation(updatedConsultation);
+      if (updatedConsultation.status === "waiting_user_input") {
+        setMessage("系统问候已播放完成，已进入当前题目的回答窗口。");
+      } else if (updatedConsultation.status === "handoff_ready") {
+        setMessage("数字人问诊已完成，可以进入量表评估。");
+      } else {
+        setMessage("系统问题项已自动推进。");
+      }
+      return updatedConsultation;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "系统问题项推进失败");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleStartAssessment() {
     if (!consultation) {
-      return;
+      return null;
     }
 
     resetFeedback();
@@ -420,8 +448,10 @@ export function useConsultationApp() {
       setAssessment(assessmentSession);
       saveAssessmentSessionId(assessmentSession.session_id);
       setMessage("量表问诊已开始。");
+      return assessmentSession;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "创建量表会话失败");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -530,6 +560,7 @@ export function useConsultationApp() {
       submitConsultationTurn,
       submitManualConsultationTurn,
       refreshConsultation,
+      completeConsultationSystemQuestionItem,
       handleStartAssessment,
       handleSubmitAssessment,
       refreshAssessment,

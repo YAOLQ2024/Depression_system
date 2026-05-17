@@ -31,3 +31,14 @@ export async function submitConsultationTurn(sessionId: string, payload: SubmitC
   });
   return data.consultation;
 }
+
+export async function completeConsultationQuestionItem(sessionId: string, questionKey: string) {
+  const data = await apiRequest<ConsultationResponse>(
+    `/consultations/${sessionId}/question-items/${questionKey}/complete`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+  return data.consultation;
+}

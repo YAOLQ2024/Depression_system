@@ -3,14 +3,26 @@ import { cn } from "../lib/utils";
 
 const DEFAULT_STEPS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
 
-export function ConsultationProgress({ currentStep, steps = DEFAULT_STEPS }: { currentStep: number, steps?: string[] }) {
+type ConsultationProgressProps = {
+  currentStep?: number;
+  currentStageOrder?: number | null;
+  steps?: string[];
+};
+
+export function ConsultationProgress({
+  currentStep,
+  currentStageOrder,
+  steps = DEFAULT_STEPS,
+}: ConsultationProgressProps) {
+  const resolvedCurrentStep = currentStageOrder ?? currentStep ?? 1;
+
   return (
     <div className="flex items-center justify-between w-full max-w-2xl z-10 mx-auto px-4 sm:px-6 py-1 mt-0">
       {steps.map((step, idx) => {
         const stepNum = idx + 1;
-        const isCompleted = stepNum < currentStep;
-        const isActive = stepNum === currentStep;
-        const isFuture = stepNum > currentStep;
+        const isCompleted = stepNum < resolvedCurrentStep;
+        const isActive = stepNum === resolvedCurrentStep;
+        const isFuture = stepNum > resolvedCurrentStep;
 
         return (
           <div key={step} className="flex items-center flex-1 last:flex-none">
