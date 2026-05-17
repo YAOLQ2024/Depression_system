@@ -9,8 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db_session
 from app.models import ConsultationSession, ConsultationTurn
-from app.schemas.consultations import ConsultationTurnRequest, CreateConsultationSessionRequest
-from app.services.workflow_loader import QuestionItem, ScriptNode, WorkflowBundle, get_workflow_loader
+from app.schemas.consultations import (
+    ConsultationTurnRequest,
+    CreateConsultationSessionRequest,
+)
+from app.services.workflow_loader import (
+    QuestionItem,
+    ScriptNode,
+    WorkflowBundle,
+    get_workflow_loader,
+)
 
 
 class ConsultationServiceError(Exception):
@@ -53,13 +61,17 @@ def _serialize_question_item(question_item: QuestionItem) -> dict[str, Any]:
         "video_asset_id": question_item.video_asset_id,
         "video_uri": question_item.video_uri,
         "question_text": question_item.question_text,
-        "subtitle_text": question_item.subtitle_text or question_item.question_text,
+        "subtitle_text": question_item.subtitle_text
+        or question_item.question_text,
         "response_required": question_item.response_required,
     }
 
 
 def _get_total_prompt_count(bundle: WorkflowBundle) -> int:
-    return sum(len(stage.question_items) for stage in bundle.digital_human_playlist.stages_in_order)
+    return sum(
+        len(stage.question_items)
+        for stage in bundle.digital_human_playlist.stages_in_order
+    )
 
 
 def _resolve_current_question_item_object(
@@ -68,12 +80,16 @@ def _resolve_current_question_item_object(
 ) -> QuestionItem | None:
     if not session_record.current_stage_id:
         return None
-    playlist_stage = bundle.digital_human_playlist.stages_by_id.get(session_record.current_stage_id)
+    playlist_stage = bundle.digital_human_playlist.stages_by_id.get(
+        session_record.current_stage_id
+    )
     if not playlist_stage:
         return None
 
     if session_record.current_node_id:
-        direct_match = playlist_stage.question_items_by_node_id.get(session_record.current_node_id)
+        direct_match = playlist_stage.question_items_by_node_id.get(
+            session_record.current_node_id
+        )
         if direct_match:
             return direct_match
 
@@ -86,28 +102,42 @@ def _resolve_current_question_item(
     session_record: ConsultationSession,
     bundle: WorkflowBundle,
 ) -> dict[str, Any] | None:
-    question_item = _resolve_current_question_item_object(session_record, bundle)
+    question_item = _resolve_current_question_item_object(
+        session_record, bundle
+    )
     return _serialize_question_item(question_item) if question_item else None
 
 
-def _count_prompt_items_before(question_item: QuestionItem, bundle: WorkflowBundle) -> int:
+def _count_prompt_items_before(
+    question_item: QuestionItem, bundle: WorkflowBundle
+) -> int:
     completed = 0
     for stage in bundle.digital_human_playlist.stages_in_order:
         if stage.stage_order < question_item.stage_order:
             completed += len(stage.question_items)
             continue
         if stage.stage_order == question_item.stage_order:
-            completed += sum(1 for item in stage.question_items if item.order < question_item.order)
+            completed += sum(
+                1
+                for item in stage.question_items
+                if item.order < question_item.order
+            )
             break
     return completed
 
 
-def _sync_playlist_state(session_record: ConsultationSession, bundle: WorkflowBundle) -> None:
+def _sync_playlist_state(
+    session_record: ConsultationSession, bundle: WorkflowBundle
+) -> None:
     total_prompt_count = _get_total_prompt_count(bundle)
-    session_record.playlist_version = bundle.digital_human_playlist.playlist_version or None
+    session_record.playlist_version = (
+        bundle.digital_human_playlist.playlist_version or None
+    )
     session_record.total_prompt_count = total_prompt_count
 
-    current_question_item = _resolve_current_question_item_object(session_record, bundle)
+    current_question_item = _resolve_current_question_item_object(
+        session_record, bundle
+    )
     if not current_question_item:
         session_record.current_prompt_key = None
         session_record.current_prompt_order = None
@@ -117,20 +147,29 @@ def _sync_playlist_state(session_record: ConsultationSession, bundle: WorkflowBu
         session_record.current_prompt_subtitle_text = None
         session_record.completed_prompt_count = (
             total_prompt_count
-            if session_record.status in {"handoff_ready", "paused_for_human_review"} or session_record.completed_at
+            if session_record.status
+            in {"handoff_ready", "paused_for_human_review"}
+            or session_record.completed_at
             else 0
         )
         return
 
     session_record.current_prompt_key = current_question_item.question_key
     session_record.current_prompt_order = current_question_item.order
-    session_record.current_prompt_video_asset_id = current_question_item.video_asset_id
-    session_record.current_prompt_video_uri = current_question_item.video_uri
-    session_record.current_prompt_question_text = current_question_item.question_text
-    session_record.current_prompt_subtitle_text = (
-        current_question_item.subtitle_text or current_question_item.question_text
+    session_record.current_prompt_video_asset_id = (
+        current_question_item.video_asset_id
     )
-    session_record.completed_prompt_count = _count_prompt_items_before(current_question_item, bundle)
+    session_record.current_prompt_video_uri = current_question_item.video_uri
+    session_record.current_prompt_question_text = (
+        current_question_item.question_text
+    )
+    session_record.current_prompt_subtitle_text = (
+        current_question_item.subtitle_text
+        or current_question_item.question_text
+    )
+    session_record.completed_prompt_count = _count_prompt_items_before(
+        current_question_item, bundle
+    )
 
 
 def _resolve_current_stage_progress(
@@ -139,7 +178,9 @@ def _resolve_current_stage_progress(
 ) -> dict[str, Any] | None:
     if not session_record.current_stage_id:
         return None
-    playlist_stage = bundle.digital_human_playlist.stages_by_id.get(session_record.current_stage_id)
+    playlist_stage = bundle.digital_human_playlist.stages_by_id.get(
+        session_record.current_stage_id
+    )
     if not playlist_stage:
         return None
     return {
@@ -151,7 +192,9 @@ def _resolve_current_stage_progress(
 
 
 def _render_prompt(node: ScriptNode, slot_values: dict[str, Any]) -> str:
-    template = node.payload.get("template_prompt") or node.payload.get("prompt") or ""
+    template = (
+        node.payload.get("template_prompt") or node.payload.get("prompt") or ""
+    )
 
     def replace_token(match: re.Match[str]) -> str:
         key = match.group(1).strip()
@@ -165,7 +208,9 @@ def _render_prompt(node: ScriptNode, slot_values: dict[str, Any]) -> str:
     return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_token, template)
 
 
-def _normalize_text(raw_input: str | None, transcript_text: str | None, input_type: str) -> str:
+def _normalize_text(
+    raw_input: str | None, transcript_text: str | None, input_type: str
+) -> str:
     if transcript_text and transcript_text.strip():
         return transcript_text.strip()
     if raw_input and raw_input.strip():
@@ -175,7 +220,9 @@ def _normalize_text(raw_input: str | None, transcript_text: str | None, input_ty
     return ""
 
 
-def _resolve_response_window(payload: ConsultationTurnRequest) -> tuple[datetime, datetime]:
+def _resolve_response_window(
+    payload: ConsultationTurnRequest,
+) -> tuple[datetime, datetime]:
     started_at = payload.response_started_at or _now()
     completed_at = payload.response_completed_at or started_at
     if completed_at < started_at:
@@ -186,11 +233,28 @@ def _resolve_response_window(payload: ConsultationTurnRequest) -> tuple[datetime
 def _extract_chief_complaint_keywords(text: str) -> list[str]:
     normalized = text.lower()
     keywords: list[str] = []
-    if any(token in normalized for token in ["睡", "失眠", "早醒", "入睡", "夜醒"]):
+    if any(
+        token in normalized for token in ["睡", "失眠", "早醒", "入睡", "夜醒"]
+    ):
         keywords.append("sleep")
-    if any(token in normalized for token in ["情绪", "低落", "难过", "抑郁", "没兴趣", "提不起劲", "累", "空"]):
+    if any(
+        token in normalized
+        for token in [
+            "情绪",
+            "低落",
+            "难过",
+            "抑郁",
+            "没兴趣",
+            "提不起劲",
+            "累",
+            "空",
+        ]
+    ):
         keywords.append("mood")
-    if any(token in normalized for token in ["紧张", "焦虑", "害怕", "心慌", "担心", "放松不下来"]):
+    if any(
+        token in normalized
+        for token in ["紧张", "焦虑", "害怕", "心慌", "担心", "放松不下来"]
+    ):
         keywords.append("anxiety")
     return keywords or ["general"]
 
@@ -203,19 +267,41 @@ def _build_summary(text: str) -> str:
 
 
 def _parse_positive_negative(text: str) -> str:
-    if any(token in text for token in ["没有", "没", "不会", "不是", "无", "从未"]):
+    if any(
+        token in text for token in ["没有", "没", "不会", "不是", "无", "从未"]
+    ):
         return "negative"
-    if any(token in text for token in ["有", "想过", "出现过", "是", "会", "差点", "真的"]):
+    if any(
+        token in text
+        for token in ["有", "想过", "出现过", "是", "会", "差点", "真的"]
+    ):
         return "positive"
     return "unclear"
 
 
 def _parse_support_state(text: str) -> str:
-    if any(token in text for token in ["没有", "无人", "一个人", "没人", "无"]):
+    if any(
+        token in text for token in ["没有", "无人", "一个人", "没人", "无"]
+    ):
         return "none"
-    if any(token in text for token in ["有限", "不太方便", "有时候", "不一定", "不稳定"]):
+    if any(
+        token in text
+        for token in ["有限", "不太方便", "有时候", "不一定", "不稳定"]
+    ):
         return "limited"
-    if any(token in text for token in ["有", "可以", "能", "有人", "家人", "朋友", "老师", "同事"]):
+    if any(
+        token in text
+        for token in [
+            "有",
+            "可以",
+            "能",
+            "有人",
+            "家人",
+            "朋友",
+            "老师",
+            "同事",
+        ]
+    ):
         return "available"
     return "unclear"
 
@@ -226,13 +312,17 @@ def _extract_risk_value(slot_name: str, text: str) -> str:
     return _parse_positive_negative(text)
 
 
-def _set_slot(session_record: ConsultationSession, slot_name: str, value: Any) -> None:
+def _set_slot(
+    session_record: ConsultationSession, slot_name: str, value: Any
+) -> None:
     slot_values = _ensure_json_dict(session_record.slot_values)
     slot_values[slot_name] = value
     session_record.slot_values = slot_values
 
 
-def _apply_extraction(session_record: ConsultationSession, node: ScriptNode, text: str) -> dict[str, Any]:
+def _apply_extraction(
+    session_record: ConsultationSession, node: ScriptNode, text: str
+) -> dict[str, Any]:
     extraction = node.payload.get("extraction") or {}
     if not extraction:
         return {}
@@ -278,7 +368,9 @@ def _apply_extraction(session_record: ConsultationSession, node: ScriptNode, tex
     return extracted
 
 
-def _resolve_route(session_record: ConsultationSession, node: ScriptNode) -> str:
+def _resolve_route(
+    session_record: ConsultationSession, node: ScriptNode
+) -> str:
     slot_values = _ensure_json_dict(session_record.slot_values)
     keywords = slot_values.get(node.payload.get("rule_source", ""), [])
     if isinstance(keywords, str):
@@ -293,7 +385,10 @@ def _resolve_route(session_record: ConsultationSession, node: ScriptNode) -> str
 def _evaluate_condition(slot_values: dict[str, Any], expression: str) -> bool:
     expression = expression.strip()
     if " and " in expression:
-        return all(_evaluate_condition(slot_values, part) for part in expression.split(" and "))
+        return all(
+            _evaluate_condition(slot_values, part)
+            for part in expression.split(" and ")
+        )
     if " in [" in expression:
         left, right = expression.split(" in [", 1)
         slot_name = left.strip()
@@ -305,14 +400,22 @@ def _evaluate_condition(slot_values: dict[str, Any], expression: str) -> bool:
     return False
 
 
-def _evaluate_decision(session_record: ConsultationSession, node: ScriptNode) -> str:
+def _evaluate_decision(
+    session_record: ConsultationSession, node: ScriptNode
+) -> str:
     slot_values = _ensure_json_dict(session_record.slot_values)
     rules = node.payload.get("decision_rules", {})
     for branch_name, rule_payload in rules.items():
-        if branch_name == "safe_to_continue" and rule_payload.get("default") is True:
+        if (
+            branch_name == "safe_to_continue"
+            and rule_payload.get("default") is True
+        ):
             continue
         any_conditions = rule_payload.get("any", [])
-        if any(_evaluate_condition(slot_values, expression) for expression in any_conditions):
+        if any(
+            _evaluate_condition(slot_values, expression)
+            for expression in any_conditions
+        ):
             return branch_name
     return "safe_to_continue"
 
@@ -336,39 +439,59 @@ def _build_current_history_result(session_record: ConsultationSession) -> None:
     }
 
 
-def _build_high_risk_result(session_record: ConsultationSession, branch_name: str) -> None:
+def _build_high_risk_result(
+    session_record: ConsultationSession, branch_name: str
+) -> None:
     slot_values = _ensure_json_dict(session_record.slot_values)
-    alert_level = "high" if branch_name == "human_intervention_required" else "low"
+    alert_level = (
+        "high" if branch_name == "human_intervention_required" else "low"
+    )
     session_record.high_risk_screening_result = {
         "suicidal_ideation": slot_values.get("suicidal_ideation", "unclear"),
         "self_harm_behavior": slot_values.get("self_harm_behavior", "unclear"),
         "suicide_plan": slot_values.get("suicide_plan", "unclear"),
-        "acute_support_state": slot_values.get("acute_support_state", "unclear"),
+        "acute_support_state": slot_values.get(
+            "acute_support_state", "unclear"
+        ),
         "alert_level": alert_level,
         "outcome": branch_name,
     }
-    session_record.requires_human_review = branch_name == "human_intervention_required"
+    session_record.requires_human_review = (
+        branch_name == "human_intervention_required"
+    )
 
 
-def _build_scale_handoff_payload(session_record: ConsultationSession, bundle: WorkflowBundle) -> dict[str, Any]:
+def _build_scale_handoff_payload(
+    session_record: ConsultationSession, bundle: WorkflowBundle
+) -> dict[str, Any]:
     return {
         "workflow_id": bundle.workflow_id,
         "session_id": session_record.id,
         "chief_complaint_summary": session_record.chief_complaint_summary,
-        "current_history_structured_result": session_record.current_history_structured_result or {},
-        "high_risk_screening_result": session_record.high_risk_screening_result or {},
+        "current_history_structured_result": (
+            session_record.current_history_structured_result or {}
+        ),
+        "high_risk_screening_result": (
+            session_record.high_risk_screening_result or {}
+        ),
         "required_scales": bundle.required_scales,
     }
 
 
-def _set_current_prompt(session_record: ConsultationSession, prompt: str | None, waiting_node_type: str | None) -> None:
+def _set_current_prompt(
+    session_record: ConsultationSession,
+    prompt: str | None,
+    waiting_node_type: str | None,
+) -> None:
     engine_state = _ensure_json_dict(session_record.engine_state)
     engine_state["current_prompt"] = prompt
     engine_state["waiting_node_type"] = waiting_node_type
     session_record.engine_state = engine_state
 
 
-def _mark_stage_completed(session_record: ConsultationSession, stage_id: str) -> None:
+def _mark_stage_completed(
+    session_record: ConsultationSession, stage_id: str
+) -> None:
     engine_state = _ensure_json_dict(session_record.engine_state)
     completed = _ensure_json_list(engine_state.get("completed_stages"))
     if stage_id not in completed:
@@ -377,14 +500,20 @@ def _mark_stage_completed(session_record: ConsultationSession, stage_id: str) ->
     session_record.engine_state = engine_state
 
 
-def _move_to_target(session_record: ConsultationSession, target: str | None, bundle: WorkflowBundle) -> None:
+def _move_to_target(
+    session_record: ConsultationSession,
+    target: str | None,
+    bundle: WorkflowBundle,
+) -> None:
     if target == "stage-complete":
         _advance_stage(session_record, bundle)
         return
     session_record.current_node_id = target
 
 
-def _advance_stage(session_record: ConsultationSession, bundle: WorkflowBundle) -> None:
+def _advance_stage(
+    session_record: ConsultationSession, bundle: WorkflowBundle
+) -> None:
     if not session_record.current_stage_id:
         return
 
@@ -410,22 +539,30 @@ def _advance_stage(session_record: ConsultationSession, bundle: WorkflowBundle) 
     else:
         session_record.workflow_stage_id = bundle.scale_stage_id
         session_record.status = "handoff_ready"
-        session_record.scale_handoff_payload = _build_scale_handoff_payload(session_record, bundle)
+        session_record.scale_handoff_payload = _build_scale_handoff_payload(
+            session_record, bundle
+        )
 
     session_record.current_stage_id = None
     session_record.current_node_id = None
     session_record.completed_at = _now()
 
 
-def _auto_advance(session_record: ConsultationSession, bundle: WorkflowBundle) -> None:
+def _auto_advance(
+    session_record: ConsultationSession, bundle: WorkflowBundle
+) -> None:
     while session_record.current_stage_id and session_record.current_node_id:
         stage = bundle.stage_scripts[session_record.current_stage_id]
         node = stage.nodes[session_record.current_node_id]
 
         if node.type == "system_gate":
             checks = node.payload.get("checks", [])
-            context_snapshot = _ensure_json_dict(session_record.context_snapshot)
-            missing = [check for check in checks if not context_snapshot.get(check)]
+            context_snapshot = _ensure_json_dict(
+                session_record.context_snapshot
+            )
+            missing = [
+                check for check in checks if not context_snapshot.get(check)
+            ]
             if missing:
                 raise ConsultationServiceError(
                     f"consultation context incomplete: {', '.join(missing)}",
@@ -442,7 +579,11 @@ def _auto_advance(session_record: ConsultationSession, bundle: WorkflowBundle) -
         if node.type == "route_by_rule":
             target = _resolve_route(session_record, node)
             if not target:
-                raise ConsultationServiceError("consultation route target missing", code=5002, status_code=500)
+                raise ConsultationServiceError(
+                    "consultation route target missing",
+                    code=5002,
+                    status_code=500,
+                )
             _move_to_target(session_record, target, bundle)
             continue
 
@@ -452,7 +593,11 @@ def _auto_advance(session_record: ConsultationSession, bundle: WorkflowBundle) -
                 _build_high_risk_result(session_record, branch_name)
             target = node.payload.get("branches", {}).get(branch_name)
             if not target:
-                raise ConsultationServiceError("consultation decision branch missing", code=5003, status_code=500)
+                raise ConsultationServiceError(
+                    "consultation decision branch missing",
+                    code=5003,
+                    status_code=500,
+                )
             engine_state = _ensure_json_dict(session_record.engine_state)
             engine_state["last_branch_taken"] = branch_name
             session_record.engine_state = engine_state
@@ -460,18 +605,24 @@ def _auto_advance(session_record: ConsultationSession, bundle: WorkflowBundle) -
             continue
 
         if node.type == "speak_then_wait":
-            prompt = _render_prompt(node, _ensure_json_dict(session_record.slot_values))
+            prompt = _render_prompt(
+                node, _ensure_json_dict(session_record.slot_values)
+            )
             session_record.status = "waiting_user_input"
             _set_current_prompt(session_record, prompt, node.type)
             return
 
         if node.type == "speak_then_complete":
-            prompt = _render_prompt(node, _ensure_json_dict(session_record.slot_values))
+            prompt = _render_prompt(
+                node, _ensure_json_dict(session_record.slot_values)
+            )
             session_record.status = "waiting_system_completion"
             _set_current_prompt(session_record, prompt, node.type)
             return
 
-        raise ConsultationServiceError(f"unsupported node type: {node.type}", code=5001, status_code=500)
+        raise ConsultationServiceError(
+            f"unsupported node type: {node.type}", code=5001, status_code=500
+        )
 
 
 def _infer_branch(payload: ConsultationTurnRequest) -> str:
@@ -482,18 +633,27 @@ def _infer_branch(payload: ConsultationTurnRequest) -> str:
     return "normal"
 
 
-def _serialize_session(session_record: ConsultationSession, bundle: WorkflowBundle) -> dict[str, Any]:
+def _serialize_session(
+    session_record: ConsultationSession, bundle: WorkflowBundle
+) -> dict[str, Any]:
     engine_state = _ensure_json_dict(session_record.engine_state)
     current_prompt = engine_state.get("current_prompt")
-    current_question_item = _resolve_current_question_item(session_record, bundle)
-    current_stage_progress = _resolve_current_stage_progress(session_record, bundle)
+    current_question_item = _resolve_current_question_item(
+        session_record, bundle
+    )
+    current_stage_progress = _resolve_current_stage_progress(
+        session_record, bundle
+    )
     return {
         "session_id": session_record.id,
         "user_id": session_record.user_id,
         "workflow_id": session_record.workflow_id,
         "script_bundle": session_record.script_bundle,
-        "playlist_version": session_record.playlist_version or bundle.digital_human_playlist.playlist_version,
-        "playlist_manifest_status": bundle.digital_human_playlist.manifest_status,
+        "playlist_version": session_record.playlist_version
+        or bundle.digital_human_playlist.playlist_version,
+        "playlist_manifest_status": (
+            bundle.digital_human_playlist.manifest_status
+        ),
         "delivery_mode": bundle.digital_human_playlist.delivery_mode,
         "total_prompt_count": session_record.total_prompt_count,
         "completed_prompt_count": session_record.completed_prompt_count,
@@ -502,51 +662,84 @@ def _serialize_session(session_record: ConsultationSession, bundle: WorkflowBund
         "current_node_id": session_record.current_node_id,
         "current_prompt_key": session_record.current_prompt_key,
         "current_prompt_order": session_record.current_prompt_order,
-        "current_prompt_video_asset_id": session_record.current_prompt_video_asset_id,
+        "current_prompt_video_asset_id": (
+            session_record.current_prompt_video_asset_id
+        ),
         "current_prompt_video_uri": session_record.current_prompt_video_uri,
-        "current_prompt_question_text": session_record.current_prompt_question_text,
-        "current_prompt_subtitle_text": session_record.current_prompt_subtitle_text,
+        "current_prompt_question_text": (
+            session_record.current_prompt_question_text
+        ),
+        "current_prompt_subtitle_text": (
+            session_record.current_prompt_subtitle_text
+        ),
         "current_stage": current_stage_progress,
         "status": session_record.status,
         "assigned_doctor_persona": session_record.assigned_doctor_persona,
         "requires_human_review": session_record.requires_human_review,
         "current_prompt": current_prompt,
         "current_question_item": current_question_item,
-        "participant_profile_snapshot": _ensure_json_dict(session_record.participant_profile_snapshot),
+        "participant_profile_snapshot": _ensure_json_dict(
+            session_record.participant_profile_snapshot
+        ),
         "slot_values": _ensure_json_dict(session_record.slot_values),
         "chief_complaint_summary": session_record.chief_complaint_summary,
-        "current_history_structured_result": session_record.current_history_structured_result or {},
-        "high_risk_screening_result": session_record.high_risk_screening_result or {},
+        "current_history_structured_result": (
+            session_record.current_history_structured_result or {}
+        ),
+        "high_risk_screening_result": (
+            session_record.high_risk_screening_result or {}
+        ),
         "scale_handoff_payload": session_record.scale_handoff_payload or {},
         "required_scales": bundle.required_scales,
         "created_at": session_record.created_at.isoformat(),
         "updated_at": session_record.updated_at.isoformat(),
-        "started_at": session_record.started_at.isoformat() if session_record.started_at else None,
-        "completed_at": session_record.completed_at.isoformat() if session_record.completed_at else None,
+        "started_at": session_record.started_at.isoformat()
+        if session_record.started_at
+        else None,
+        "completed_at": session_record.completed_at.isoformat()
+        if session_record.completed_at
+        else None,
     }
 
 
-def _get_session_or_raise(db_session: Session, session_id: str) -> ConsultationSession:
+def _get_session_or_raise(
+    db_session: Session, session_id: str
+) -> ConsultationSession:
     session_record = db_session.get(ConsultationSession, session_id)
     if not session_record:
-        raise ConsultationServiceError("consultation session not found", code=4041, status_code=404)
+        raise ConsultationServiceError(
+            "consultation session not found", code=4041, status_code=404
+        )
     return session_record
 
 
 def _require_acting_user_id(acting_user_id: str | None) -> str:
     if not acting_user_id:
-        raise ConsultationServiceError("missing acting user id", code=4013, status_code=401)
+        raise ConsultationServiceError(
+            "missing acting user id", code=4013, status_code=401
+        )
     return acting_user_id
 
 
-def create_consultation_session(payload: CreateConsultationSessionRequest, acting_user_id: str | None) -> dict[str, Any]:
+def create_consultation_session(
+    payload: CreateConsultationSessionRequest, acting_user_id: str | None
+) -> dict[str, Any]:
     acting_user_id = _require_acting_user_id(acting_user_id)
     if payload.user_id != acting_user_id:
-        raise ConsultationServiceError("user mismatch for consultation creation", code=4031, status_code=403)
+        raise ConsultationServiceError(
+            "user mismatch for consultation creation",
+            code=4031,
+            status_code=403,
+        )
     bundle = get_workflow_loader().load_bundle()
-    persona_id = payload.assigned_doctor_persona or get_workflow_loader().default_persona
+    persona_id = (
+        payload.assigned_doctor_persona
+        or get_workflow_loader().default_persona
+    )
     if persona_id not in bundle.doctor_personas:
-        raise ConsultationServiceError("doctor persona not found", code=4006, status_code=404)
+        raise ConsultationServiceError(
+            "doctor persona not found", code=4006, status_code=404
+        )
 
     first_stage_id = bundle.substeps[0]
     first_stage = bundle.stage_scripts[first_stage_id]
@@ -566,7 +759,8 @@ def create_consultation_session(payload: CreateConsultationSessionRequest, actin
         user_id=payload.user_id,
         workflow_id=bundle.workflow_id,
         script_bundle=bundle.script_bundle,
-        playlist_version=bundle.digital_human_playlist.playlist_version or None,
+        playlist_version=bundle.digital_human_playlist.playlist_version
+        or None,
         workflow_stage_id=bundle.consultation_stage_id,
         current_stage_id=first_stage_id,
         current_node_id=first_stage.entry_node,
@@ -589,26 +783,38 @@ def create_consultation_session(payload: CreateConsultationSessionRequest, actin
         return _serialize_session(session_record, bundle)
 
 
-def get_consultation_session(session_id: str, acting_user_id: str | None) -> dict[str, Any]:
+def get_consultation_session(
+    session_id: str, acting_user_id: str | None
+) -> dict[str, Any]:
     acting_user_id = _require_acting_user_id(acting_user_id)
     bundle = get_workflow_loader().load_bundle()
     with get_db_session() as db_session:
         session_record = _get_session_or_raise(db_session, session_id)
         if session_record.user_id != acting_user_id:
-            raise ConsultationServiceError("consultation session forbidden", code=4032, status_code=403)
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
         _sync_playlist_state(session_record, bundle)
         return _serialize_session(session_record, bundle)
 
 
-def start_consultation_session(session_id: str, acting_user_id: str | None) -> dict[str, Any]:
+def start_consultation_session(
+    session_id: str, acting_user_id: str | None
+) -> dict[str, Any]:
     acting_user_id = _require_acting_user_id(acting_user_id)
     bundle = get_workflow_loader().load_bundle()
     with get_db_session() as db_session:
         session_record = _get_session_or_raise(db_session, session_id)
         if session_record.user_id != acting_user_id:
-            raise ConsultationServiceError("consultation session forbidden", code=4032, status_code=403)
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
         if session_record.status not in {"draft", "running"}:
-            raise ConsultationServiceError("consultation session cannot be started in current status", code=4091, status_code=409)
+            raise ConsultationServiceError(
+                "consultation session cannot be started in current status",
+                code=4091,
+                status_code=409,
+            )
         if not session_record.started_at:
             session_record.started_at = _now()
         session_record.status = "running"
@@ -630,7 +836,9 @@ def complete_system_question_item(
     with get_db_session() as db_session:
         session_record = _get_session_or_raise(db_session, session_id)
         if session_record.user_id != acting_user_id:
-            raise ConsultationServiceError("consultation session forbidden", code=4032, status_code=403)
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
         if (
             session_record.status != "waiting_system_completion"
             or not session_record.current_stage_id
@@ -644,17 +852,29 @@ def complete_system_question_item(
 
         stage = bundle.stage_scripts[session_record.current_stage_id]
         node = stage.nodes[session_record.current_node_id]
-        current_question_item = _resolve_current_question_item_object(session_record, bundle)
-        if not current_question_item or current_question_item.question_key != question_key:
-            raise ConsultationServiceError("system question item mismatch", code=4008, status_code=409)
+        current_question_item = _resolve_current_question_item_object(
+            session_record, bundle
+        )
+        if (
+            not current_question_item
+            or current_question_item.question_key != question_key
+        ):
+            raise ConsultationServiceError(
+                "system question item mismatch", code=4008, status_code=409
+            )
         if current_question_item.response_required:
             raise ConsultationServiceError(
-                "question item requires user response and cannot be auto-completed",
+                "question item requires user response and cannot be "
+                "auto-completed",
                 code=4094,
                 status_code=409,
             )
         if node.type != "speak_then_complete":
-            raise ConsultationServiceError("current node does not support system completion", code=4095, status_code=409)
+            raise ConsultationServiceError(
+                "current node does not support system completion",
+                code=4095,
+                status_code=409,
+            )
 
         session_record.status = "running"
         session_record.updated_at = _now()
@@ -670,29 +890,55 @@ def complete_system_question_item(
         return _serialize_session(session_record, bundle)
 
 
-def submit_consultation_turn(session_id: str, payload: ConsultationTurnRequest, acting_user_id: str | None) -> dict[str, Any]:
+def submit_consultation_turn(
+    session_id: str,
+    payload: ConsultationTurnRequest,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
     acting_user_id = _require_acting_user_id(acting_user_id)
     bundle = get_workflow_loader().load_bundle()
     with get_db_session() as db_session:
         session_record = _get_session_or_raise(db_session, session_id)
         if session_record.user_id != acting_user_id:
-            raise ConsultationServiceError("consultation session forbidden", code=4032, status_code=403)
-        if session_record.status != "waiting_user_input" or not session_record.current_stage_id or not session_record.current_node_id:
-            raise ConsultationServiceError("consultation session is not waiting for user input", code=4092, status_code=409)
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        if (
+            session_record.status != "waiting_user_input"
+            or not session_record.current_stage_id
+            or not session_record.current_node_id
+        ):
+            raise ConsultationServiceError(
+                "consultation session is not waiting for user input",
+                code=4092,
+                status_code=409,
+            )
 
         stage = bundle.stage_scripts[session_record.current_stage_id]
         node = stage.nodes[session_record.current_node_id]
         branch_name = _infer_branch(payload)
         branch_payload = node.payload.get("branches", {}).get(branch_name)
         if not branch_payload:
-            raise ConsultationServiceError("consultation branch missing", code=4007)
+            raise ConsultationServiceError(
+                "consultation branch missing", code=4007
+            )
 
-        normalized_text = _normalize_text(payload.raw_input, payload.transcript_text, payload.input_type)
-        extracted_fields = _apply_extraction(session_record, node, normalized_text)
-        current_question_item = _resolve_current_question_item_object(session_record, bundle)
+        normalized_text = _normalize_text(
+            payload.raw_input, payload.transcript_text, payload.input_type
+        )
+        extracted_fields = _apply_extraction(
+            session_record, node, normalized_text
+        )
+        current_question_item = _resolve_current_question_item_object(
+            session_record, bundle
+        )
         turn_timestamp = _now()
-        response_started_at, response_completed_at = _resolve_response_window(payload)
-        current_prompt_text = _ensure_json_dict(session_record.engine_state).get("current_prompt")
+        response_started_at, response_completed_at = _resolve_response_window(
+            payload
+        )
+        current_prompt_text = _ensure_json_dict(
+            session_record.engine_state
+        ).get("current_prompt")
         turn_index = (
             db_session.query(ConsultationTurn)
             .filter(ConsultationTurn.session_id == session_record.id)
@@ -708,13 +954,26 @@ def submit_consultation_turn(session_id: str, payload: ConsultationTurnRequest, 
                 stage_id=session_record.current_stage_id,
                 node_id=session_record.current_node_id,
                 turn_index=turn_index,
-                prompt_key=current_question_item.question_key if current_question_item else None,
-                prompt_order=current_question_item.order if current_question_item else None,
-                prompt_video_asset_id=current_question_item.video_asset_id if current_question_item else None,
-                prompt_video_uri=current_question_item.video_uri if current_question_item else None,
-                prompt_question_text=current_question_item.question_text if current_question_item else current_prompt_text,
+                prompt_key=current_question_item.question_key
+                if current_question_item
+                else None,
+                prompt_order=current_question_item.order
+                if current_question_item
+                else None,
+                prompt_video_asset_id=current_question_item.video_asset_id
+                if current_question_item
+                else None,
+                prompt_video_uri=current_question_item.video_uri
+                if current_question_item
+                else None,
+                prompt_question_text=current_question_item.question_text
+                if current_question_item
+                else current_prompt_text,
                 prompt_subtitle_text=(
-                    (current_question_item.subtitle_text or current_question_item.question_text)
+                    (
+                        current_question_item.subtitle_text
+                        or current_question_item.question_text
+                    )
                     if current_question_item
                     else current_prompt_text
                 ),

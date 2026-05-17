@@ -5,6 +5,7 @@ Revises: 20260504_0002
 Create Date: 2026-05-16 15:40:00
 
 """
+
 from __future__ import annotations
 
 import json
@@ -19,10 +20,16 @@ branch_labels = None
 depends_on = None
 
 
-def _normalize_json_columns(table_name: str, key_column: str, columns: tuple[str, ...]) -> None:
+def _normalize_json_columns(
+    table_name: str, key_column: str, columns: tuple[str, ...]
+) -> None:
     bind = op.get_bind()
     select_list = ", ".join([key_column, *columns])
-    rows = bind.execute(sa.text(f"SELECT {select_list} FROM {table_name}")).mappings().all()
+    rows = (
+        bind.execute(sa.text(f"SELECT {select_list} FROM {table_name}"))
+        .mappings()
+        .all()
+    )
 
     for row in rows:
         assignments: list[str] = []
@@ -32,7 +39,9 @@ def _normalize_json_columns(table_name: str, key_column: str, columns: tuple[str
             value = row[column]
             if value is None:
                 continue
-            params[column] = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            params[column] = json.dumps(
+                value, ensure_ascii=False, separators=(",", ":")
+            )
             assignments.append(f"{column} = CAST(:{column} AS json)")
 
         if not assignments:

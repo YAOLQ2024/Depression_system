@@ -26,7 +26,9 @@ def _forward_json_request_to_base_url(
     if extra_headers:
         headers.update(extra_headers)
 
-    req = request.Request(target_url, data=data, headers=headers, method=method)
+    req = request.Request(
+        target_url, data=data, headers=headers, method=method
+    )
     try:
         with request.urlopen(req, timeout=10) as response:
             body = response.read().decode("utf-8")
