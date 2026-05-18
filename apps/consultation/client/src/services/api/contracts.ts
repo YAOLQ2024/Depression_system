@@ -2,7 +2,9 @@ import type {
   AssessmentCatalogItem,
   AssessmentSession,
   BootstrapPayload,
+  ConsultationMultimodalLive,
   ConsultationSession,
+  ConsultationTurnMultimodalBundle,
   UserRecord,
 } from "../../types";
 
@@ -51,10 +53,28 @@ export type SubmitConsultationTurnPayload = {
   raw_input?: string | null;
   audio_uri?: string | null;
   transcript_text?: string | null;
+  audio_base64?: string | null;
+  audio_format?: string | null;
+  sampling_rate?: number | null;
+  audio_uri?: string | null;
   response_started_at?: string | null;
   response_completed_at?: string | null;
   [key: string]: unknown;
 };
+
+export type ConsultationMultimodalCapturePayload = {
+  question_key: string;
+  turn_id?: string | null;
+  capture_started_at: string;
+  capture_ended_at: string;
+  frame_index: number;
+  mime_type: string;
+  image_file: File;
+};
+
+export type ConsultationMultimodalLiveResponse = ConsultationMultimodalLive;
+
+export type ConsultationTurnMultimodalBundleResponse = ConsultationTurnMultimodalBundle;
 
 export type AssessmentSessionResponse = {
   assessment_session: AssessmentSession;

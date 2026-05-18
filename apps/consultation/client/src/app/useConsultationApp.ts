@@ -16,11 +16,19 @@ import { getBootstrapSummary } from "../services/api/bootstrap.api";
 import {
   completeConsultationQuestionItem,
   createConsultationSession,
+  getConsultationMultimodalLive,
   getConsultationSession,
+  getConsultationTurnMultimodalBundle,
   startConsultationSession,
+  submitConsultationFaceCapture as submitConsultationFaceCaptureRequest,
+  submitConsultationPoseCapture as submitConsultationPoseCaptureRequest,
   submitConsultationTurn as submitConsultationTurnRequest,
 } from "../services/api/consultation.api";
-import type { SubmitConsultationTurnPayload, UpdateUserProfilePayload } from "../services/api/contracts";
+import type {
+  ConsultationMultimodalCapturePayload,
+  SubmitConsultationTurnPayload,
+  UpdateUserProfilePayload,
+} from "../services/api/contracts";
 import { getCurrentUser, updateCurrentUserProfile } from "../services/api/user.api";
 import type {
   AssessmentCatalogItem,
@@ -405,6 +413,71 @@ export function useConsultationApp() {
     }
   }
 
+  async function refreshConsultationMultimodalLive() {
+    if (!consultation) {
+      return null;
+    }
+
+    try {
+      const live = await getConsultationMultimodalLive(consultation.session_id);
+      setConsultation((current) =>
+        current
+          ? {
+              ...current,
+              multimodal_live: live,
+              multimodal_live_updated_at: live.updated_at || new Date().toISOString(),
+            }
+          : current,
+      );
+      return live;
+    } catch {
+      return null;
+    }
+  }
+
+  async function getConsultationTurnBundle(turnId: string) {
+    if (!consultation) {
+      return null;
+    }
+
+    try {
+      return await getConsultationTurnMultimodalBundle(consultation.session_id, turnId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "读取多模态汇总失败");
+      return null;
+    }
+  }
+
+  async function submitConsultationFaceCapture(payload: ConsultationMultimodalCapturePayload) {
+    if (!consultation) {
+      return null;
+    }
+
+    try {
+      const result = await submitConsultationFaceCaptureRequest(consultation.session_id, payload);
+      await refreshConsultationMultimodalLive();
+      return result;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "上传表情采样失败");
+      return null;
+    }
+  }
+
+  async function submitConsultationPoseCapture(payload: ConsultationMultimodalCapturePayload) {
+    if (!consultation) {
+      return null;
+    }
+
+    try {
+      const result = await submitConsultationPoseCaptureRequest(consultation.session_id, payload);
+      await refreshConsultationMultimodalLive();
+      return result;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "上传姿态采样失败");
+      return null;
+    }
+  }
+
   async function completeConsultationSystemQuestionItem(questionKey: string) {
     if (!consultation) {
       return null;
@@ -560,6 +633,10 @@ export function useConsultationApp() {
       submitConsultationTurn,
       submitManualConsultationTurn,
       refreshConsultation,
+      refreshConsultationMultimodalLive,
+      getConsultationTurnBundle,
+      submitConsultationFaceCapture,
+      submitConsultationPoseCapture,
       completeConsultationSystemQuestionItem,
       handleStartAssessment,
       handleSubmitAssessment,

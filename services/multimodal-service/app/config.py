@@ -26,6 +26,9 @@ def get_settings() -> dict:
             str(service_root / "runtime-assets"),
         )
     )
+    app_dir = Path(__file__).resolve().parent
+    model_root = app_dir / "models" / "non_eeg"
+
     return {
         "app_name": os.getenv("APP_NAME", "Multimodal Service"),
         "database_url": os.getenv(
@@ -55,4 +58,11 @@ def get_settings() -> dict:
         "upload_max_bytes": 25 * 1024 * 1024,
         "upload_max_duration_ms": 60_000,
         "upload_processing_dir": runtime_assets_dir / "tmp",
+        "model_provider": os.getenv("MODEL_PROVIDER", "CPUExecutionProvider"),
+        "pose_window": int(os.getenv("POSE_WINDOW", "96")),
+        "model_root": str(model_root),
+        "text_model_dir": str(model_root / "text_emotion"),
+        "audio_model_dir": str(model_root / "audio_emotion"),
+        "face_model_dir": str(model_root / "face_emotion"),
+        "pose_model_dir": str(model_root / "pose_emotion"),
     }
