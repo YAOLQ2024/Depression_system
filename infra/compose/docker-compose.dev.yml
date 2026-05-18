@@ -60,6 +60,11 @@ services:
         condition: service_healthy
     volumes:
       - ../../packages/workflow-resources:/app/workflow-resources:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     ports:
       - "8012:8000"
 
@@ -75,6 +80,11 @@ services:
         condition: service_healthy
     volumes:
       - ../../packages/workflow-resources:/app/workflow-resources:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     ports:
       - "8013:8000"
 
@@ -135,6 +145,7 @@ services:
       MINIO_SECRET_KEY: minioadmin
       MINIO_SECURE: "false"
       MULTIMODAL_BUCKET: mcs-multimodal
+      RUNTIME_ASSETS_DIR: /app/runtime-assets
       DOLPHIN_MODEL_NAME: base.cn
       DOLPHIN_MODEL_DIR: /app/runtime-assets/asr/base.cn
       ASR_DEVICE: auto
@@ -146,6 +157,11 @@ services:
         condition: service_started
     volumes:
       - ../../services/multimodal-service/runtime-assets:/app/runtime-assets
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     ports:
       - "8017:8000"
 
@@ -179,16 +195,16 @@ services:
     volumes:
       - ../../packages/workflow-resources:/app/workflow-resources:ro
     ports:
-      - "8080:8000"
+      - "18080:8000"
     depends_on:
       identity-service:
         condition: service_healthy
       consultation-service:
-        condition: service_started
+        condition: service_healthy
       assessment-service:
-        condition: service_started
+        condition: service_healthy
       multimodal-service:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready').read()"]
       interval: 5s

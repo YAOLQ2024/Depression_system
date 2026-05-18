@@ -30,7 +30,7 @@ def _forward_json_request_to_base_url(
         target_url, data=data, headers=headers, method=method
     )
     try:
-        with request.urlopen(req, timeout=10) as response:
+        with request.urlopen(req, timeout=60) as response:
             body = response.read().decode("utf-8")
             return {"status": response.status, "payload": json.loads(body)}
     except error.HTTPError as exc:
@@ -48,6 +48,15 @@ def _forward_json_request_to_base_url(
             "payload": {
                 "code": 5030,
                 "message": f"{service_name} unavailable: {exc.reason}",
+                "data": {},
+            },
+        }
+    except TimeoutError as exc:
+        return {
+            "status": 504,
+            "payload": {
+                "code": 5040,
+                "message": f"{service_name} timed out after 60 seconds",
                 "data": {},
             },
         }
