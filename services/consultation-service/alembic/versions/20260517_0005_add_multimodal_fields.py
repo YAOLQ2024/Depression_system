@@ -1,7 +1,7 @@
 """add multimodal fields
 
-Revision ID: 20260517_0004
-Revises: 20260516_0003
+Revision ID: 20260517_0005
+Revises: 20260517_0004
 Create Date: 2026-05-17 23:10:00
 
 """
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "20260517_0004"
-down_revision = "20260516_0003"
+revision = "20260517_0005"
+down_revision = "20260517_0004"
 branch_labels = None
 depends_on = None
 
