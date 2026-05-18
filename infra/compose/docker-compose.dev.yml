@@ -47,6 +47,7 @@ services:
       context: ../../services/consultation-service
     environment:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
       WORKFLOW_RESOURCES_DIR: /app/workflow-resources
       WORKFLOW_ID: consultation-v1
       SCRIPT_BUNDLE: rule-v1

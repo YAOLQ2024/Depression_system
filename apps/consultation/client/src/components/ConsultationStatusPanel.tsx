@@ -38,7 +38,36 @@ function buildPendingLive(): ConsultationMultimodalLive {
 }
 
 function resolveLiveData(consultation: ConsultationSession): ConsultationMultimodalLive {
-  return consultation.multimodal_live || buildPendingLive();
+  const pending = buildPendingLive();
+  const live = consultation.multimodal_live || {};
+
+  return {
+    ...pending,
+    ...live,
+    speech: {
+      ...pending.speech,
+      ...(live.speech || {}),
+      top_3_labels: live.speech?.top_3_labels || pending.speech.top_3_labels,
+    },
+    text: {
+      ...pending.text,
+      ...(live.text || {}),
+      top_3_labels: live.text?.top_3_labels || pending.text.top_3_labels,
+      negative_terms: live.text?.negative_terms || pending.text.negative_terms,
+    },
+    face: {
+      ...pending.face,
+      ...(live.face || {}),
+      top_3_labels: live.face?.top_3_labels || pending.face.top_3_labels,
+      quality_flags: live.face?.quality_flags || pending.face.quality_flags,
+    },
+    pose: {
+      ...pending.pose,
+      ...(live.pose || {}),
+      top_3_labels: live.pose?.top_3_labels || pending.pose.top_3_labels,
+      quality_flags: live.pose?.quality_flags || pending.pose.quality_flags,
+    },
+  };
 }
 
 function formatPercent(score?: number | null) {
