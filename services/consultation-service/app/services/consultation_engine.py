@@ -980,6 +980,7 @@ def submit_consultation_turn(
                 input_type=payload.input_type,
                 prompt_text=current_prompt_text,
                 raw_input=payload.raw_input,
+                audio_uri=payload.audio_uri,
                 transcript_text=payload.transcript_text,
                 structured_fields=extracted_fields or None,
                 branch_taken=branch_name,

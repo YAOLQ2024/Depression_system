@@ -13,6 +13,7 @@ import { ConsultationLayout } from "../layouts";
 import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
+import { createMultimodalSession, uploadMultimodalAudioTurn } from "../services/api/multimodal.api";
 import type { ConsultationSession } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
@@ -106,6 +107,16 @@ function formatDuration(durationMs: number) {
   return `${minutes}:${seconds}`;
 }
 
+function resolveRecordingExtension(mimeType: string) {
+  if (mimeType.includes("mp4")) {
+    return "mp4";
+  }
+  if (mimeType.includes("ogg")) {
+    return "ogg";
+  }
+  return "webm";
+}
+
 type LocalRecordingSnapshot = {
   promptKey: string;
   durationMs: number;
@@ -127,6 +138,7 @@ export default function ConsultationPage() {
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [videoError, setVideoError] = useState("");
   const [isCompletingSystemQuestion, setIsCompletingSystemQuestion] = useState(false);
+  const [multimodalSessionId, setMultimodalSessionId] = useState<string | null>(null);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [answerWindowOpenedAt, setAnswerWindowOpenedAt] = useState<string | null>(null);
   const [lastRecording, setLastRecording] = useState<LocalRecordingSnapshot | null>(null);
@@ -241,6 +253,10 @@ export default function ConsultationPage() {
   }, [consultation?.status, currentPromptKey, isRecording]);
 
   useEffect(() => {
+    setMultimodalSessionId(null);
+  }, [consultation?.session_id]);
+
+  useEffect(() => {
     if (!isRecording) {
       return;
     }
@@ -334,6 +350,23 @@ export default function ConsultationPage() {
     audioChunksRef.current = [];
   }
 
+  async function ensureMultimodalSession() {
+    if (!consultation) {
+      throw new Error("当前没有可用的问诊会话，无法创建多模态会话。");
+    }
+
+    if (multimodalSessionId) {
+      return multimodalSessionId;
+    }
+
+    const session = await createMultimodalSession({
+      consultation_session_id: consultation.session_id,
+      workflow_id: consultation.workflow_id,
+    });
+    setMultimodalSessionId(session.session_id);
+    return session.session_id;
+  }
+
   async function startBrowserRecording() {
     if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       pushToast("当前浏览器不支持麦克风录音。", "error");
@@ -409,9 +442,41 @@ export default function ConsultationPage() {
         setIsSubmittingResponse(true);
 
         try {
+          let uploadedAudioUri: string | null = null;
+          if (consultation && currentPromptKey) {
+            try {
+              const ensuredMultimodalSessionId = await ensureMultimodalSession();
+              const uploaded = await uploadMultimodalAudioTurn(
+                ensuredMultimodalSessionId,
+                {
+                  consultation_session_id: consultation.session_id,
+                  question_key: currentPromptKey,
+                  prompt_key: consultation.current_prompt_key ?? currentPromptKey,
+                  duration_ms:
+                    completedAt.getTime() - responseStartedAt.getTime(),
+                  response_started_at: responseStartedAt.toISOString(),
+                  response_completed_at: completedAt.toISOString(),
+                  audio_file: blob,
+                  filename: `${currentPromptKey}.${resolveRecordingExtension(
+                    recorder.mimeType || "audio/webm",
+                  )}`,
+                },
+              );
+              uploadedAudioUri = uploaded.audio_uri;
+            } catch (caught) {
+              pushToast(
+                caught instanceof Error
+                  ? `原始录音上传失败，当前先退回仅时间入库模式：${caught.message}`
+                  : "原始录音上传失败，当前先退回仅时间入库模式。",
+                "warning",
+              );
+            }
+          }
+
           await actions.submitConsultationTurn({
             input_type: "speech",
             raw_input: null,
+            audio_uri: uploadedAudioUri,
             transcript_text: null,
             response_started_at: responseStartedAt.toISOString(),
             response_completed_at: completedAt.toISOString(),
