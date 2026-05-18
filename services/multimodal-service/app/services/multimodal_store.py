@@ -53,16 +53,35 @@ def _serialize_stage_context(stage_context: dict | None) -> dict:
     return stage_context or {}
 
 
+def _default_modalities(enabled_modalities: list[str] | None) -> list[str]:
+    normalized = list(enabled_modalities or [])
+    return normalized or ["text", "audio", "face", "pose"]
+
+
 def _serialize_session(record: MultimodalSession) -> dict:
+    started_at = record.started_at or record.created_at
+    created_at = record.created_at or started_at
     return {
+        "id": record.id,
         "session_id": record.id,
         "owner_service": record.owner_service,
         "owner_session_id": record.owner_session_id,
         "user_id": record.user_id,
         "stage_context": _serialize_stage_context(record.stage_context),
         "status": record.status,
-        "started_at": record.started_at.isoformat(),
+        "enabled_modalities": _default_modalities(record.enabled_modalities),
+        "latest_live_payload": dict(record.latest_live_payload or {}),
+        "session_summary_payload": record.session_summary_payload,
+        "notes": record.notes,
+        "started_at": started_at.isoformat() if started_at else None,
+        "created_at": created_at.isoformat() if created_at else None,
         "updated_at": record.updated_at.isoformat(),
+        "warmed_up_at": (
+            record.warmed_up_at.isoformat() if record.warmed_up_at else None
+        ),
+        "completed_at": (
+            record.completed_at.isoformat() if record.completed_at else None
+        ),
     }
 
 
@@ -260,20 +279,30 @@ def create_or_get_multimodal_session(
     acting_user_id: str | None,
 ) -> dict:
     effective_user_id = acting_user_id or payload.user_id
-    stage_context = payload.stage_context.model_dump()
+    owner_service = payload.owner_service or "consultation-service"
+    stage_context = (
+        payload.stage_context.model_dump() if payload.stage_context else {}
+    )
+    enabled_modalities = _default_modalities(payload.enabled_modalities)
 
     with get_db_session() as db_session:
         existing = db_session.execute(
             select(MultimodalSession).where(
-                MultimodalSession.owner_service == payload.owner_service,
+                MultimodalSession.owner_service == owner_service,
                 MultimodalSession.owner_session_id == payload.owner_session_id,
             )
         ).scalar_one_or_none()
         if existing:
+            now = _now()
             existing.user_id = effective_user_id or existing.user_id
-            existing.stage_context = stage_context
+            existing.stage_context = stage_context or existing.stage_context or {}
+            existing.enabled_modalities = enabled_modalities
+            existing.latest_live_payload = existing.latest_live_payload or {}
+            existing.notes = payload.notes if payload.notes is not None else existing.notes
             existing.status = "ready"
-            existing.updated_at = _now()
+            existing.started_at = existing.started_at or existing.created_at or now
+            existing.created_at = existing.created_at or existing.started_at or now
+            existing.updated_at = now
             db_session.flush()
             db_session.refresh(existing)
             return _serialize_session(existing)
@@ -281,12 +310,16 @@ def create_or_get_multimodal_session(
         now = _now()
         record = MultimodalSession(
             id=str(uuid.uuid4()),
-            owner_service=payload.owner_service,
+            owner_service=owner_service,
             owner_session_id=payload.owner_session_id,
             user_id=effective_user_id,
             stage_context=stage_context,
             status="ready",
+            enabled_modalities=enabled_modalities,
+            latest_live_payload={},
+            notes=payload.notes,
             started_at=now,
+            created_at=now,
             updated_at=now,
         )
         db_session.add(record)

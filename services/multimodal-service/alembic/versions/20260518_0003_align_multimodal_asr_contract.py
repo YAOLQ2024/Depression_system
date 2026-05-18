@@ -24,36 +24,33 @@ def upgrade() -> None:
     )
     op.add_column(
         "multimodal_sessions",
-        sa.Column("owner_session_id", sa.String(length=128), nullable=True),
-    )
-    op.add_column(
-        "multimodal_sessions",
         sa.Column("stage_context", sa.JSON(), nullable=True),
     )
     op.add_column(
         "multimodal_sessions",
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
     )
+    op.alter_column(
+        "multimodal_sessions",
+        "owner_session_id",
+        existing_type=sa.String(length=36),
+        type_=sa.String(length=128),
+        existing_nullable=False,
+    )
 
     op.execute(
         """
         UPDATE multimodal_sessions
         SET owner_service = 'consultation-service',
-            owner_session_id = consultation_session_id,
             stage_context = '{}'::json,
             started_at = created_at
+        WHERE owner_service IS NULL
         """
     )
 
     op.alter_column(
         "multimodal_sessions",
         "owner_service",
-        existing_type=sa.String(length=128),
-        nullable=False,
-    )
-    op.alter_column(
-        "multimodal_sessions",
-        "owner_session_id",
         existing_type=sa.String(length=128),
         nullable=False,
     )
@@ -69,115 +66,57 @@ def upgrade() -> None:
         existing_type=sa.DateTime(timezone=True),
         nullable=False,
     )
-    op.drop_index(
-        op.f("ix_multimodal_sessions_consultation_session_id"),
-        table_name="multimodal_sessions",
-    )
-    op.create_index(
-        op.f("ix_multimodal_sessions_owner_session_id"),
-        "multimodal_sessions",
-        ["owner_session_id"],
-        unique=False,
-    )
     op.create_unique_constraint(
         "uq_multimodal_sessions_owner",
         "multimodal_sessions",
         ["owner_service", "owner_session_id"],
     )
-    op.drop_column("multimodal_sessions", "workflow_id")
-    op.drop_column("multimodal_sessions", "consultation_session_id")
-    op.drop_column("multimodal_sessions", "created_at")
 
-    op.add_column(
+    op.create_table(
         "multimodal_audio_turns",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("multimodal_session_id", sa.String(length=36), nullable=False),
+        sa.Column("consultation_session_id", sa.String(length=36), nullable=False),
         sa.Column("turn_id", sa.String(length=36), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
-        sa.Column("stage_id", sa.String(length=128), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
-        sa.Column("node_id", sa.String(length=128), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
-        sa.Column("storage_object_key", sa.Text(), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
+        sa.Column("stage_id", sa.String(length=128), nullable=False),
+        sa.Column("node_id", sa.String(length=128), nullable=False),
+        sa.Column("question_key", sa.String(length=128), nullable=False),
+        sa.Column("prompt_key", sa.String(length=128), nullable=True),
+        sa.Column("audio_uri", sa.Text(), nullable=False),
+        sa.Column("storage_provider", sa.String(length=64), nullable=False),
+        sa.Column("storage_object_key", sa.Text(), nullable=False),
+        sa.Column("source_filename", sa.Text(), nullable=True),
+        sa.Column("mime_type", sa.String(length=128), nullable=True),
+        sa.Column("file_size_bytes", sa.Integer(), nullable=False),
+        sa.Column("duration_ms", sa.Integer(), nullable=True),
+        sa.Column("processing_status", sa.String(length=64), nullable=False),
         sa.Column("transcript_text", sa.Text(), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
         sa.Column("transcript_confidence", sa.Float(), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
-        sa.Column("asr_provider", sa.String(length=64), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
+        sa.Column("asr_provider", sa.String(length=64), nullable=False),
         sa.Column("error_code", sa.String(length=64), nullable=True),
-    )
-    op.add_column(
-        "multimodal_audio_turns",
         sa.Column("error_message", sa.Text(), nullable=True),
+        sa.Column("response_started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("response_completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["multimodal_session_id"],
+            ["multimodal_sessions.id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
-
-    op.execute(
-        """
-        UPDATE multimodal_audio_turns
-        SET stage_id = 'legacy-stage',
-            node_id = 'legacy-node',
-            storage_object_key = stored_relative_path,
-            asr_provider = 'dolphin',
-            storage_provider = CASE
-                WHEN storage_provider = 'runtime-assets-placeholder'
-                THEN 'legacy-runtime-assets'
-                ELSE storage_provider
-            END,
-            processing_status = CASE
-                WHEN processing_status IN ('uploaded_pending_transcription', 'uploaded', 'transcribing')
-                THEN 'failed'
-                ELSE processing_status
-            END,
-            error_code = CASE
-                WHEN processing_status IN ('uploaded_pending_transcription', 'uploaded', 'transcribing')
-                THEN 'SERVICE_RESTARTED'
-                ELSE error_code
-            END,
-            error_message = CASE
-                WHEN processing_status IN ('uploaded_pending_transcription', 'uploaded', 'transcribing')
-                THEN 'legacy placeholder transcription state was invalidated during migration'
-                ELSE error_message
-            END
-        """
-    )
-
-    op.alter_column(
+    op.create_index(
+        op.f("ix_multimodal_audio_turns_multimodal_session_id"),
         "multimodal_audio_turns",
-        "stage_id",
-        existing_type=sa.String(length=128),
-        nullable=False,
+        ["multimodal_session_id"],
+        unique=False,
     )
-    op.alter_column(
+    op.create_index(
+        op.f("ix_multimodal_audio_turns_consultation_session_id"),
         "multimodal_audio_turns",
-        "node_id",
-        existing_type=sa.String(length=128),
-        nullable=False,
-    )
-    op.alter_column(
-        "multimodal_audio_turns",
-        "storage_object_key",
-        existing_type=sa.Text(),
-        nullable=False,
-    )
-    op.alter_column(
-        "multimodal_audio_turns",
-        "asr_provider",
-        existing_type=sa.String(length=64),
-        nullable=False,
+        ["consultation_session_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_multimodal_audio_turns_turn_id"),
@@ -185,87 +124,35 @@ def upgrade() -> None:
         ["turn_id"],
         unique=False,
     )
-    op.drop_column("multimodal_audio_turns", "stored_relative_path")
 
 
 def downgrade() -> None:
-    op.add_column(
-        "multimodal_audio_turns",
-        sa.Column("stored_relative_path", sa.Text(), nullable=True),
-    )
-    op.execute(
-        """
-        UPDATE multimodal_audio_turns
-        SET stored_relative_path = storage_object_key
-        """
-    )
     op.drop_index(
         op.f("ix_multimodal_audio_turns_turn_id"),
         table_name="multimodal_audio_turns",
     )
-    op.drop_column("multimodal_audio_turns", "error_message")
-    op.drop_column("multimodal_audio_turns", "error_code")
-    op.drop_column("multimodal_audio_turns", "asr_provider")
-    op.drop_column("multimodal_audio_turns", "transcript_confidence")
-    op.drop_column("multimodal_audio_turns", "transcript_text")
-    op.drop_column("multimodal_audio_turns", "storage_object_key")
-    op.drop_column("multimodal_audio_turns", "node_id")
-    op.drop_column("multimodal_audio_turns", "stage_id")
-    op.drop_column("multimodal_audio_turns", "turn_id")
-    op.alter_column(
-        "multimodal_audio_turns",
-        "stored_relative_path",
-        existing_type=sa.Text(),
-        nullable=False,
+    op.drop_index(
+        op.f("ix_multimodal_audio_turns_consultation_session_id"),
+        table_name="multimodal_audio_turns",
     )
+    op.drop_index(
+        op.f("ix_multimodal_audio_turns_multimodal_session_id"),
+        table_name="multimodal_audio_turns",
+    )
+    op.drop_table("multimodal_audio_turns")
 
-    op.add_column(
-        "multimodal_sessions",
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "multimodal_sessions",
-        sa.Column("consultation_session_id", sa.String(length=36), nullable=True),
-    )
-    op.add_column(
-        "multimodal_sessions",
-        sa.Column("workflow_id", sa.String(length=128), nullable=True),
-    )
-    op.execute(
-        """
-        UPDATE multimodal_sessions
-        SET consultation_session_id = LEFT(owner_session_id, 36),
-            created_at = started_at
-        """
-    )
     op.drop_constraint(
         "uq_multimodal_sessions_owner",
         "multimodal_sessions",
         type_="unique",
     )
-    op.drop_index(
-        op.f("ix_multimodal_sessions_owner_session_id"),
-        table_name="multimodal_sessions",
-    )
-    op.create_index(
-        op.f("ix_multimodal_sessions_consultation_session_id"),
-        "multimodal_sessions",
-        ["consultation_session_id"],
-        unique=True,
-    )
-    op.alter_column(
-        "multimodal_sessions",
-        "consultation_session_id",
-        existing_type=sa.String(length=36),
-        nullable=False,
-    )
-    op.alter_column(
-        "multimodal_sessions",
-        "created_at",
-        existing_type=sa.DateTime(timezone=True),
-        nullable=False,
-    )
     op.drop_column("multimodal_sessions", "started_at")
     op.drop_column("multimodal_sessions", "stage_context")
-    op.drop_column("multimodal_sessions", "owner_session_id")
     op.drop_column("multimodal_sessions", "owner_service")
+    op.alter_column(
+        "multimodal_sessions",
+        "owner_session_id",
+        existing_type=sa.String(length=128),
+        type_=sa.String(length=36),
+        existing_nullable=False,
+    )

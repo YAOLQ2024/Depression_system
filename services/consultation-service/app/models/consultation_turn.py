@@ -34,6 +34,7 @@ class ConsultationTurn(Base):
     audio_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     structured_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    multimodal_bundle_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     branch_taken: Mapped[str] = mapped_column(String(64), nullable=False)
     response_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     response_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

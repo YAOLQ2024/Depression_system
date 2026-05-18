@@ -256,10 +256,10 @@ V1 仍然保留老师确认的 4 个阶段：
 推荐落点：
 
 - `services/multimodal-service/runtime-assets/asr/`
-- `services/multimodal-service/runtime-assets/audio-emotion/`
-- `services/multimodal-service/runtime-assets/text-emotion/`
-- `services/multimodal-service/runtime-assets/face-emotion/`
-- `services/multimodal-service/runtime-assets/pose-emotion/`
+- `services/multimodal-service/app/models/non_eeg/audio_emotion/`
+- `services/multimodal-service/app/models/non_eeg/text_emotion/`
+- `services/multimodal-service/app/models/non_eeg/face_emotion/`
+- `services/multimodal-service/app/models/non_eeg/pose_emotion/`
 - `services/multimodal-service/runtime-assets/eeg/`
 
 ## 5.2 增加固定视频清单 manifest

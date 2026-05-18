@@ -87,14 +87,15 @@ export function clearSessionToken() {
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getSessionToken();
-  const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const headers = {
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(isFormDataBody ? {} : { "Content-Type": "application/json" }),
-      ...(options.headers || {}),
-    },
+    headers,
     ...options,
   });
 

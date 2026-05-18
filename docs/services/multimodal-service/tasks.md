@@ -2,50 +2,68 @@
 
 ## 当前 owner 与协作边界
 
-- 当前 owner（语音转写）：朱睿
+- 当前 owner（语音转写与 `audio_uri` / `transcript_text`）：朱睿
 - 当前 owner（其他非 EEG）：刘倩
 - 当前 owner（EEG 模态与脑电帽硬件）：金伟
-- 配合方：主线负责人负责把输出结构接入 `risk-service`、`assessment-service` 与前端链路
-- 模块职责：负责多模态会话、采集片段、模态特征和标准化特征包输出
+- 主线负责人负责前端接线、主库回写、主链状态推进与 `risk-service` 对接
 
 ## 当前交付目标
 
-- 先把多模态统一输出格式定住，再逐个接真实模态
-- 把“语音转写”、“其他非 EEG 模态”和“EEG 模态 + 设备链路”切成三块可并行子任务
-- 最终向 `risk-service` 输出统一的标准特征包，不让下游兼容多套结构
+- 让非 EEG 接口对齐 `Step 4D` 规范并能实际接入主系统
+- 固定前端看板与 turn 级 bundle 的消费字段
+- 保留 EEG 扩展位，但不让 EEG 阻塞非 EEG 接入
 
-## 可直接认领的任务包
+## 当前推进状态（2026-05-17）
 
-### P0：统一协议与数据模型
+### 已完成
 
-- MM-01（刘倩）：设计多模态会话、采集片段、特征包数据模型
-- MM-02（朱睿 + 刘倩）：共同固定语音转写、语音特征、表情、姿态等非 EEG 模态的统一返回结构
-- MM-03（金伟）：定义 EEG 采集协议、脑电帽接入方式、采样元数据和质量标记
-- MM-04（朱睿 + 刘倩 + 金伟）：共同确认最终标准化特征包 Schema
+- 非 EEG 四模态模型已并入 `services/multimodal-service/app/models/non_eeg/`
+- 已实现多模态会话、采样明细、推理结果、turn bundle 的基础落库
+- 已实现 `audio-turns` 后内部补齐：
+  - `speech_emotion`
+  - `text_emotion`
+- 已实现 `captures/face` / `captures/pose` 的 Step 4D 表单协议接入
+- 已实现 `/live` 的稳定返回结构：
+  - `speech`
+  - `text`
+  - `face`
+  - `pose`
+  - `updated_at`
+- 已实现 `/turns/{turn_id}/bundle` 的 Step 4D 汇总结构：
+  - `speech_features`
+  - `text_features`
+  - `face_features`
+  - `pose_features`
+- 已实现 turn 级 face / pose 汇总
+- 已实现 session 级 face / pose 汇总写入 `session_summary_payload`
 
-### P1：模态接入与标准输出
+### 尚未完成
 
-- MM-11（刘倩）：实现多模态会话创建接口
-- MM-12（朱睿）：实现语音转写接口与 transcript 返回结构
-- MM-13（刘倩）：实现语音特征、表情/姿态占位接口
-- MM-14（金伟）：实现 EEG 模态输入适配、脑电帽数据采集与标准化输出
-- MM-15（朱睿 + 刘倩 + 金伟）：合并输出为统一特征包，并产出示例 payload
+- EEG 模态接入
+- Dolphin ASR
+- MinIO 音频落盘
+- 前端页面正式联调
+- `risk-service` 正式消费与验收
+- face / pose 质量标记的更细粒度算法
 
-### P2：质量控制与调试支持
+## 下一阶段任务
 
-- MM-21（朱睿 + 刘倩）：增加语音与非 EEG 链路的质量评估、时间同步和重试机制
-- MM-22（金伟）：补充 EEG 质量检测、异常标记与设备联调说明
-- MM-23（刘倩）：增加后台回放与调试支持
+### P1
 
-## 依赖与协作约束
+- MM-11：和 `gateway-service` / `consultation-service` 对齐 `audio-turns` 入参
+- MM-12：补充 `/live` 与 `/bundle` 的联调样例
+- MM-13：确认 face / pose 的窗口统计规则是否继续沿用当前实现
 
-- 依赖 `consultation-service` 和 `assessment-service` 提供稳定的会话上下文
-- 依赖真实设备、模型或第三方推理组件的输入输出格式明确
-- EEG 输出字段必须服从统一 Schema，不能单独发明第二套结果结构
-- 非 EEG 模态与 EEG 模态都必须提交样例数据和自测说明
+### P2
+
+- MM-21：把 face / pose 的 `blur` / `low_light` / `body_cutoff` / `motion_blur` 从占位值升级为真实质量评估
+- MM-22：补充 EEG 对齐统一 Schema
+- MM-23：补齐更完整的接口与聚合测试
 
 ## 验收口径
 
-- `risk-service` 能基于统一特征包消费所有模态，不需要区分开发者来源
-- 朱睿负责的语音转写链路、刘倩负责的其他非 EEG 链路、金伟负责的 EEG 链路都能单独自测
-- 时间戳、质量标记、模态来源字段完整，足以支撑后续风险分析和调试
+- 前端右侧看板只轮询 `/live` 就能拿到稳定结构
+- turn 结束后主链只读取 `/bundle` 就能拿到固定字段
+- `captures/face` / `captures/pose` 能持续收帧并回写细粒度结果
+- `audio-turns` 后能补齐 `speech_emotion` / `text_emotion`
+- face / pose 的 turn 级汇总和 session 级汇总可持续更新
