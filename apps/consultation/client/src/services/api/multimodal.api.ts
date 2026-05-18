@@ -1,27 +1,54 @@
 import { apiRequest } from "./client";
 
-type MultimodalSessionResponse = {
-  multimodal_session: {
-    session_id: string;
-    consultation_session_id: string;
-    workflow_id?: string | null;
-    status: string;
+export type MultimodalSessionRecord = {
+  session_id: string;
+  owner_service: string;
+  owner_session_id: string;
+  user_id?: string | null;
+  stage_context: {
+    stage_id: string;
+    stage_label: string;
+    stage_order: number;
   };
+  status: string;
+  started_at: string;
+  updated_at: string;
+};
+
+export type MultimodalAudioTurnRecord = {
+  audio_turn_id: string;
+  session_id: string;
+  consultation_session_id: string;
+  question_key: string;
+  processing_status: "uploaded" | "transcribing" | "completed" | "failed";
+  audio_uri: string;
+  transcript_text: string | null;
+  transcript_confidence: number | null;
+  asr_provider: string;
+  error_code: string | null;
+  error_message: string | null;
+  response_started_at: string | null;
+  response_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type MultimodalSessionResponse = {
+  multimodal_session: MultimodalSessionRecord;
 };
 
 type MultimodalAudioTurnResponse = {
-  audio_turn: {
-    audio_turn_id: string;
-    multimodal_session_id: string;
-    audio_uri: string;
-    processing_status: string;
-    stored_relative_path: string;
-  };
+  audio_turn: MultimodalAudioTurnRecord;
 };
 
 export async function createMultimodalSession(payload: {
-  consultation_session_id: string;
-  workflow_id?: string | null;
+  owner_service: string;
+  owner_session_id: string;
+  stage_context: {
+    stage_id: string;
+    stage_label: string;
+    stage_order: number;
+  };
 }) {
   const data = await apiRequest<MultimodalSessionResponse>("/multimodal/sessions", {
     method: "POST",
@@ -36,9 +63,13 @@ export async function uploadMultimodalAudioTurn(
     consultation_session_id: string;
     question_key: string;
     prompt_key?: string | null;
+    stage_id: string;
+    node_id: string;
     duration_ms?: number | null;
     response_started_at?: string | null;
     response_completed_at?: string | null;
+    mime_type: string;
+    turn_id?: string | null;
     audio_file: Blob;
     filename: string;
   },
@@ -46,8 +77,14 @@ export async function uploadMultimodalAudioTurn(
   const formData = new FormData();
   formData.set("consultation_session_id", payload.consultation_session_id);
   formData.set("question_key", payload.question_key);
+  formData.set("stage_id", payload.stage_id);
+  formData.set("node_id", payload.node_id);
+  formData.set("mime_type", payload.mime_type);
   if (payload.prompt_key) {
     formData.set("prompt_key", payload.prompt_key);
+  }
+  if (payload.turn_id) {
+    formData.set("turn_id", payload.turn_id);
   }
   if (typeof payload.duration_ms === "number") {
     formData.set("duration_ms", String(payload.duration_ms));
@@ -65,6 +102,16 @@ export async function uploadMultimodalAudioTurn(
     {
       method: "POST",
       body: formData,
+    },
+  );
+  return data.audio_turn;
+}
+
+export async function getMultimodalAudioTurn(sessionId: string, audioTurnId: string) {
+  const data = await apiRequest<MultimodalAudioTurnResponse>(
+    `/multimodal/sessions/${sessionId}/audio-turns/${audioTurnId}`,
+    {
+      method: "GET",
     },
   );
   return data.audio_turn;
