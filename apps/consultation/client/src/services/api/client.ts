@@ -25,7 +25,7 @@ function normalizeApiBase(url: string) {
 
     return parsed.toString().replace(/\/$/, "");
   } catch {
-    return `${window.location.protocol}//${window.location.hostname}:8080/api/v1`;
+    return `${window.location.protocol}//${window.location.hostname}:18080/api/v1`;
   }
 }
 
@@ -46,7 +46,7 @@ function getStoredPersistenceMode(): SessionPersistenceMode {
 }
 
 const API_BASE = normalizeApiBase(
-  window.__MCS_API_BASE__ || `${window.location.protocol}//${window.location.hostname}:8080/api/v1`,
+  window.__MCS_API_BASE__ || `${window.location.protocol}//${window.location.hostname}:18080/api/v1`,
 );
 
 export function getSessionToken() {
