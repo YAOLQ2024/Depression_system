@@ -25,6 +25,7 @@ class ConsultationTurnRequest(BaseModel):
         "recognition_failure",
     ]
     raw_input: str | None = None
+    audio_uri: str | None = None
     transcript_text: str | None = None
     audio_base64: str | None = None
     audio_format: str | None = None

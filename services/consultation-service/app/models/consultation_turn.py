@@ -31,6 +31,7 @@ class ConsultationTurn(Base):
     input_type: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_input: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audio_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     structured_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     multimodal_bundle_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)

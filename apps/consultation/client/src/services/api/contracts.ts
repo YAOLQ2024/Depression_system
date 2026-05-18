@@ -51,6 +51,7 @@ export type ConsultationResponse = {
 export type SubmitConsultationTurnPayload = {
   input_type: string;
   raw_input?: string | null;
+  audio_uri?: string | null;
   transcript_text?: string | null;
   audio_base64?: string | null;
   audio_format?: string | null;
