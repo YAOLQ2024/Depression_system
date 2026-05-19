@@ -26,12 +26,7 @@ def get_settings() -> dict:
             str(service_root / "runtime-assets"),
         )
     )
-    app_dir = Path(__file__).resolve().parent
-
-    if runtime_assets_dir.exists() and (runtime_assets_dir / "models" / "non_eeg").exists():
-        model_root = runtime_assets_dir / "models" / "non_eeg"
-    else:
-        model_root = app_dir / "models" / "non_eeg"
+    model_root = runtime_assets_dir / "models"
 
     return {
         "app_name": os.getenv("APP_NAME", "Multimodal Service"),

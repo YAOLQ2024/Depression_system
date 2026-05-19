@@ -56,7 +56,6 @@ export type SubmitConsultationTurnPayload = {
   audio_base64?: string | null;
   audio_format?: string | null;
   sampling_rate?: number | null;
-  audio_uri?: string | null;
   response_started_at?: string | null;
   response_completed_at?: string | null;
   [key: string]: unknown;

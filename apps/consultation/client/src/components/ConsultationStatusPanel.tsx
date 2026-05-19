@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Activity, AudioLines, BrainCircuit, RefreshCw, ScanFace, Sparkles } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, YAxis } from "recharts";
 
+import type { MediaDeviceStatusTone } from "../lib/mediaDeviceFeedback";
 import { cn } from "../lib/utils";
 import type {
   ConsultationMultimodalLive,
@@ -39,7 +40,7 @@ function buildPendingLive(): ConsultationMultimodalLive {
 
 function resolveLiveData(consultation: ConsultationSession): ConsultationMultimodalLive {
   const pending = buildPendingLive();
-  const live = consultation.multimodal_live || {};
+  const live: Partial<ConsultationMultimodalLive> = consultation.multimodal_live || {};
 
   return {
     ...pending,
@@ -203,6 +204,9 @@ export function ConsultationStatusPanel({
   cameraStream = null,
   cameraReady = false,
   cameraError = null,
+  cameraStatusTitle = "摄像头监测中",
+  cameraStatusTone = "pending",
+  microphoneStatusText = "麦克风待命",
   localTranscript = "",
 }: {
   consultation: ConsultationSession;
@@ -213,6 +217,9 @@ export function ConsultationStatusPanel({
   cameraStream?: MediaStream | null;
   cameraReady?: boolean;
   cameraError?: string | null;
+  cameraStatusTitle?: string;
+  cameraStatusTone?: MediaDeviceStatusTone;
+  microphoneStatusText?: string;
   localTranscript?: string;
 }) {
   const snapshot = resolveLiveData(consultation);
@@ -246,8 +253,12 @@ export function ConsultationStatusPanel({
                 stream={cameraStream}
                 cameraReady={cameraReady}
                 audioActive={isRecording}
+                title={cameraStatusTitle}
+                headlineText={cameraStatusTitle}
                 detailText={getFaceDetail(snapshot.face)}
                 errorText={cameraError}
+                statusTone={cameraStatusTone}
+                audioStatusText={microphoneStatusText}
               />
             </div>
             <div className="flex h-full flex-col justify-between rounded-[16px] bg-white/[0.03] px-2 py-2">
