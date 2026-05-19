@@ -17,7 +17,12 @@
 
 ### 已完成
 
-- 非 EEG 四模态模型已并入 `services/multimodal-service/app/models/non_eeg/`
+- 非 EEG 四模态模型已并入 `services/multimodal-service/runtime-assets/models/`
+- 已统一 `runtime-assets/` 运行时资源规范：
+  - 非 EEG 情感模型：`runtime-assets/models/`
+  - ASR 模型：`runtime-assets/asr/`
+  - 开发期统一走宿主机挂载
+  - 大权重统一走 Git LFS
 - 已实现多模态会话、采样明细、推理结果、turn bundle 的基础落库
 - 已实现 `audio-turns` 后内部补齐：
   - `speech_emotion`

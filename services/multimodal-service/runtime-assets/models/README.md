@@ -1,6 +1,6 @@
 # Non-EEG Four Modality Assets
 
-这里存放当前直接并入 `multimodal-service` 的非 EEG 四模态模型资产与对应推理脚本。
+这里是 `multimodal-service` 在开发环境下的非 EEG 四模态唯一模型根目录。
 
 当前包含：
 
@@ -16,12 +16,17 @@
 
 命名约定：
 
-- `app/models/non_eeg/` 作为非 EEG 模型根目录
+- `runtime-assets/models/` 作为非 EEG 模型根目录
 - 子目录统一使用 `snake_case`
 - 外部 API 路径可以继续保留业务语义化短横线命名，不和内部目录强绑定
 
-迁移原则：
+运行约定：
 
-- 所有模型文件和推理脚本都来自既有交付版
-- 不依赖旧项目绝对路径
-- 后续 `multimodal-service` 内部只从这里读取非 EEG 四模态资产
+- Compose 将宿主机 `runtime-assets/` 挂载到容器 `/app/runtime-assets`
+- 服务运行时直接从这里读取脚本、标签、tokenizer、preprocessor 和 `.onnx`
+- 修改模型后不需要重新 build 镜像
+
+Git 约定：
+
+- `.onnx` 使用 Git LFS 管理
+- 其余脚本、标签和轻量配置走普通 Git
