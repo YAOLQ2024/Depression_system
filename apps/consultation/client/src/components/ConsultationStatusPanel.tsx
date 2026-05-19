@@ -288,8 +288,8 @@ export function ConsultationStatusPanel({
 
         <SectionCard title="脑电趋势感知">
           <div className="grid grid-cols-[2fr_1fr] gap-[3px] h-[180px]">
-            <div className="rounded-[16px] bg-white/[0.03] px-1 py-1">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="min-w-0 rounded-[16px] bg-white/[0.03] px-1 py-1">
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <LineChart data={eegSeries} margin={{ top: 10, right: 8, bottom: 4, left: -24 }}>
                   <YAxis hide domain={[0, 1]} />
                   <Line type="monotone" dataKey="alpha" stroke="#60a5fa" strokeWidth={1.7} dot={false} />

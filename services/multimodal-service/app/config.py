@@ -40,17 +40,22 @@ def get_settings() -> dict:
         "minio_secure": _as_bool(os.getenv("MINIO_SECURE"), False),
         "multimodal_bucket": os.getenv("MULTIMODAL_BUCKET", "mcs-multimodal"),
         "runtime_assets_dir": runtime_assets_dir,
-        "dolphin_model_name": os.getenv("DOLPHIN_MODEL_NAME", "base.cn"),
+        "dolphin_model_name": os.getenv("DOLPHIN_MODEL_NAME", "base.cn.streaming"),
+        "dolphin_model_repo_id": os.getenv("DOLPHIN_MODEL_REPO_ID", "").strip(),
         "dolphin_model_dir": Path(
             os.getenv(
                 "DOLPHIN_MODEL_DIR",
-                str(runtime_assets_dir / "asr" / "base.cn"),
+                str(runtime_assets_dir / "asr" / "base.cn.streaming"),
             )
         ),
         "asr_device": os.getenv("ASR_DEVICE", "auto").strip().lower() or "auto",
         "asr_sync_timeout_ms": _as_int(
             os.getenv("ASR_SYNC_TIMEOUT_MS"),
             15000,
+        ),
+        "asr_preview_max_duration_ms": _as_int(
+            os.getenv("ASR_PREVIEW_MAX_DURATION_MS"),
+            10000,
         ),
         "asr_lang_sym": os.getenv("ASR_LANG_SYM", "zh"),
         "asr_region_sym": os.getenv("ASR_REGION_SYM", "CN"),

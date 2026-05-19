@@ -19,7 +19,7 @@ Current layout:
 - `asr/base.cn/`
   - Zhu Rui's Dolphin ASR runtime assets live here.
   - Required files: `base.cn.pt`, `train.yaml`, `units.txt`, `global_cmvn`
-  - Team setup command: `python infra/scripts/fetch_dolphin_base_cn.py`
+  - Team setup command: `python services/multimodal-service/scripts/fetch_dolphin_model.py`
   - Large binary weights should follow the same policy as the four emotion models:
     host mount during development, Git LFS for large weight files, and no baking
     into the image during local rebuilds.

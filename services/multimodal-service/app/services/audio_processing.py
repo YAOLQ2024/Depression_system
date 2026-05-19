@@ -42,11 +42,17 @@ def cleanup_processing_directory(audio_turn_id: str) -> None:
         shutil.rmtree(target_dir, ignore_errors=True)
 
 
+def normalize_mime_type(raw_mime_type: str | None) -> str:
+    if not raw_mime_type:
+        return ""
+    return raw_mime_type.split(";", 1)[0].strip().lower()
+
+
 def resolve_mime_type(
     declared_mime_type: str,
     upload_content_type: str | None,
 ) -> str:
-    normalized = declared_mime_type.strip().lower()
+    normalized = normalize_mime_type(declared_mime_type)
     if normalized not in SUPPORTED_MIME_TYPES:
         raise AudioProcessingError(
             "unsupported audio mime type",
@@ -55,7 +61,7 @@ def resolve_mime_type(
         )
 
     if upload_content_type:
-        normalized_upload_type = upload_content_type.strip().lower()
+        normalized_upload_type = normalize_mime_type(upload_content_type)
         if (
             normalized_upload_type
             and normalized_upload_type in SUPPORTED_MIME_TYPES

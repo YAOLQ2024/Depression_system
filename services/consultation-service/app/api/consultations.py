@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile, status
 
-from app.schemas.consultations import ConsultationTurnRequest, CreateConsultationSessionRequest
+from app.schemas.consultations import (
+    ConsultationSubtitlePreviewRequest,
+    ConsultationTurnRequest,
+    CreateConsultationSessionRequest,
+)
 from app.services.consultation_engine import (
     ConsultationServiceError,
     complete_system_question_item,
@@ -10,6 +14,7 @@ from app.services.consultation_engine import (
     get_consultation_multimodal_live,
     get_consultation_session,
     get_consultation_turn_multimodal_bundle,
+    sync_consultation_subtitle_preview,
     start_consultation_session,
     submit_consultation_face_capture,
     submit_consultation_pose_capture,
@@ -85,6 +90,26 @@ def post_consultation_turn(
     except ConsultationServiceError as exc:
         raise _translate_error(exc) from exc
     return success_response({"consultation": session_payload}, message="consultation turn accepted")
+
+
+@router.post("/consultations/{session_id}/subtitle-preview")
+def post_consultation_subtitle_preview(
+    session_id: str,
+    payload: ConsultationSubtitlePreviewRequest,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        session_payload = sync_consultation_subtitle_preview(
+            session_id,
+            payload,
+            acting_user_id=x_mcs_user_id,
+        )
+    except ConsultationServiceError as exc:
+        raise _translate_error(exc) from exc
+    return success_response(
+        {"consultation": session_payload},
+        message="consultation subtitle preview synced",
+    )
 
 
 @router.get("/consultations/{session_id}/multimodal/live")

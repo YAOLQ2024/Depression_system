@@ -72,51 +72,69 @@ def upgrade() -> None:
         ["owner_service", "owner_session_id"],
     )
 
-    op.create_table(
+    op.alter_column(
         "multimodal_audio_turns",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("multimodal_session_id", sa.String(length=36), nullable=False),
-        sa.Column("consultation_session_id", sa.String(length=36), nullable=False),
+        "stored_relative_path",
+        existing_type=sa.Text(),
+        new_column_name="storage_object_key",
+    )
+    op.add_column(
+        "multimodal_audio_turns",
         sa.Column("turn_id", sa.String(length=36), nullable=True),
-        sa.Column("stage_id", sa.String(length=128), nullable=False),
-        sa.Column("node_id", sa.String(length=128), nullable=False),
-        sa.Column("question_key", sa.String(length=128), nullable=False),
-        sa.Column("prompt_key", sa.String(length=128), nullable=True),
-        sa.Column("audio_uri", sa.Text(), nullable=False),
-        sa.Column("storage_provider", sa.String(length=64), nullable=False),
-        sa.Column("storage_object_key", sa.Text(), nullable=False),
-        sa.Column("source_filename", sa.Text(), nullable=True),
-        sa.Column("mime_type", sa.String(length=128), nullable=True),
-        sa.Column("file_size_bytes", sa.Integer(), nullable=False),
-        sa.Column("duration_ms", sa.Integer(), nullable=True),
-        sa.Column("processing_status", sa.String(length=64), nullable=False),
+    )
+    op.add_column(
+        "multimodal_audio_turns",
+        sa.Column("stage_id", sa.String(length=128), nullable=True),
+    )
+    op.add_column(
+        "multimodal_audio_turns",
+        sa.Column("node_id", sa.String(length=128), nullable=True),
+    )
+    op.add_column(
+        "multimodal_audio_turns",
         sa.Column("transcript_text", sa.Text(), nullable=True),
+    )
+    op.add_column(
+        "multimodal_audio_turns",
         sa.Column("transcript_confidence", sa.Float(), nullable=True),
-        sa.Column("asr_provider", sa.String(length=64), nullable=False),
+    )
+    op.add_column(
+        "multimodal_audio_turns",
+        sa.Column("asr_provider", sa.String(length=64), nullable=True),
+    )
+    op.add_column(
+        "multimodal_audio_turns",
         sa.Column("error_code", sa.String(length=64), nullable=True),
+    )
+    op.add_column(
+        "multimodal_audio_turns",
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("response_started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("response_completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["multimodal_session_id"],
-            ["multimodal_sessions.id"],
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_multimodal_audio_turns_multimodal_session_id"),
-        "multimodal_audio_turns",
-        ["multimodal_session_id"],
-        unique=False,
+    op.execute(
+        """
+        UPDATE multimodal_audio_turns
+        SET stage_id = COALESCE(stage_id, 'legacy'),
+            node_id = COALESCE(node_id, 'legacy'),
+            asr_provider = COALESCE(asr_provider, 'dolphin')
+        """
     )
-    op.create_index(
-        op.f("ix_multimodal_audio_turns_consultation_session_id"),
+    op.alter_column(
         "multimodal_audio_turns",
-        ["consultation_session_id"],
-        unique=False,
+        "stage_id",
+        existing_type=sa.String(length=128),
+        nullable=False,
+    )
+    op.alter_column(
+        "multimodal_audio_turns",
+        "node_id",
+        existing_type=sa.String(length=128),
+        nullable=False,
+    )
+    op.alter_column(
+        "multimodal_audio_turns",
+        "asr_provider",
+        existing_type=sa.String(length=64),
+        nullable=False,
     )
     op.create_index(
         op.f("ix_multimodal_audio_turns_turn_id"),
@@ -131,15 +149,20 @@ def downgrade() -> None:
         op.f("ix_multimodal_audio_turns_turn_id"),
         table_name="multimodal_audio_turns",
     )
-    op.drop_index(
-        op.f("ix_multimodal_audio_turns_consultation_session_id"),
-        table_name="multimodal_audio_turns",
+    op.drop_column("multimodal_audio_turns", "error_message")
+    op.drop_column("multimodal_audio_turns", "error_code")
+    op.drop_column("multimodal_audio_turns", "asr_provider")
+    op.drop_column("multimodal_audio_turns", "transcript_confidence")
+    op.drop_column("multimodal_audio_turns", "transcript_text")
+    op.drop_column("multimodal_audio_turns", "node_id")
+    op.drop_column("multimodal_audio_turns", "stage_id")
+    op.drop_column("multimodal_audio_turns", "turn_id")
+    op.alter_column(
+        "multimodal_audio_turns",
+        "storage_object_key",
+        existing_type=sa.Text(),
+        new_column_name="stored_relative_path",
     )
-    op.drop_index(
-        op.f("ix_multimodal_audio_turns_multimodal_session_id"),
-        table_name="multimodal_audio_turns",
-    )
-    op.drop_table("multimodal_audio_turns")
 
     op.drop_constraint(
         "uq_multimodal_sessions_owner",

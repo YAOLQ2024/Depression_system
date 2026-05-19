@@ -177,7 +177,7 @@ export default function ScaleQuestionnairePage() {
              
              {/* Subtitle Message Square Area */}
              <div className="absolute right-[5%] lg:right-[12%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
-               <DraggableMessagePanel message={assistantMessage} />
+               <DraggableMessagePanel lines={[assistantMessage]} />
              </div>
 
              <div className={cn(

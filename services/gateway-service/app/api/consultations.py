@@ -8,6 +8,7 @@ from app.clients.consultation_client import (
 )
 from app.clients.identity_client import forward_json_request
 from app.schemas.consultations import (
+    ConsultationSubtitlePreviewRequest,
     ConsultationTurnRequest,
     CreateConsultationRequest,
 )
@@ -177,6 +178,25 @@ def submit_consultation_turn(
     upstream = forward_consultation_request(
         "POST",
         f"/api/v1/consultations/{session_id}/turns",
+        payload.model_dump(mode="json", exclude_none=True),
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.post("/consultations/{session_id}/subtitle-preview")
+def sync_consultation_subtitle_preview(
+    session_id: str,
+    payload: ConsultationSubtitlePreviewRequest,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "POST",
+        f"/api/v1/consultations/{session_id}/subtitle-preview",
         payload.model_dump(mode="json", exclude_none=True),
         acting_user_id=user["id"],
     )
