@@ -43,12 +43,16 @@
 
 非 EEG 模型统一放在：
 
-- `app/models/non_eeg/text_emotion`
-- `app/models/non_eeg/audio_emotion`
-- `app/models/non_eeg/face_emotion`
-- `app/models/non_eeg/pose_emotion`
+- `runtime-assets/models/text_emotion`
+- `runtime-assets/models/audio_emotion`
+- `runtime-assets/models/face_emotion`
+- `runtime-assets/models/pose_emotion`
 
-`.onnx` 大文件建议使用 Git LFS 管理。
+开发阶段推荐：
+
+- 通过 Compose 把 `runtime-assets` 挂载到容器内 `/app/runtime-assets`
+- `.onnx` 大文件通过 Git LFS 管理
+- 镜像构建阶段不再把这 4 个大模型 bake 进镜像
 
 ## 关键环境变量
 

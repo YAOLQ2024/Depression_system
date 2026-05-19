@@ -10,6 +10,15 @@ import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
 import { FloatingControlBar } from "../components/FloatingControlBar";
 import { ConsultationLayout } from "../layouts";
+import {
+  describeMediaAccessError,
+  getActiveMicrophoneFeedback,
+  getInitialMediaFeedback,
+  getMicrophoneCompletedFeedback,
+  getReadyMediaFeedback,
+  getUnsupportedMediaFeedback,
+  type MediaDeviceFeedback,
+} from "../lib/mediaDeviceFeedback";
 import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
@@ -222,7 +231,11 @@ export default function ConsultationPage() {
   );
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [cameraFeedback, setCameraFeedback] = useState<MediaDeviceFeedback>(() => getInitialMediaFeedback("camera"));
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [microphoneFeedback, setMicrophoneFeedback] = useState<MediaDeviceFeedback>(() =>
+    getInitialMediaFeedback("microphone"),
+  );
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [recognitionInterimTranscript, setRecognitionInterimTranscript] = useState("");
   const { toast, pushToast } = useTimedToast();
@@ -424,7 +437,9 @@ export default function ConsultationPage() {
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError("当前浏览器不支持摄像头采集。");
+      const unsupported = getUnsupportedMediaFeedback("camera");
+      setCameraError(unsupported.detail);
+      setCameraFeedback(unsupported);
       return;
     }
 
@@ -432,6 +447,7 @@ export default function ConsultationPage() {
 
     async function setupCamera() {
       try {
+        setCameraFeedback(getInitialMediaFeedback("camera"));
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "user",
@@ -447,11 +463,14 @@ export default function ConsultationPage() {
         setCameraStream(stream);
         setCameraReady(true);
         setCameraError("");
+        setCameraFeedback(getReadyMediaFeedback("camera", "画面采集中，可持续上传表情与姿态帧。"));
       } catch (caught) {
         if (!cancelled) {
+          const feedback = describeMediaAccessError("camera", caught);
           setCameraReady(false);
           setCameraStream(null);
-          setCameraError(caught instanceof Error ? caught.message : "摄像头授权失败。");
+          setCameraError(feedback.detail);
+          setCameraFeedback(feedback);
         }
       }
     }
@@ -696,16 +715,25 @@ export default function ConsultationPage() {
 
   async function startBrowserRecording() {
     if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      pushToast("当前浏览器不支持麦克风录音。", "error");
+      const feedback = getUnsupportedMediaFeedback("microphone");
+      setMicrophoneFeedback(feedback);
+      pushToast(feedback.detail, "error");
       return;
     }
 
     if (typeof MediaRecorder === "undefined") {
-      pushToast("当前浏览器不支持 MediaRecorder，无法执行本地录音。", "error");
+      const feedback = getUnsupportedMediaFeedback("microphone");
+      setMicrophoneFeedback(feedback);
+      pushToast(feedback.detail, "error");
       return;
     }
 
     try {
+      setMicrophoneFeedback({
+        title: "正在检测麦克风",
+        detail: "浏览器正在申请麦克风权限并初始化录音设备。",
+        tone: "pending",
+      });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = pickSupportedRecordingMimeType();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -726,6 +754,7 @@ export default function ConsultationPage() {
       setRecognitionInterimTranscript("");
       setRecordingElapsedMs(0);
       setIsRecording(true);
+      setMicrophoneFeedback(getActiveMicrophoneFeedback());
       startSpeechRecognition();
 
       recorder.ondataavailable = (event) => {
@@ -739,6 +768,11 @@ export default function ConsultationPage() {
         recordingStartedAtRef.current = null;
         setIsRecording(false);
         setRecordingElapsedMs(0);
+        setMicrophoneFeedback({
+          title: "麦克风采集失败",
+          detail: "录音过程中出现错误，请检查设备占用或浏览器权限后重试。",
+          tone: "error",
+        });
         pushToast("浏览器录音过程中出现错误，请重试。", "error");
       };
 
@@ -773,6 +807,7 @@ export default function ConsultationPage() {
         setIsRecording(false);
         setRecordingElapsedMs(0);
         setIsSubmittingResponse(true);
+        setMicrophoneFeedback(getMicrophoneCompletedFeedback());
         stopSpeechRecognition();
 
         try {
@@ -844,12 +879,14 @@ export default function ConsultationPage() {
 
       recorder.start();
     } catch (caught) {
+      const feedback = describeMediaAccessError("microphone", caught);
       cleanupRecorderResources();
       recordingStartedAtRef.current = null;
       stopSpeechRecognition();
       setIsRecording(false);
       setRecordingElapsedMs(0);
-      pushToast(caught instanceof Error ? caught.message : "麦克风授权失败，无法开始录音。", "error");
+      setMicrophoneFeedback(feedback);
+      pushToast(feedback.detail, "error");
     }
   }
 
@@ -1052,6 +1089,9 @@ export default function ConsultationPage() {
                     cameraStream={cameraStream}
                     cameraReady={cameraReady}
                     cameraError={cameraError}
+                    cameraStatusTitle={cameraFeedback.title}
+                    cameraStatusTone={cameraFeedback.tone}
+                    microphoneStatusText={microphoneFeedback.title}
                     localTranscript={liveTranscriptText}
                     className="h-full"
                   />
@@ -1068,8 +1108,12 @@ export default function ConsultationPage() {
             stream={cameraStream}
             cameraReady={cameraReady}
             audioActive={isRecording}
-            detailText={cameraReady ? "摄像头已接入，正在采样" : "等待摄像头授权"}
+            title={cameraFeedback.title}
+            headlineText={cameraFeedback.title}
+            detailText={cameraFeedback.detail}
             errorText={cameraError}
+            statusTone={cameraFeedback.tone}
+            audioStatusText={microphoneFeedback.title}
           />
         </div>
       </div>
