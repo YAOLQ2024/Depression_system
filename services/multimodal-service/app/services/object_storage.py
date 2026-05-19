@@ -57,6 +57,42 @@ def upload_audio_object(
     return f"s3://{settings['multimodal_bucket']}/{object_key}"
 
 
+def parse_s3_uri(uri: str) -> tuple[str, str]:
+    parsed = urlparse(uri)
+    if parsed.scheme != "s3" or not parsed.netloc or not parsed.path:
+        raise ValueError("invalid_s3_uri")
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
+def download_object_bytes(uri: str) -> bytes:
+    bucket_name, object_key = parse_s3_uri(uri)
+    client = get_object_storage_client()
+    response = client.get_object(bucket_name, object_key)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def upload_object_to_bucket(
+    *,
+    bucket_name: str,
+    object_key: str,
+    file_bytes: bytes,
+    content_type: str,
+) -> str:
+    client = get_object_storage_client()
+    client.put_object(
+        bucket_name,
+        object_key,
+        BytesIO(file_bytes),
+        len(file_bytes),
+        content_type=content_type,
+    )
+    return f"s3://{bucket_name}/{object_key}"
+
+
 def is_storage_ready() -> bool:
     try:
         ensure_multimodal_bucket()

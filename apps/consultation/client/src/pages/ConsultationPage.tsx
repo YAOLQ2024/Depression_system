@@ -731,6 +731,7 @@ export default function ConsultationPage() {
 
           const previewText = preview.transcript_text.trim();
           if (!previewText) {
+            setSubtitleFallbackToBrowser(true);
             continue;
           }
 

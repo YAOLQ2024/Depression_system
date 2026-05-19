@@ -26,7 +26,7 @@ def _forward_multimodal_request(
         headers["Content-Type"] = "application/json; charset=utf-8"
     req = request.Request(target_url, data=data, headers=headers, method=method)
     try:
-        with request.urlopen(req, timeout=15) as response:
+        with request.urlopen(req, timeout=120) as response:
             body = response.read().decode("utf-8")
             return {"status": response.status, "payload": json.loads(body)}
     except error.HTTPError as exc:
@@ -136,12 +136,12 @@ def submit_audio_turn(
     consultation_turn_id: str,
     question_key: str | None,
     transcript_text: str | None,
-    audio_base64: str,
-    audio_format: str,
-    sampling_rate: int | None,
-    audio_uri: str | None,
-    original_audio_uri: str | None,
-    normalized_wav_uri: str | None,
+    audio_base64: str | None = None,
+    audio_format: str | None = None,
+    sampling_rate: int | None = None,
+    original_audio_uri: str | None = None,
+    original_mime_type: str | None = None,
+    source_filename: str | None = None,
     captured_at: str | None,
     acting_user_id: str,
 ) -> dict:
@@ -152,13 +152,13 @@ def submit_audio_turn(
             "consultation_turn_id": consultation_turn_id,
             "consultation_session_id": consultation_session_id,
             "question_key": question_key,
+            "transcript_text": transcript_text,
             "audio_base64": audio_base64,
             "audio_format": audio_format,
             "sampling_rate": sampling_rate,
-            "transcript_text": transcript_text,
-            "audio_uri": audio_uri,
             "original_audio_uri": original_audio_uri,
-            "normalized_wav_uri": normalized_wav_uri,
+            "original_mime_type": original_mime_type,
+            "source_filename": source_filename,
             "captured_at": captured_at,
         },
         acting_user_id=acting_user_id,

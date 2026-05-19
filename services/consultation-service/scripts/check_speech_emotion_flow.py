@@ -172,6 +172,7 @@ def main() -> int:
     speech_result_id = speech_result["speech_emotion_result_id"]
     primary_label = speech_result["primary_label"]
     primary_score = speech_result["primary_score"]
+    transcript_text = consultation_turn.get("transcript_text")
 
     db_result = run_command(
         [
@@ -286,6 +287,9 @@ def main() -> int:
     assert_equal("consultation_turn.audio_uri", db_turn_parts[2], audio_uri)
     assert_equal("consultation_turn.original_audio_uri", db_turn_parts[3], original_audio_uri)
     assert_equal("consultation_turn.normalized_wav_uri", db_turn_parts[4], normalized_wav_uri)
+    if not transcript_text or not transcript_text.strip():
+        raise AssertionError("consultation_turn.transcript_text is empty")
+    assert_equal("consultation_turn.transcript_text", db_turn_parts[5], transcript_text)
 
     assert_equal("live.primary_label", live_payload["speech"]["primary_label"], primary_label)
     assert_equal("live.status", live_payload["speech"]["status"], live_speech["status"])
@@ -305,6 +309,7 @@ def main() -> int:
         "normalized_wav_uri": normalized_wav_uri,
         "primary_label": primary_label,
         "primary_score": primary_score,
+        "transcript_text": transcript_text,
         "db_consistent": True,
         "minio_consistent": True,
         "live_consistent": True,
