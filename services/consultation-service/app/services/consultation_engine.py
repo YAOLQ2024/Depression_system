@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import re
 import uuid
 from datetime import datetime, timezone
@@ -24,10 +23,6 @@ from app.schemas.consultations import (
     ConsultationSubtitlePreviewRequest,
     ConsultationTurnRequest,
     CreateConsultationSessionRequest,
-)
-from app.services.audio_processing import (
-    AudioNormalizationError,
-    normalize_audio_to_wav,
 )
 from app.services.object_storage import ensure_consultation_bucket, upload_consultation_audio
 from app.services.workflow_loader import (
@@ -1087,14 +1082,7 @@ def _build_consultation_audio_object_key(
     filename: str | None,
 ) -> str:
     suffix = Path(filename or "").suffix.lower() or ".webm"
-    return f"consultation-audio/{session_id}/{turn_id}/response{suffix}"
-
-
-def _build_consultation_normalized_wav_object_key(
-    session_id: str,
-    turn_id: str,
-) -> str:
-    return f"consultation-audio/{session_id}/{turn_id}/response.normalized.wav"
+    return f"consultation-audio/{session_id}/{turn_id}/original/response{suffix}"
 
 
 def _ensure_multimodal_session_binding(
@@ -1532,9 +1520,12 @@ def submit_consultation_turn(
                     audio_base64=payload.audio_base64,
                     audio_format=payload.audio_format,
                     sampling_rate=payload.sampling_rate,
-                    audio_uri=payload.audio_uri,
                     original_audio_uri=payload.audio_uri,
-                    normalized_wav_uri=None,
+                    original_mime_type=(
+                        f"audio/{payload.audio_format}"
+                        if payload.audio_format
+                        else None
+                    ),
                     captured_at=response_completed_at.isoformat(),
                     acting_user_id=acting_user_id,
                 ),
@@ -1668,7 +1659,6 @@ def submit_consultation_audio_turn(
     try:
         ensure_consultation_bucket()
         resolved_mime_type = _resolve_audio_mime_type(mime_type, filename)
-        resolved_audio_format = _resolve_audio_format(resolved_mime_type, filename)
     except ConsultationServiceError:
         raise
     except Exception as exc:
@@ -1747,30 +1737,10 @@ def submit_consultation_audio_turn(
             filename,
         )
         try:
-            normalized_wav_bytes = normalize_audio_to_wav(
-                file_bytes=file_bytes,
-                source_suffix=f".{resolved_audio_format}",
-            )
-        except AudioNormalizationError as exc:
-            raise ConsultationServiceError(
-                f"failed to normalize consultation audio: {exc}",
-                code=4016,
-                status_code=422,
-            ) from exc
-        normalized_wav_object_key = _build_consultation_normalized_wav_object_key(
-            session_record.id,
-            turn_id,
-        )
-        try:
             original_audio_uri = upload_consultation_audio(
                 object_key=object_key,
                 file_bytes=file_bytes,
                 content_type=resolved_mime_type,
-            )
-            normalized_wav_uri = upload_consultation_audio(
-                object_key=normalized_wav_object_key,
-                file_bytes=normalized_wav_bytes,
-                content_type="audio/wav",
             )
         except Exception as exc:
             raise ConsultationServiceError(
@@ -1797,11 +1767,11 @@ def submit_consultation_audio_turn(
             ),
             input_type="speech",
             prompt_text=current_prompt_text,
-            raw_input=transcript_value,
+            raw_input=normalized_transcript,
             audio_uri=original_audio_uri,
             original_audio_uri=original_audio_uri,
-            normalized_wav_uri=normalized_wav_uri,
-            transcript_text=transcript_value,
+            normalized_wav_uri=None,
+            transcript_text=None,
             structured_fields=None,
             multimodal_bundle_payload=None,
             branch_taken=branch_name,
@@ -1835,12 +1805,9 @@ def submit_consultation_audio_turn(
                     consultation_turn_id=turn_id,
                     question_key=current_question_item.question_key,
                     transcript_text=transcript_value,
-                    audio_base64=base64.b64encode(normalized_wav_bytes).decode("ascii"),
-                    audio_format="wav",
-                    sampling_rate=16000,
-                    audio_uri=original_audio_uri,
                     original_audio_uri=original_audio_uri,
-                    normalized_wav_uri=normalized_wav_uri,
+                    original_mime_type=resolved_mime_type,
+                    source_filename=filename,
                     captured_at=completed_at.isoformat(),
                     acting_user_id=acting_user_id,
                 ),
@@ -1855,6 +1822,14 @@ def submit_consultation_audio_turn(
             db_session.add(session_record)
             pending_error = exc
         else:
+            returned_transcript = str(
+                audio_turn_data.get("transcript_text") or ""
+            ).strip()
+            consultation_turn.raw_input = returned_transcript or normalized_transcript
+            consultation_turn.transcript_text = returned_transcript or None
+            consultation_turn.normalized_wav_uri = audio_turn_data.get(
+                "normalized_wav_uri"
+            )
             speech_payload = audio_turn_data.get("speech_emotion") or {}
             speech_result.primary_label = speech_payload.get("primary_label")
             speech_result.primary_score = speech_payload.get("primary_score")
@@ -1867,7 +1842,9 @@ def submit_consultation_audio_turn(
                 "turn_bundle"
             )
             extracted_fields = _apply_extraction(
-                session_record, node, normalized_transcript
+                session_record,
+                node,
+                returned_transcript or normalized_transcript,
             )
             consultation_turn.structured_fields = extracted_fields or None
             _apply_multimodal_live_snapshot_from_audio_turn(

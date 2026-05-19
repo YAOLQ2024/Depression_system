@@ -128,7 +128,8 @@ speech_emotion_results
 - `input_type`
 - `raw_input`
 - `transcript_text`
-- `audio_uri`
+- `original_audio_uri`
+- `normalized_wav_uri`
 - `response_started_at`
 - `response_completed_at`
 - `created_at`
@@ -184,9 +185,19 @@ speech_emotion_results
 
 音频文件本体不存数据库，存对象存储（MinIO）。
 
+这一阶段建议保留两份音频对象：
+
+- `original_audio_uri`
+  - 浏览器原始上传音频
+  - 用于留档、审计、回放、追溯
+- `normalized_wav_uri`
+  - `multimodal-service` 统一转好的 `16k / mono / wav`
+  - 用于 Dolphin ASR 和语音情绪识别的标准输入
+
 数据库里只保存：
 
-- `audio_uri`
+- `original_audio_uri`
+- `normalized_wav_uri`
 - `storage_provider`
 - `storage_object_key`
 - `mime_type`
@@ -197,16 +208,16 @@ speech_emotion_results
 
 因为：
 
-1. 原始音频可能较大
-2. 以后可能需要人工复核
-3. 以后可能需要重跑模型
+1. 原始音频需要作为留档真相源
+2. 标准化 wav 需要作为模型统一输入源
+3. 以后可能需要人工复核与重跑模型
 4. 数据库存元数据更轻
 
 ---
 
 ## 6. 接口设计
 
-本阶段只需要两个核心接口。
+本阶段的正式链路由 `consultation-service` 对前端暴露主入口，再由它调用 `multimodal-service`。
 
 ### 6.1 提交一轮语音回答并完成识别
 
@@ -222,17 +233,27 @@ POST /api/v1/consultations/{session_id}/turns/audio
 - `audio_file`
 - `response_started_at`
 - `response_completed_at`
-- `transcript_text`（如果已有）
 
 接口职责：
 
 1. 校验 session 与权限
-2. 把音频上传到对象存储
+2. 把浏览器原始音频上传到对象存储
 3. 创建 `consultation_turn`
-4. 创建 `speech_emotion_result(status=processing)`
-5. 调用语音情绪模型
-6. 更新 `speech_emotion_result(status=completed)`
-7. 返回 turn 和语音情绪结果
+4. 调用 `multimodal-service`
+5. `multimodal-service` 将原始音频转成标准 wav
+6. `multimodal-service` 保存 `normalized_wav_uri`
+7. `multimodal-service` 基于同一份 wav 异步并行执行：
+   - Dolphin ASR
+   - 语音情绪识别
+8. `multimodal-service` 返回：
+   - `transcript_text`
+   - `normalized_wav_uri`
+   - `speech_emotion_result`
+9. `consultation-service` 回写：
+   - `consultation_turns.transcript_text`
+   - `consultation_turns.normalized_wav_uri`
+   - `speech_emotion_results`
+10. 返回 turn 和语音情绪结果
 
 返回建议：
 
@@ -283,14 +304,33 @@ GET /api/v1/consultations/{session_id}/turns/{turn_id}
 
 ### 7.3 后端处理
 
-处理顺序建议串行：
+处理链路建议分两层：
 
-1. 上传音频到 MinIO
-2. 创建 `consultation_turn`
-3. 创建 `speech_emotion_result(status=processing)`
-4. 调用语音情绪模型
-5. 更新 `speech_emotion_result(status=completed)`
-6. 把结果返回前端
+#### consultation-service 负责：
+
+1. 接收浏览器原始音频
+2. 上传原始音频到 MinIO，得到 `original_audio_uri`
+3. 创建 `consultation_turn`
+4. 把 `original_audio_uri` 和本轮上下文传给 `multimodal-service`
+
+#### multimodal-service 负责：
+
+1. 从原始音频生成标准 `16k / mono / wav`
+2. 保存标准 wav，得到 `normalized_wav_uri`
+3. 基于同一份 wav 异步并行执行：
+   - Dolphin ASR
+   - 语音情绪识别
+4. 返回：
+   - `transcript_text`
+   - `normalized_wav_uri`
+   - `speech_emotion_result`
+
+#### consultation-service 再回写：
+
+1. `consultation_turns.transcript_text`
+2. `consultation_turns.normalized_wav_uri`
+3. `speech_emotion_results`
+4. 把最终结果返回前端
 
 ### 7.4 前端显示
 
@@ -579,27 +619,37 @@ consultation 前端
     v
 consultation-service
     |
-    | 4. 上传音频到 MinIO
+    | 4. 上传原始音频到 MinIO
+    |    -> original_audio_uri
     | 5. 创建 consultation_turn
-    | 6. 创建 speech_emotion_result(status=processing)
-    |
-    | 7. 调用语音情绪模型
+    | 6. 调用 multimodal-service
+    |    - original_audio_uri
+    |    - 本轮上下文
     v
-speech emotion model
+multimodal-service
     |
-    | 8. 返回
+    | 7. 生成标准 wav
+    |    -> normalized_wav_uri
+    | 8. 基于同一份 wav 异步并行执行
+    |    ├─ Dolphin ASR
+    |    └─ 语音情绪识别
+    | 9. 汇总返回
+    |    - transcript_text
+    |    - normalized_wav_uri
     |    - label
     |    - score
     |    - topk
     v
 consultation-service
     |
-    | 9. 更新 speech_emotion_result(status=completed)
-    | 10. 组装响应
+    | 10. 回写 consultation_turn.transcript_text
+    | 11. 回写 consultation_turn.normalized_wav_uri
+    | 12. 写入/更新 speech_emotion_result
+    | 13. 组装响应
     v
 consultation 前端
     |
-    | 11. 更新右侧看板
+    | 14. 更新右侧看板
     |     - 主情绪标签
     |     - 状态
     v
@@ -610,17 +660,20 @@ consultation 前端
 
 ```text
 录音中
-  -> 上传中
-  -> 识别中
-  -> 已入库
+  -> 上传原始音频
+  -> 原始音频已留档
+  -> wav 生成中
+  -> ASR/情绪并行处理中
+  -> 结果已回写
   -> 看板刷新完成
 ```
 
 这版时序图对应的是当前第一阶段最稳的实现方式：
 
 - 一轮回答
-- 一次识别
-- 一次入库
+- 一次标准化
+- 一次并行推理
+- 一次统一回写
 - 一次看板刷新
 
 而不是“录音过程中不断切片识别、不断推送看板”。
@@ -675,24 +728,28 @@ consultation 前端
 - 在文档中固定模型输出示例
 - 在代码中固定一个统一的内部结果结构
 
-### Step 2：确定最小数据归属
+### Step 2：确定服务职责归属
 
-把数据归属先定死：
+先把职责边界定死：
 
-- `consultation_sessions`
-  - 负责整场问诊
-- `consultation_turns`
-  - 负责一轮回答
-- `speech_emotion_results`
-  - 负责这一轮回答的语音情绪结果
+- `consultation-service`
+  - 负责问诊 turn 业务语义
+  - 负责保存原始音频
+  - 负责创建 `consultation_turn`
+  - 负责回写最终文本和情绪结果
+- `multimodal-service`
+  - 负责音频标准化
+  - 负责生成 `normalized_wav_uri`
+  - 负责 Dolphin ASR
+  - 负责语音情绪识别
 - `MinIO`
-  - 负责音频文件本体
+  - 负责原始音频与标准 wav 的对象存储
 
 这一步的关键不是写代码，而是避免后面出现：
 
-- 结果到底存在哪张表
-- 音频到底进数据库还是对象存储
-- 看板到底读哪一层数据
+- 原始音频和标准 wav 谁来保存
+- 标准化过程放在哪个服务
+- 最终 transcript_text 到底由谁生成
 
 ### Step 3：新增 `speech_emotion_results` 表
 
@@ -727,26 +784,23 @@ consultation 前端
 
 不要先随便上传文件，先定命名规则。
 
-建议存储路径统一为：
+建议至少明确两套对象路径：
 
 ```text
-consultation-audio/{session_id}/{turn_id}/response.wav
+consultation-audio/{session_id}/{turn_id}/original/{filename}
+consultation-audio/{session_id}/{turn_id}/normalized/response.wav
 ```
 
 数据库建议同时保存：
 
-- `audio_uri`
-- `storage_provider`
-- `storage_object_key`
-- `mime_type`
-- `file_size_bytes`
-- `duration_ms`
+- `original_audio_uri`
+- `normalized_wav_uri`
 
 这一步的目标是让以后：
 
-- 人工复核能找到音频
-- 模型重跑能找到音频
-- 问题排查时能定位这一轮音频文件
+- 人工复核能找到原始音频
+- 模型重跑能找到标准 wav
+- 问题排查时能区分“留档源”和“模型输入源”
 
 ### Step 5：在后端增加“提交一轮语音回答”接口
 
@@ -761,21 +815,43 @@ POST /api/v1/consultations/{session_id}/turns/audio
 1. 校验登录身份
 2. 校验 `session_id` 是否存在
 3. 校验当前问诊是否允许提交这一轮回答
-4. 接收音频文件与业务字段
-5. 上传音频到 MinIO
+4. 接收原始音频文件与业务字段
+5. 上传原始音频到 MinIO，得到 `original_audio_uri`
 6. 创建 `consultation_turn`
-7. 创建 `speech_emotion_results(status=processing)`
-8. 调用语音情绪模型
-9. 更新 `speech_emotion_results`
-10. 返回 `consultation_turn + speech_emotion_result`
+7. 调用 `multimodal-service`
+8. 接收 `multimodal-service` 返回的：
+   - `transcript_text`
+   - `normalized_wav_uri`
+   - `speech_emotion_result`
+9. 回写 `consultation_turn`
+10. 写入/更新 `speech_emotion_results`
+11. 返回 `consultation_turn + speech_emotion_result`
 
 这里要注意：
 
-- 这一步建议先同步实现
-- 也就是接口返回时，结果已经识别完并写库
-- 先不要做消息队列或异步任务
+- 对前端来说，这条接口仍然建议先同步返回最终结果
+- 也就是前端等这一轮回答处理完成后再刷新看板
+- 但 `multimodal-service` 内部可以在标准 wav 生成之后并行跑 ASR 和情绪识别
 
-### Step 6：后端固定状态流转
+### Step 6：实现 `multimodal-service` 的标准化与并行推理
+
+`multimodal-service` 内部建议按下面顺序实现：
+
+1. 根据 `original_audio_uri` 读取原始音频
+2. 生成标准 `16k / mono / wav`
+3. 上传标准 wav 到 MinIO，得到 `normalized_wav_uri`
+4. 基于同一份 wav 异步并行执行：
+   - Dolphin ASR
+   - 语音情绪识别
+5. 等两边完成后汇总统一响应
+
+这一阶段要求：
+
+- ASR 和情绪识别必须吃同一份标准 wav
+- 不允许 ASR 吃原始音频、情绪模型吃 wav 的双输入源分裂
+- 如果任一分支失败，响应里必须明确失败字段
+
+### Step 7：后端固定状态流转
 
 语音情绪识别结果至少要有三态：
 
@@ -801,7 +877,7 @@ POST /api/v1/consultations/{session_id}/turns/audio
 - 还在处理中
 - 还是已经失败
 
-### Step 7：把模型原始输出映射成系统结果结构
+### Step 8：把模型原始输出映射成系统结果结构
 
 模型原始返回：
 
@@ -823,7 +899,21 @@ POST /api/v1/consultations/{session_id}/turns/audio
 
 这里要做的不是简单转字段名，而是把系统内部契约稳定下来。以后即便模型内部换了，只要仍然能映射到这三个字段，前后端就不用一起改。
 
-### Step 8：前端录音提交链路改成“提交后等最终结果”
+### Step 9：回写 `consultation_turns` 的正式文本与 wav URI
+
+`consultation-service` 在收到 `multimodal-service` 返回后，必须统一回写：
+
+- `consultation_turns.transcript_text`
+- `consultation_turns.normalized_wav_uri`
+- `speech_emotion_results`
+
+这里的关键约束是：
+
+- 最终正式 `transcript_text` 只认 Dolphin ASR 返回值
+- 浏览器实时字幕或预览文本不作为正式落库真相源
+- `normalized_wav_uri` 必须与本轮情绪识别使用的 wav 对应
+
+### Step 10：前端录音提交链路改成“提交后等最终结果”
 
 前端这一阶段不要这样做：
 
@@ -844,7 +934,7 @@ POST /api/v1/consultations/{session_id}/turns/audio
 - 看板更新由接口响应驱动
 - 不是由前端盲轮询驱动
 
-### Step 9：第一阶段看板只显示主情绪标签
+### Step 11：第一阶段看板只显示主情绪标签
 
 右侧看板中的语音区域，第一阶段只做：
 
@@ -865,7 +955,7 @@ POST /api/v1/consultations/{session_id}/turns/audio
 
 做进看板主展示。它们先作为后端返回和数据库存储字段保留即可。
 
-### Step 10：增加查询接口用于页面恢复
+### Step 12：增加查询接口用于页面恢复
 
 新增接口：
 
@@ -881,28 +971,35 @@ GET /api/v1/consultations/{session_id}/turns/{turn_id}
 
 这一步很重要，因为没有查询接口的话，页面一刷新就只能靠前端内存状态，难以验证完整闭环。
 
-### Step 11：补齐联调与验收检查项
+### Step 13：补齐联调与验收检查项
 
 至少按下面顺序逐项验证：
 
 1. 浏览器能正常录音
 2. 音频能成功上传到后端
-3. MinIO 中能看到音频文件
+3. MinIO 中能看到原始音频对象
 4. `consultation_turns` 成功新增一条记录
-5. `speech_emotion_results` 先写入 `processing`
-6. 模型成功返回 `label / score / topk`
-7. `speech_emotion_results` 更新为 `completed`
-8. 前端收到最终结果
-9. 看板显示主情绪标签
-10. 刷新页面后仍能通过查询接口恢复显示
+5. `multimodal-service` 成功生成标准 wav
+6. MinIO 中能看到标准 wav 对象
+7. Dolphin ASR 返回正式 `transcript_text`
+8. 语音情绪模型返回 `label / score / topk`
+9. `consultation_turns` 回写 `transcript_text`
+10. `consultation_turns` 回写 `normalized_wav_uri`
+11. `speech_emotion_results` 更新为 `completed`
+12. 前端收到最终结果
+13. 看板显示主情绪标签
+14. 刷新页面后仍能通过查询接口恢复显示
 
-### Step 12：确认第一阶段完成边界
+### Step 14：确认第一阶段完成边界
 
 第一阶段完成的判断标准应该明确写出来：
 
 - 能上传一整段回答音频
-- 能完成一次语音情绪识别
-- 能把结果入库
+- 能把原始音频存到 MinIO
+- 能把标准 wav 存到 MinIO
+- 能基于标准 wav 完成一次 Dolphin ASR
+- 能基于标准 wav 完成一次语音情绪识别
+- 能把文本和情绪结果入库
 - 能在看板上显示主情绪标签
 - 页面刷新后结果不丢
 
@@ -924,8 +1021,10 @@ GET /api/v1/consultations/{session_id}/turns/{turn_id}
 这条闭环的核心原则是：
 
 - 一轮回答对应一个结果
-- 音频文件进对象存储
-- 情绪结果单独入库
+- 原始音频与标准 wav 分层存储
+- Dolphin ASR 和语音情绪识别共用同一份标准 wav
+- ASR 与情绪识别在 `multimodal-service` 内部异步并行
+- `consultation-service` 统一回写正式文本与情绪结果
 - 接口完成后再刷新看板
 - 先保证一致性，再考虑实时化
 

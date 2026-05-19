@@ -34,12 +34,13 @@ class SubmitAudioTurnRequest(BaseModel):
     consultation_turn_id: str = Field(min_length=1)
     consultation_session_id: str | None = None
     question_key: str | None = None
-    audio_base64: str = Field(min_length=1)
-    audio_format: str = Field(min_length=1)
+    audio_base64: str | None = None
+    audio_format: str | None = None
     sampling_rate: int | None = None
     transcript_text: str | None = None
-    audio_uri: str | None = None
     original_audio_uri: str | None = None
+    original_mime_type: str | None = None
+    source_filename: str | None = None
     normalized_wav_uri: str | None = None
     captured_at: datetime | None = None
     frame_id: str | None = None
