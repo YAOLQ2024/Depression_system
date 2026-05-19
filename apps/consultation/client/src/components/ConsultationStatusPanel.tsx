@@ -335,7 +335,6 @@ export function ConsultationStatusPanel({
                 <div className="mt-1 text-[16px] font-semibold text-slate-100">
                   {getPrimaryLabel(snapshot.speech.primary_label, snapshot.speech.status)}
                 </div>
-                <div className="mt-1 text-[12px] text-emerald-300">{formatPercent(snapshot.speech.primary_score)} 置信度</div>
                 <div className="mt-1 text-[11px] text-slate-400">{getVoiceDetail(snapshot.speech, isRecording)}</div>
               </div>
             </div>

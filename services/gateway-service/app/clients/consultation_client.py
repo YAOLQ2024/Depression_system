@@ -58,10 +58,11 @@ def forward_consultation_multipart_request(
     content_type: str,
     file_bytes: bytes,
     acting_user_id: str,
+    file_field: str = "image_file",
 ) -> dict:
     settings = get_settings()
     target_url = f"{settings['consultation_service_url']}{path}"
-    body, boundary = _encode_multipart_formdata(fields, "image_file", filename, content_type, file_bytes)
+    body, boundary = _encode_multipart_formdata(fields, file_field, filename, content_type, file_bytes)
     headers = {
         "Accept": "application/json",
         "X-MCS-User-Id": acting_user_id,

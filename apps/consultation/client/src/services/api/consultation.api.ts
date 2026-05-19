@@ -1,8 +1,10 @@
 import { apiRequest } from "./client";
 import type {
+  ConsultationAudioTurnResponse,
   ConsultationMultimodalCapturePayload,
   ConsultationMultimodalLiveResponse,
   ConsultationResponse,
+  ConsultationTurnDetailResponse,
   ConsultationTurnMultimodalBundleResponse,
   SubmitConsultationTurnPayload,
 } from "./contracts";
@@ -36,6 +38,50 @@ export async function submitConsultationTurn(sessionId: string, payload: SubmitC
     body: JSON.stringify(payload),
   });
   return data.consultation;
+}
+
+export async function submitConsultationAudioTurn(
+  sessionId: string,
+  payload: {
+    transcript_text?: string | null;
+    response_started_at?: string | null;
+    response_completed_at?: string | null;
+    mime_type?: string | null;
+    audio_file: Blob;
+    filename: string;
+  },
+) {
+  const formData = new FormData();
+  if (payload.transcript_text) {
+    formData.append("transcript_text", payload.transcript_text);
+  }
+  if (payload.response_started_at) {
+    formData.append("response_started_at", payload.response_started_at);
+  }
+  if (payload.response_completed_at) {
+    formData.append("response_completed_at", payload.response_completed_at);
+  }
+  if (payload.mime_type) {
+    formData.append("mime_type", payload.mime_type);
+  }
+  formData.append("audio_file", payload.audio_file, payload.filename);
+
+  return apiRequest<ConsultationAudioTurnResponse>(
+    `/consultations/${sessionId}/turns/audio`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+}
+
+export async function getConsultationTurnDetail(sessionId: string, turnId: string) {
+  return apiRequest<ConsultationTurnDetailResponse>(
+    `/consultations/${sessionId}/turns/${turnId}`,
+    {
+      method: "GET",
+    },
+  );
 }
 
 export async function completeConsultationQuestionItem(sessionId: string, questionKey: string) {

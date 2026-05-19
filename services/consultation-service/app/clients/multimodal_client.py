@@ -140,6 +140,8 @@ def submit_audio_turn(
     audio_format: str,
     sampling_rate: int | None,
     audio_uri: str | None,
+    original_audio_uri: str | None,
+    normalized_wav_uri: str | None,
     captured_at: str | None,
     acting_user_id: str,
 ) -> dict:
@@ -155,6 +157,8 @@ def submit_audio_turn(
             "sampling_rate": sampling_rate,
             "transcript_text": transcript_text,
             "audio_uri": audio_uri,
+            "original_audio_uri": original_audio_uri,
+            "normalized_wav_uri": normalized_wav_uri,
             "captured_at": captured_at,
         },
         acting_user_id=acting_user_id,

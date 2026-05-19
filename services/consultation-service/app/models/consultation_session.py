@@ -48,3 +48,8 @@ class ConsultationSession(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     turns = relationship("ConsultationTurn", back_populates="session", cascade="all, delete-orphan")
+    speech_emotion_results = relationship(
+        "SpeechEmotionResult",
+        back_populates="consultation_session",
+        cascade="all, delete-orphan",
+    )

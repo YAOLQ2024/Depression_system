@@ -208,9 +208,9 @@ def _normalize_speech_result(raw_result: dict[str, Any], payload: SubmitAudioTur
         "primary_label": raw_result.get("label"),
         "primary_score": float(raw_result.get("score") or 0.0),
         "top_3_labels": top_3_labels,
-        "arousal": None,
-        "valence": None,
         "audio_uri": payload.audio_uri,
+        "original_audio_uri": payload.original_audio_uri or payload.audio_uri,
+        "normalized_wav_uri": payload.normalized_wav_uri,
         "captured_at": _isoformat(payload.captured_at),
     }
 
@@ -675,6 +675,8 @@ def submit_audio_turn(
                 "question_key": payload.question_key,
                 "audio_format": payload.audio_format,
                 "audio_uri": payload.audio_uri,
+                "original_audio_uri": payload.original_audio_uri or payload.audio_uri,
+                "normalized_wav_uri": payload.normalized_wav_uri,
                 "sampling_rate": payload.sampling_rate,
                 "audio_base64_length": len(payload.audio_base64),
                 "has_transcript_text": bool(payload.transcript_text and payload.transcript_text.strip()),

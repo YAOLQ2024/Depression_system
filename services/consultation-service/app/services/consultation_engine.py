@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -15,12 +17,18 @@ from app.clients.multimodal_client import (
     submit_audio_turn as submit_upstream_audio_turn,
     submit_pose_capture as submit_upstream_pose_capture,
 )
+from app.config import get_settings
 from app.database import get_db_session
-from app.models import ConsultationSession, ConsultationTurn
+from app.models import ConsultationSession, ConsultationTurn, SpeechEmotionResult
 from app.schemas.consultations import (
     ConsultationTurnRequest,
     CreateConsultationSessionRequest,
 )
+from app.services.audio_processing import (
+    AudioNormalizationError,
+    normalize_audio_to_wav,
+)
+from app.services.object_storage import ensure_consultation_bucket, upload_consultation_audio
 from app.services.workflow_loader import (
     QuestionItem,
     ScriptNode,
@@ -754,6 +762,111 @@ def _require_acting_user_id(acting_user_id: str | None) -> str:
     return acting_user_id
 
 
+def _serialize_consultation_turn_detail(
+    consultation_turn: ConsultationTurn,
+) -> dict[str, Any]:
+    return {
+        "turn_id": consultation_turn.id,
+        "session_id": consultation_turn.session_id,
+        "workflow_stage_id": consultation_turn.workflow_stage_id,
+        "stage_id": consultation_turn.stage_id,
+        "node_id": consultation_turn.node_id,
+        "turn_index": consultation_turn.turn_index,
+        "prompt_key": consultation_turn.prompt_key,
+        "prompt_order": consultation_turn.prompt_order,
+        "prompt_question_text": consultation_turn.prompt_question_text,
+        "input_type": consultation_turn.input_type,
+        "raw_input": consultation_turn.raw_input,
+        "audio_uri": consultation_turn.audio_uri,
+        "original_audio_uri": consultation_turn.original_audio_uri,
+        "normalized_wav_uri": consultation_turn.normalized_wav_uri,
+        "transcript_text": consultation_turn.transcript_text,
+        "multimodal_bundle_payload": consultation_turn.multimodal_bundle_payload,
+        "response_started_at": (
+            consultation_turn.response_started_at.isoformat()
+            if consultation_turn.response_started_at
+            else None
+        ),
+        "response_completed_at": (
+            consultation_turn.response_completed_at.isoformat()
+            if consultation_turn.response_completed_at
+            else None
+        ),
+        "created_at": consultation_turn.created_at.isoformat(),
+    }
+
+
+def _serialize_speech_emotion_result(
+    speech_result: SpeechEmotionResult,
+) -> dict[str, Any]:
+    return {
+        "speech_emotion_result_id": speech_result.id,
+        "consultation_turn_id": speech_result.consultation_turn_id,
+        "consultation_session_id": speech_result.consultation_session_id,
+        "model_name": speech_result.model_name,
+        "model_version": speech_result.model_version,
+        "primary_label": speech_result.primary_label,
+        "primary_score": speech_result.primary_score,
+        "top3_payload": list(speech_result.top3_payload or []),
+        "inference_status": speech_result.inference_status,
+        "error_message": speech_result.error_message,
+        "created_at": speech_result.created_at.isoformat(),
+        "updated_at": speech_result.updated_at.isoformat(),
+    }
+
+
+def _resolve_audio_format(mime_type: str | None, filename: str | None) -> str:
+    normalized_mime = str(mime_type or "").strip().lower()
+    if normalized_mime:
+        simple_mime = normalized_mime.split(";", 1)[0]
+        if "/" in simple_mime:
+            subtype = simple_mime.split("/", 1)[1].strip()
+            if subtype in {"webm", "ogg", "wav", "mp4", "mpeg", "x-wav"}:
+                if subtype == "x-wav":
+                    return "wav"
+                if subtype == "mpeg":
+                    return "mp3"
+                return subtype
+    suffix = Path(filename or "").suffix.lower().lstrip(".")
+    if suffix:
+        return suffix
+    raise ConsultationServiceError(
+        "unable to resolve audio format",
+        code=4009,
+        status_code=422,
+    )
+
+
+def _resolve_audio_mime_type(mime_type: str | None, filename: str | None) -> str:
+    normalized = str(mime_type or "").strip().lower()
+    if normalized:
+        return normalized.split(";", 1)[0]
+    suffix = Path(filename or "").suffix.lower()
+    if suffix == ".ogg":
+        return "audio/ogg"
+    if suffix == ".wav":
+        return "audio/wav"
+    if suffix == ".mp4":
+        return "audio/mp4"
+    return "audio/webm"
+
+
+def _build_consultation_audio_object_key(
+    session_id: str,
+    turn_id: str,
+    filename: str | None,
+) -> str:
+    suffix = Path(filename or "").suffix.lower() or ".webm"
+    return f"consultation-audio/{session_id}/{turn_id}/response{suffix}"
+
+
+def _build_consultation_normalized_wav_object_key(
+    session_id: str,
+    turn_id: str,
+) -> str:
+    return f"consultation-audio/{session_id}/{turn_id}/response.normalized.wav"
+
+
 def _refresh_multimodal_live_snapshot(
     session_record: ConsultationSession,
     *,
@@ -775,6 +888,17 @@ def _refresh_multimodal_live_snapshot(
     session_record.multimodal_live_payload = live_data
     session_record.multimodal_live_updated_at = _now()
     return live_data
+
+
+def _apply_multimodal_live_snapshot_from_audio_turn(
+    session_record: ConsultationSession,
+    audio_turn_data: dict[str, Any],
+) -> None:
+    multimodal_session = audio_turn_data.get("multimodal_session") or {}
+    latest_live_payload = multimodal_session.get("latest_live_payload")
+    if isinstance(latest_live_payload, dict):
+        session_record.multimodal_live_payload = latest_live_payload
+        session_record.multimodal_live_updated_at = _now()
 
 
 def create_consultation_session(
@@ -1084,6 +1208,8 @@ def submit_consultation_turn(
                     audio_format=payload.audio_format,
                     sampling_rate=payload.sampling_rate,
                     audio_uri=payload.audio_uri,
+                    original_audio_uri=payload.audio_uri,
+                    normalized_wav_uri=None,
                     captured_at=response_completed_at.isoformat(),
                     acting_user_id=acting_user_id,
                 ),
@@ -1165,6 +1291,299 @@ def get_consultation_turn_multimodal_bundle(
         db_session.add(consultation_turn)
         db_session.flush()
         return bundle_data
+
+
+def get_consultation_turn_detail(
+    session_id: str,
+    consultation_turn_id: str,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        consultation_turn = db_session.get(ConsultationTurn, consultation_turn_id)
+        if not consultation_turn or consultation_turn.session_id != session_record.id:
+            raise ConsultationServiceError(
+                "consultation turn not found", code=4043, status_code=404
+            )
+        speech_result = consultation_turn.speech_emotion_result
+        return {
+            "consultation_turn": _serialize_consultation_turn_detail(consultation_turn),
+            "speech_emotion_result": (
+                _serialize_speech_emotion_result(speech_result)
+                if speech_result
+                else None
+            ),
+        }
+
+
+def submit_consultation_audio_turn(
+    session_id: str,
+    *,
+    transcript_text: str | None,
+    response_started_at: datetime | None,
+    response_completed_at: datetime | None,
+    file_bytes: bytes,
+    filename: str | None,
+    mime_type: str | None,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    normalized_transcript = (transcript_text or "").strip()
+    transcript_value = normalized_transcript or None
+    if not file_bytes:
+        raise ConsultationServiceError(
+            "audio file is empty",
+            code=4015,
+            status_code=422,
+        )
+
+    try:
+        ensure_consultation_bucket()
+        resolved_mime_type = _resolve_audio_mime_type(mime_type, filename)
+        resolved_audio_format = _resolve_audio_format(resolved_mime_type, filename)
+    except ConsultationServiceError:
+        raise
+    except Exception as exc:
+        raise ConsultationServiceError(
+            f"audio storage unavailable: {exc}",
+            code=5033,
+            status_code=503,
+        ) from exc
+
+    bundle = get_workflow_loader().load_bundle()
+    pending_error: ConsultationServiceError | None = None
+    response_payload: dict[str, Any] | None = None
+
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        if (
+            session_record.status != "waiting_user_input"
+            or not session_record.current_stage_id
+            or not session_record.current_node_id
+        ):
+            raise ConsultationServiceError(
+                "consultation session is not waiting for user input",
+                code=4092,
+                status_code=409,
+            )
+        if not session_record.multimodal_session_id:
+            raise ConsultationServiceError(
+                "multimodal session not initialized",
+                code=4096,
+                status_code=409,
+            )
+
+        stage = bundle.stage_scripts[session_record.current_stage_id]
+        node = stage.nodes[session_record.current_node_id]
+        branch_name = "normal"
+        branch_payload = node.payload.get("branches", {}).get(branch_name)
+        if not branch_payload:
+            raise ConsultationServiceError(
+                "consultation branch missing",
+                code=4007,
+            )
+
+        current_question_item = _resolve_current_question_item_object(
+            session_record, bundle
+        )
+        if not current_question_item or not current_question_item.response_required:
+            raise ConsultationServiceError(
+                "current question item does not accept speech response",
+                code=4097,
+                status_code=409,
+            )
+
+        started_at = response_started_at or _now()
+        completed_at = response_completed_at or started_at
+        if completed_at < started_at:
+            completed_at = started_at
+
+        current_prompt_text = _ensure_json_dict(session_record.engine_state).get(
+            "current_prompt"
+        )
+        turn_index = (
+            db_session.query(ConsultationTurn)
+            .filter(ConsultationTurn.session_id == session_record.id)
+            .count()
+            + 1
+        )
+        turn_id = str(uuid.uuid4())
+        speech_result_id = str(uuid.uuid4())
+        object_key = _build_consultation_audio_object_key(
+            session_record.id,
+            turn_id,
+            filename,
+        )
+        try:
+            normalized_wav_bytes = normalize_audio_to_wav(
+                file_bytes=file_bytes,
+                source_suffix=f".{resolved_audio_format}",
+            )
+        except AudioNormalizationError as exc:
+            raise ConsultationServiceError(
+                f"failed to normalize consultation audio: {exc}",
+                code=4016,
+                status_code=422,
+            ) from exc
+        normalized_wav_object_key = _build_consultation_normalized_wav_object_key(
+            session_record.id,
+            turn_id,
+        )
+        try:
+            original_audio_uri = upload_consultation_audio(
+                object_key=object_key,
+                file_bytes=file_bytes,
+                content_type=resolved_mime_type,
+            )
+            normalized_wav_uri = upload_consultation_audio(
+                object_key=normalized_wav_object_key,
+                file_bytes=normalized_wav_bytes,
+                content_type="audio/wav",
+            )
+        except Exception as exc:
+            raise ConsultationServiceError(
+                f"failed to upload consultation audio: {exc}",
+                code=5034,
+                status_code=503,
+            ) from exc
+
+        consultation_turn = ConsultationTurn(
+            id=turn_id,
+            session_id=session_record.id,
+            workflow_stage_id=session_record.workflow_stage_id,
+            stage_id=session_record.current_stage_id,
+            node_id=session_record.current_node_id,
+            turn_index=turn_index,
+            prompt_key=current_question_item.question_key,
+            prompt_order=current_question_item.order,
+            prompt_video_asset_id=current_question_item.video_asset_id,
+            prompt_video_uri=current_question_item.video_uri,
+            prompt_question_text=current_question_item.question_text,
+            prompt_subtitle_text=(
+                current_question_item.subtitle_text
+                or current_question_item.question_text
+            ),
+            input_type="speech",
+            prompt_text=current_prompt_text,
+            raw_input=transcript_value,
+            audio_uri=original_audio_uri,
+            original_audio_uri=original_audio_uri,
+            normalized_wav_uri=normalized_wav_uri,
+            transcript_text=transcript_value,
+            structured_fields=None,
+            multimodal_bundle_payload=None,
+            branch_taken=branch_name,
+            response_started_at=started_at,
+            response_completed_at=completed_at,
+            created_at=_now(),
+        )
+        speech_result = SpeechEmotionResult(
+            id=speech_result_id,
+            consultation_turn_id=turn_id,
+            consultation_session_id=session_record.id,
+            model_name=get_settings()["speech_emotion_model_name"],
+            model_version=get_settings()["speech_emotion_model_version"],
+            primary_label=None,
+            primary_score=None,
+            top3_payload=[],
+            inference_status="processing",
+            error_message=None,
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        db_session.add(consultation_turn)
+        db_session.add(speech_result)
+        db_session.flush()
+
+        try:
+            audio_turn_data = _extract_upstream_data(
+                submit_upstream_audio_turn(
+                    multimodal_session_id=session_record.multimodal_session_id,
+                    consultation_session_id=session_record.id,
+                    consultation_turn_id=turn_id,
+                    question_key=current_question_item.question_key,
+                    transcript_text=transcript_value,
+                    audio_base64=base64.b64encode(normalized_wav_bytes).decode("ascii"),
+                    audio_format="wav",
+                    sampling_rate=16000,
+                    audio_uri=original_audio_uri,
+                    original_audio_uri=original_audio_uri,
+                    normalized_wav_uri=normalized_wav_uri,
+                    captured_at=completed_at.isoformat(),
+                    acting_user_id=acting_user_id,
+                ),
+                error_code=5023,
+            )
+        except ConsultationServiceError as exc:
+            speech_result.inference_status = "failed"
+            speech_result.error_message = exc.message
+            speech_result.updated_at = _now()
+            session_record.updated_at = _now()
+            db_session.add(speech_result)
+            db_session.add(session_record)
+            pending_error = exc
+        else:
+            speech_payload = audio_turn_data.get("speech_emotion") or {}
+            speech_result.primary_label = speech_payload.get("primary_label")
+            speech_result.primary_score = speech_payload.get("primary_score")
+            speech_result.top3_payload = speech_payload.get("top_3_labels") or []
+            speech_result.inference_status = "completed"
+            speech_result.error_message = None
+            speech_result.updated_at = _now()
+
+            consultation_turn.multimodal_bundle_payload = audio_turn_data.get(
+                "turn_bundle"
+            )
+            extracted_fields = _apply_extraction(
+                session_record, node, normalized_transcript
+            )
+            consultation_turn.structured_fields = extracted_fields or None
+            _apply_multimodal_live_snapshot_from_audio_turn(
+                session_record, audio_turn_data
+            )
+
+            session_record.status = "running"
+            session_record.updated_at = _now()
+            engine_state = _ensure_json_dict(session_record.engine_state)
+            engine_state["last_branch_taken"] = branch_name
+            session_record.engine_state = engine_state
+
+            _move_to_target(session_record, branch_payload.get("next"), bundle)
+            _auto_advance(session_record, bundle)
+            _sync_playlist_state(session_record, bundle)
+            db_session.add(consultation_turn)
+            db_session.add(speech_result)
+            db_session.add(session_record)
+            db_session.flush()
+            db_session.refresh(session_record)
+            response_payload = {
+                "consultation": _serialize_session(session_record, bundle),
+                "consultation_turn": _serialize_consultation_turn_detail(
+                    consultation_turn
+                ),
+                "speech_emotion_result": _serialize_speech_emotion_result(
+                    speech_result
+                ),
+            }
+
+    if pending_error is not None:
+        raise pending_error
+    if response_payload is None:
+        raise ConsultationServiceError(
+            "speech consultation turn processing returned empty payload",
+            code=5006,
+            status_code=500,
+        )
+    return response_payload
 
 
 def submit_consultation_face_capture(
