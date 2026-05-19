@@ -1,0 +1,14 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Development-mode multimodal model weights are mounted from the host.
+runtime-assets/models/**/*.onnx
+runtime-assets/asr/**/*.pt
+runtime-assets/asr/**/*.bin
+runtime-assets/asr/**/*.onnx
+runtime-assets/asr/**/*.ckpt
+runtime-assets/asr/**/*.safetensors
+
+# Cleanup legacy in-repo model location if it still exists locally.
+app/models/non_eeg/
