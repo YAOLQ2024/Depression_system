@@ -22,17 +22,10 @@ import {
 import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
-import {
-  createMultimodalSession,
-  getMultimodalAudioTurn,
-  uploadMultimodalAudioTurn,
-} from "../services/api/multimodal.api";
 import type { ConsultationSession } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
 const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
-const AUDIO_TURN_POLL_INTERVAL_MS = 1000;
-const AUDIO_TURN_POLL_TIMEOUT_MS = 45_000;
 const CAMERA_CAPTURE_INTERVAL_MS = 2500;
 
 type BrowserSpeechRecognitionResult = {
@@ -226,9 +219,6 @@ export default function ConsultationPage() {
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [answerWindowOpenedAt, setAnswerWindowOpenedAt] = useState<string | null>(null);
   const [lastRecording, setLastRecording] = useState<LocalRecordingSnapshot | null>(null);
-  const [multimodalSessionId, setMultimodalSessionId] = useState<string | null>(
-    consultation?.multimodal_session_id ?? null,
-  );
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [cameraFeedback, setCameraFeedback] = useState<MediaDeviceFeedback>(() => getInitialMediaFeedback("camera"));
@@ -364,12 +354,6 @@ export default function ConsultationPage() {
       setRecordingElapsedMs(0);
     }
   }, [consultation?.status, currentPromptKey, isRecording]);
-
-  useEffect(() => {
-    if (consultation?.multimodal_session_id) {
-      setMultimodalSessionId(consultation.multimodal_session_id);
-    }
-  }, [consultation?.multimodal_session_id]);
 
   useEffect(() => {
     speechTranscriptRef.current = speechTranscript;
@@ -556,47 +540,6 @@ export default function ConsultationPage() {
     audioChunksRef.current = [];
   }
 
-  async function ensureMultimodalSession() {
-    if (!consultation) {
-      throw new Error("当前没有可用的问诊会话，无法创建多模态会话。");
-    }
-
-    const existingSessionId = multimodalSessionId || consultation.multimodal_session_id;
-    if (existingSessionId) {
-      setMultimodalSessionId(existingSessionId);
-      return existingSessionId;
-    }
-
-    const stageId =
-      consultation.current_question_item?.stage_id ||
-      consultation.current_stage?.stage_id ||
-      consultation.current_stage_id;
-    const stageLabel =
-      consultation.current_question_item?.stage_label ||
-      consultation.current_stage?.stage_label ||
-      STAGE_LABELS[Math.max(0, (consultation.current_question_item?.stage_order || consultation.current_stage?.stage_order || 1) - 1)];
-    const stageOrder =
-      consultation.current_question_item?.stage_order ||
-      consultation.current_stage?.stage_order ||
-      1;
-
-    if (!stageId) {
-      throw new Error("当前会话缺少阶段上下文，无法创建多模态会话。");
-    }
-
-    const session = await createMultimodalSession({
-      owner_service: "consultation-service",
-      owner_session_id: consultation.session_id,
-      stage_context: {
-        stage_id: stageId,
-        stage_label: stageLabel,
-        stage_order: stageOrder,
-      },
-    });
-    setMultimodalSessionId(session.session_id);
-    return session.session_id;
-  }
-
   function stopSpeechRecognition() {
     const recognition = speechRecognitionRef.current;
     if (!recognition) {
@@ -654,23 +597,6 @@ export default function ConsultationPage() {
     };
     speechRecognitionRef.current = recognition;
     recognition.start();
-  }
-
-  async function waitForCompletedAudioTurn(sessionId: string, audioTurnId: string) {
-    const deadline = Date.now() + AUDIO_TURN_POLL_TIMEOUT_MS;
-
-    while (Date.now() < deadline) {
-      const audioTurn = await getMultimodalAudioTurn(sessionId, audioTurnId);
-      if (audioTurn.processing_status === "completed") {
-        return audioTurn;
-      }
-      if (audioTurn.processing_status === "failed") {
-        throw new Error(audioTurn.error_message || "语音转写失败，请重新录音。");
-      }
-      await sleep(AUDIO_TURN_POLL_INTERVAL_MS);
-    }
-
-    throw new Error("语音转写等待超时，请重新录音。");
   }
 
   async function submitCameraCaptures(turnId?: string | null) {
@@ -816,60 +742,30 @@ export default function ConsultationPage() {
             return;
           }
 
-          const stageId =
-            consultation.current_question_item?.stage_id ||
-            consultation.current_stage?.stage_id ||
-            consultation.current_stage_id;
-          const nodeId =
-            consultation.current_question_item?.node_id ||
-            consultation.current_node_id;
-          if (!stageId || !nodeId) {
-            pushToast("当前题目缺少转写所需上下文，请刷新后重试。", "error");
+          if (blob.size <= 0) {
+            pushToast("本轮录音内容为空，浏览器没有采集到有效音频，请重新录音。", "error");
             return;
           }
 
           const resolvedMimeType = recorder.mimeType || blob.type || "audio/webm";
-          const ensuredMultimodalSessionId = await ensureMultimodalSession();
-          const uploaded = await uploadMultimodalAudioTurn(ensuredMultimodalSessionId, {
-            consultation_session_id: consultation.session_id,
-            question_key: currentPromptKey,
-            prompt_key: consultation.current_prompt_key ?? currentPromptKey,
-            stage_id: stageId,
-            node_id: nodeId,
-            duration_ms: completedAt.getTime() - responseStartedAt.getTime(),
+          const submitted = await actions.submitConsultationAudioTurn({
+            transcript_text:
+              speechTranscriptRef.current.trim() || recognitionInterimRef.current.trim() || null,
             response_started_at: responseStartedAt.toISOString(),
             response_completed_at: completedAt.toISOString(),
             mime_type: resolvedMimeType,
             audio_file: blob,
             filename: `${currentPromptKey}.${resolveRecordingExtension(resolvedMimeType)}`,
           });
-
-          const finalizedAudioTurn =
-            uploaded.processing_status === "completed"
-              ? uploaded
-              : await waitForCompletedAudioTurn(
-                  ensuredMultimodalSessionId,
-                  uploaded.audio_turn_id,
-                );
-
-          if (!finalizedAudioTurn.audio_uri || !finalizedAudioTurn.transcript_text) {
-            pushToast("语音转写结果不完整，请重新录音。", "error");
+          if (!submitted) {
             return;
           }
 
-          await actions.submitConsultationTurn({
-            input_type: "speech",
-            raw_input: finalizedAudioTurn.transcript_text,
-            transcript_text: finalizedAudioTurn.transcript_text,
-            audio_uri: finalizedAudioTurn.audio_uri,
-            response_started_at: responseStartedAt.toISOString(),
-            response_completed_at: completedAt.toISOString(),
-          });
-          await submitCameraCaptures();
-          pushToast("本轮语音转写已完成，正在推进到下一题。", "success");
+          await submitCameraCaptures(submitted.consultation_turn.turn_id);
+          pushToast("本轮语音回答已完成，情绪结果已更新到看板。", "success");
         } catch (caught) {
           pushToast(
-            caught instanceof Error ? caught.message : "语音转写失败，请重新录音。",
+            caught instanceof Error ? caught.message : "语音提交失败，请重新录音。",
             "error",
           );
         } finally {

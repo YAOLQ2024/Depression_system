@@ -18,6 +18,7 @@ import {
   createConsultationSession,
   getConsultationMultimodalLive,
   getConsultationSession,
+  submitConsultationAudioTurn as submitConsultationAudioTurnRequest,
   getConsultationTurnMultimodalBundle,
   startConsultationSession,
   submitConsultationFaceCapture as submitConsultationFaceCaptureRequest,
@@ -25,6 +26,7 @@ import {
   submitConsultationTurn as submitConsultationTurnRequest,
 } from "../services/api/consultation.api";
 import type {
+  ConsultationAudioTurnResponse,
   ConsultationMultimodalCapturePayload,
   SubmitConsultationTurnPayload,
   UpdateUserProfilePayload,
@@ -34,9 +36,32 @@ import type {
   AssessmentCatalogItem,
   AssessmentSession,
   BootstrapPayload,
+  ConsultationMultimodalLive,
   ConsultationSession,
   UserRecord,
 } from "../types";
+
+function buildEmptyConsultationMultimodalLive(): ConsultationMultimodalLive {
+  return {
+    speech: { status: "pending", top_3_labels: [] },
+    text: { status: "pending", top_3_labels: [], negative_terms: [] },
+    face: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
+    pose: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
+    updated_at: null,
+  };
+}
+
+function buildSpeechLiveFromResult(result: ConsultationAudioTurnResponse): ConsultationMultimodalLive["speech"] {
+  const speech = result.speech_emotion_result;
+  return {
+    status: speech.inference_status === "completed" ? "ready" : speech.inference_status,
+    primary_label: speech.primary_label ?? null,
+    primary_score: speech.primary_score ?? null,
+    top_3_labels: speech.top3_payload ?? [],
+    audio_uri: result.consultation_turn.audio_uri ?? null,
+    captured_at: result.consultation_turn.response_completed_at ?? null,
+  };
+}
 
 export function useConsultationApp() {
   const [user, setUser] = useState<UserRecord | null>(null);
@@ -382,6 +407,98 @@ export function useConsultationApp() {
     }
   }
 
+  async function submitConsultationAudioTurn(payload: {
+    transcript_text?: string | null;
+    response_started_at?: string | null;
+    response_completed_at?: string | null;
+    mime_type?: string | null;
+    audio_file: Blob;
+    filename: string;
+  }): Promise<ConsultationAudioTurnResponse | null> {
+    if (!consultation) {
+      return null;
+    }
+
+    resetFeedback();
+    setLoading(true);
+    setConsultation((current) =>
+      current
+        ? (() => {
+            const fallback = buildEmptyConsultationMultimodalLive();
+            const currentLive = current.multimodal_live || fallback;
+            return {
+              ...current,
+              multimodal_live: {
+                ...fallback,
+                ...currentLive,
+                speech: {
+                  ...fallback.speech,
+                  ...(currentLive.speech || {}),
+                  status: "processing",
+                  primary_label: null,
+                },
+              },
+              multimodal_live_updated_at: new Date().toISOString(),
+            };
+          })()
+        : current,
+    );
+
+    try {
+      const result = await submitConsultationAudioTurnRequest(
+        consultation.session_id,
+        payload,
+      );
+      const fallback = buildEmptyConsultationMultimodalLive();
+      const resultLive = result.consultation.multimodal_live || fallback;
+      setConsultation({
+        ...result.consultation,
+        multimodal_live: {
+          ...fallback,
+          ...resultLive,
+          speech: buildSpeechLiveFromResult(result),
+        },
+        multimodal_live_updated_at:
+          result.consultation.multimodal_live_updated_at || new Date().toISOString(),
+      });
+      if (result.consultation.status === "handoff_ready") {
+        setMessage("规则问诊已完成，当前可以进入量表问诊。");
+      } else if (result.consultation.status === "paused_for_human_review") {
+        setError("系统已触发高风险人工复核，标准问诊主链已暂停。");
+      } else {
+        setMessage("本轮语音回答已提交，语音情绪结果已更新。");
+      }
+      return result;
+    } catch (caught) {
+      setConsultation((current) =>
+        current
+          ? (() => {
+              const fallback = buildEmptyConsultationMultimodalLive();
+              const currentLive = current.multimodal_live || fallback;
+              return {
+                ...current,
+                multimodal_live: {
+                  ...fallback,
+                  ...currentLive,
+                  speech: {
+                    ...fallback.speech,
+                    ...(currentLive.speech || {}),
+                    status: "failed",
+                    primary_label: null,
+                  },
+                },
+                multimodal_live_updated_at: new Date().toISOString(),
+              };
+            })()
+          : current,
+      );
+      setError(caught instanceof Error ? caught.message : "语音提交失败");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function submitManualConsultationTurn() {
     const normalized = consultationInput.trim();
     if (!normalized) {
@@ -630,6 +747,7 @@ export function useConsultationApp() {
       handleRegister,
       savePreparationProfile,
       handleStartConsultation,
+      submitConsultationAudioTurn,
       submitConsultationTurn,
       submitManualConsultationTurn,
       refreshConsultation,

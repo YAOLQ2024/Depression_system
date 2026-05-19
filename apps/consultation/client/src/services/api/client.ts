@@ -108,7 +108,21 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
   if (!response.ok || payload.code !== 0) {
     const detail = payload.detail || payload;
-    const message = detail.message || payload.message || `Request failed (${response.status})`;
+    const validationMessage =
+      Array.isArray(detail) && detail.length > 0
+        ? detail
+            .map((item) => {
+              const loc = Array.isArray(item?.loc) ? item.loc.join(".") : "request";
+              const msg = item?.msg || "invalid input";
+              return `${loc}: ${msg}`;
+            })
+            .join("; ")
+        : null;
+    const message =
+      detail.message ||
+      payload.message ||
+      validationMessage ||
+      `Request failed (${response.status})`;
     throw new Error(message);
   }
 

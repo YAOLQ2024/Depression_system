@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import base64
 import io
+import subprocess
+import tempfile
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -44,6 +47,44 @@ def decode_audio_to_16k_mono(audio_base64: str, audio_format: str, sampling_rate
             audio, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=False)
         except Exception as exc:  # noqa: BLE001
             raise ValueError("invalid_audio_bytes") from exc
+    elif fmt in {"webm", "mp4", "mpeg"}:
+        try:
+            import soundfile as sf
+        except ImportError as exc:
+            raise RuntimeError("soundfile_not_installed") from exc
+
+        source_suffix = {
+            "webm": ".webm",
+            "mp4": ".mp4",
+            "mpeg": ".mp3",
+        }.get(fmt, ".bin")
+        with tempfile.TemporaryDirectory(prefix="mcs-audio-") as temp_dir:
+            temp_path = Path(temp_dir)
+            source_path = temp_path / f"source{source_suffix}"
+            wav_path = temp_path / "normalized.wav"
+            source_path.write_bytes(raw)
+            completed = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(source_path),
+                    "-ac",
+                    "1",
+                    "-ar",
+                    str(MODEL_SAMPLE_RATE),
+                    str(wav_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0 or not wav_path.exists():
+                raise ValueError("invalid_audio_bytes")
+            try:
+                audio, sr = sf.read(str(wav_path), dtype="float32", always_2d=False)
+            except Exception as exc:  # noqa: BLE001
+                raise ValueError("invalid_audio_bytes") from exc
     elif fmt == "pcm_f32le":
         if not sampling_rate or int(sampling_rate) <= 0:
             raise ValueError("invalid_sampling_rate")

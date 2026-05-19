@@ -58,6 +58,41 @@ export type ConsultationQuestionItem = {
   response_required: boolean;
 };
 
+export type ConsultationTurnRecord = {
+  turn_id: string;
+  session_id: string;
+  workflow_stage_id?: string | null;
+  stage_id?: string | null;
+  node_id?: string | null;
+  turn_index?: number | null;
+  prompt_key?: string | null;
+  prompt_order?: number | null;
+  prompt_question_text?: string | null;
+  input_type: string;
+  raw_input?: string | null;
+  audio_uri?: string | null;
+  transcript_text?: string | null;
+  multimodal_bundle_payload?: Record<string, unknown> | null;
+  response_started_at?: string | null;
+  response_completed_at?: string | null;
+  created_at?: string;
+};
+
+export type SpeechEmotionResultRecord = {
+  speech_emotion_result_id: string;
+  consultation_turn_id: string;
+  consultation_session_id: string;
+  model_name: string;
+  model_version: string;
+  primary_label?: string | null;
+  primary_score?: number | null;
+  top3_payload?: MultimodalRankedLabel[];
+  inference_status: string;
+  error_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type MultimodalRankedLabel = {
   label: string;
   score: number;
@@ -68,8 +103,6 @@ export type SpeechMultimodalLive = {
   primary_label?: string | null;
   primary_score?: number | null;
   top_3_labels?: MultimodalRankedLabel[];
-  arousal?: number | null;
-  valence?: number | null;
   audio_uri?: string | null;
   captured_at?: string | null;
 };

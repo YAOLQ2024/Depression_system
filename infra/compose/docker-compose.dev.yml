@@ -51,6 +51,11 @@ services:
     environment:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
       MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_SECURE: "false"
+      CONSULTATION_BUCKET: mcs-consultation
       WORKFLOW_RESOURCES_DIR: /app/workflow-resources
       WORKFLOW_ID: consultation-v1
       SCRIPT_BUNDLE: rule-v1
@@ -58,6 +63,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
     volumes:
       - ../../packages/workflow-resources:/app/workflow-resources:ro
     healthcheck:

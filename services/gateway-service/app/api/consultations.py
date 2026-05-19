@@ -185,6 +185,60 @@ def submit_consultation_turn(
     return upstream["payload"]
 
 
+@router.post("/consultations/{session_id}/turns/audio")
+async def submit_consultation_audio_turn(
+    session_id: str,
+    transcript_text: str | None = Form(default=None),
+    response_started_at: str | None = Form(default=None),
+    response_completed_at: str | None = Form(default=None),
+    mime_type: str | None = Form(default=None),
+    audio_file: UploadFile = File(...),
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    fields = {}
+    if transcript_text:
+        fields["transcript_text"] = transcript_text
+    if response_started_at:
+        fields["response_started_at"] = response_started_at
+    if response_completed_at:
+        fields["response_completed_at"] = response_completed_at
+    if mime_type:
+        fields["mime_type"] = mime_type
+    upstream = forward_consultation_multipart_request(
+        f"/api/v1/consultations/{session_id}/turns/audio",
+        fields=fields,
+        filename=audio_file.filename or "response.webm",
+        content_type=mime_type or audio_file.content_type or "audio/webm",
+        file_bytes=await audio_file.read(),
+        acting_user_id=user["id"],
+        file_field="audio_file",
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.get("/consultations/{session_id}/turns/{turn_id}")
+def get_consultation_turn_detail(
+    session_id: str,
+    turn_id: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "GET",
+        f"/api/v1/consultations/{session_id}/turns/{turn_id}",
+        None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
 @router.get("/consultations/{session_id}/multimodal/live")
 def get_consultation_multimodal_live(
     session_id: str,

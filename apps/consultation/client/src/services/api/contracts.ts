@@ -4,7 +4,9 @@ import type {
   BootstrapPayload,
   ConsultationMultimodalLive,
   ConsultationSession,
+  ConsultationTurnRecord,
   ConsultationTurnMultimodalBundle,
+  SpeechEmotionResultRecord,
   UserRecord,
 } from "../../types";
 
@@ -48,6 +50,12 @@ export type ConsultationResponse = {
   consultation: ConsultationSession;
 };
 
+export type ConsultationAudioTurnResponse = {
+  consultation: ConsultationSession;
+  consultation_turn: ConsultationTurnRecord;
+  speech_emotion_result: SpeechEmotionResultRecord;
+};
+
 export type SubmitConsultationTurnPayload = {
   input_type: string;
   raw_input?: string | null;
@@ -74,6 +82,11 @@ export type ConsultationMultimodalCapturePayload = {
 export type ConsultationMultimodalLiveResponse = ConsultationMultimodalLive;
 
 export type ConsultationTurnMultimodalBundleResponse = ConsultationTurnMultimodalBundle;
+
+export type ConsultationTurnDetailResponse = {
+  consultation_turn: ConsultationTurnRecord;
+  speech_emotion_result?: SpeechEmotionResultRecord | null;
+};
 
 export type AssessmentSessionResponse = {
   assessment_session: AssessmentSession;

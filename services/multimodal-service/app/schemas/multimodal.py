@@ -39,6 +39,8 @@ class SubmitAudioTurnRequest(BaseModel):
     sampling_rate: int | None = None
     transcript_text: str | None = None
     audio_uri: str | None = None
+    original_audio_uri: str | None = None
+    normalized_wav_uri: str | None = None
     captured_at: datetime | None = None
     frame_id: str | None = None
 
