@@ -33,3 +33,9 @@ class ConsultationTurnRequest(BaseModel):
     audio_uri: str | None = None
     response_started_at: datetime | None = None
     response_completed_at: datetime | None = None
+
+
+class ConsultationSubtitlePreviewRequest(BaseModel):
+    prompt_key: str = Field(min_length=1)
+    transcript_text: str = Field(min_length=1)
+    source: Literal["dolphin_preview", "browser_fallback"]

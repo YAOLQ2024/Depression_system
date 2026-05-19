@@ -113,6 +113,23 @@ def _serialize_audio_turn(record: MultimodalAudioTurn) -> dict:
     }
 
 
+def _serialize_audio_preview(
+    multimodal_session_id: str,
+    transcript_text: str,
+    transcript_confidence: float | None,
+    resolved_device: str,
+    duration_ms: int,
+) -> dict:
+    return {
+        "session_id": multimodal_session_id,
+        "transcript_text": transcript_text,
+        "transcript_confidence": transcript_confidence,
+        "resolved_device": resolved_device,
+        "duration_ms": duration_ms,
+        "asr_provider": "dolphin",
+    }
+
+
 def _translate_processing_error(exc: Exception) -> MultimodalServiceError:
     if isinstance(exc, AudioProcessingError):
         return MultimodalServiceError(
@@ -338,6 +355,79 @@ def get_audio_turn(multimodal_session_id: str, audio_turn_id: str) -> dict:
                 status_code=404,
             )
         return _serialize_audio_turn(record)
+
+
+async def preview_audio_chunk(
+    multimodal_session_id: str,
+    mime_type: str,
+    audio_file: UploadFile,
+) -> dict:
+    if not mime_type:
+        raise MultimodalServiceError("mime_type is required", code=4005)
+
+    try:
+        get_asr_runtime().validate_model_assets()
+    except Exception as exc:
+        raise _translate_processing_error(exc) from exc
+
+    with get_db_session() as db_session:
+        session_record = db_session.get(MultimodalSession, multimodal_session_id)
+        if not session_record:
+            raise MultimodalServiceError(
+                "multimodal session not found",
+                code=4041,
+                status_code=404,
+            )
+
+    file_bytes = await audio_file.read()
+    if not file_bytes:
+        raise MultimodalServiceError("audio_file is empty", code=4006)
+
+    settings = get_settings()
+    if len(file_bytes) > settings["upload_max_bytes"]:
+        raise MultimodalServiceError(
+            "audio file exceeds size limit",
+            code=4007,
+            status_code=413,
+        )
+
+    try:
+        normalized_mime_type = resolve_mime_type(mime_type, audio_file.content_type)
+        suffix = resolve_audio_suffix(normalized_mime_type, audio_file.filename)
+    except Exception as exc:
+        raise _translate_processing_error(exc) from exc
+
+    preview_id = f"preview-{uuid.uuid4()}"
+    processing_dir = ensure_processing_directory(preview_id)
+    wav_path = processing_dir / "transcription.wav"
+
+    try:
+        source_path = write_source_audio_file(processing_dir, suffix, file_bytes)
+        convert_to_wav(source_path, wav_path)
+        actual_duration_ms = get_wav_duration_ms(wav_path)
+        if actual_duration_ms <= 0:
+            raise MultimodalServiceError("audio preview is empty", code=4006)
+        if actual_duration_ms > settings["asr_preview_max_duration_ms"]:
+            raise MultimodalServiceError(
+                "audio preview duration exceeds limit",
+                code=4011,
+                status_code=413,
+            )
+
+        result = get_asr_runtime().transcribe(wav_path)
+        return _serialize_audio_preview(
+            multimodal_session_id=multimodal_session_id,
+            transcript_text=result.transcript_text,
+            transcript_confidence=result.transcript_confidence,
+            resolved_device=result.resolved_device,
+            duration_ms=actual_duration_ms,
+        )
+    except MultimodalServiceError:
+        raise
+    except Exception as exc:
+        raise _translate_processing_error(exc) from exc
+    finally:
+        cleanup_processing_directory(preview_id)
 
 
 async def create_audio_turn(

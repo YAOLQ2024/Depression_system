@@ -19,5 +19,5 @@
 
 推荐安装方式：
 
-- 执行：`python infra/scripts/fetch_dolphin_base_cn.py`
+- 执行：`python services/multimodal-service/scripts/fetch_dolphin_model.py`
 - 安装完成后，模型文件应出现在：`runtime-assets/asr/base.cn/`
