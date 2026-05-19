@@ -7,9 +7,25 @@ export type TimedToast = {
   tone: ToastTone;
 } | null;
 
-export function useTimedToast(duration = 3000) {
+type ToastDurations = Partial<Record<ToastTone, number>>;
+
+type PushToastOptions = {
+  durationMs?: number;
+};
+
+const DEFAULT_TOAST_DURATIONS: Record<ToastTone, number> = {
+  success: 3000,
+  warning: 4000,
+  error: 5000,
+};
+
+export function useTimedToast(durations?: ToastDurations) {
   const [toast, setToast] = useState<TimedToast>(null);
   const timerRef = useRef<number | null>(null);
+  const resolvedDurations = {
+    ...DEFAULT_TOAST_DURATIONS,
+    ...(durations || {}),
+  };
 
   const dismissToast = useCallback(() => {
     if (timerRef.current) {
@@ -20,7 +36,11 @@ export function useTimedToast(duration = 3000) {
   }, []);
 
   const pushToast = useCallback(
-    (message: string, tone: ToastTone = "success") => {
+    (
+      message: string,
+      tone: ToastTone = "success",
+      options?: PushToastOptions,
+    ) => {
       if (!message.trim()) {
         return;
       }
@@ -30,12 +50,14 @@ export function useTimedToast(duration = 3000) {
       }
 
       setToast({ message, tone });
+      const durationMs =
+        options?.durationMs ?? resolvedDurations[tone] ?? resolvedDurations.success;
       timerRef.current = window.setTimeout(() => {
         setToast(null);
         timerRef.current = null;
-      }, duration);
+      }, durationMs);
     },
-    [duration],
+    [resolvedDurations.error, resolvedDurations.success, resolvedDurations.warning],
   );
 
   useEffect(() => dismissToast, [dismissToast]);

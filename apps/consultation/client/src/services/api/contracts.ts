@@ -69,6 +69,12 @@ export type SubmitConsultationTurnPayload = {
   [key: string]: unknown;
 };
 
+export type ConsultationSubtitlePreviewPayload = {
+  prompt_key: string;
+  transcript_text: string;
+  source: "dolphin_preview" | "browser_fallback";
+};
+
 export type ConsultationMultimodalCapturePayload = {
   question_key: string;
   turn_id?: string | null;

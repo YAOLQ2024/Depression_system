@@ -3,6 +3,7 @@ import type {
   ConsultationAudioTurnResponse,
   ConsultationMultimodalCapturePayload,
   ConsultationMultimodalLiveResponse,
+  ConsultationSubtitlePreviewPayload,
   ConsultationResponse,
   ConsultationTurnDetailResponse,
   ConsultationTurnMultimodalBundleResponse,
@@ -82,6 +83,14 @@ export async function getConsultationTurnDetail(sessionId: string, turnId: strin
       method: "GET",
     },
   );
+}
+
+export async function syncConsultationSubtitlePreview(sessionId: string, payload: ConsultationSubtitlePreviewPayload) {
+  const data = await apiRequest<ConsultationResponse>(`/consultations/${sessionId}/subtitle-preview`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return data.consultation;
 }
 
 export async function completeConsultationQuestionItem(sessionId: string, questionKey: string) {

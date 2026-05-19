@@ -60,8 +60,8 @@ export function LatestStatusSummary() {
           <div className="text-[10px] text-slate-400 mb-2 border-l border-slate-200 pl-1 ml-1 flex flex-col justify-between h-[80px] absolute left-4 mt-8 pointer-events-none">
             <span>重度</span><span>中度</span><span>轻度</span><span>正常</span>
           </div>
-          <div className="flex-1 w-full h-[100px] pl-6 mt-1 overflow-hidden relative">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="flex-1 w-full h-[100px] min-w-0 pl-6 mt-1 overflow-hidden relative">
+            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <LineChart data={mockEmotionData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
                 <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4, fill: "#3b82f6", strokeWidth: 2, stroke: "#fff" }} />
                 <YAxis domain={[1, 4]} hide />

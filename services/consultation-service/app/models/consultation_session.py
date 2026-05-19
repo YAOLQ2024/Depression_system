@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -42,6 +43,7 @@ class ConsultationSession(Base):
     multimodal_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     multimodal_live_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     multimodal_live_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    subtitle_history_payload: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

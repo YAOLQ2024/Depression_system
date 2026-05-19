@@ -21,6 +21,7 @@ from app.config import get_settings
 from app.database import get_db_session
 from app.models import ConsultationSession, ConsultationTurn, SpeechEmotionResult
 from app.schemas.consultations import (
+    ConsultationSubtitlePreviewRequest,
     ConsultationTurnRequest,
     CreateConsultationSessionRequest,
 )
@@ -55,6 +56,231 @@ def _ensure_json_dict(value: dict[str, Any] | None) -> dict[str, Any]:
 
 def _ensure_json_list(value: list[Any] | None) -> list[Any]:
     return list(value or [])
+
+
+def _ensure_subtitle_history(
+    value: list[Any] | None,
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for index, raw_entry in enumerate(_ensure_json_list(value), start=1):
+        if not isinstance(raw_entry, dict):
+            continue
+        speaker = str(raw_entry.get("speaker") or "").strip().lower()
+        text = str(raw_entry.get("text") or "").strip()
+        if speaker not in {"doctor", "user"} or not text:
+            continue
+        sequence = raw_entry.get("sequence")
+        try:
+            normalized_sequence = int(sequence)
+        except (TypeError, ValueError):
+            normalized_sequence = index
+        created_at = raw_entry.get("created_at")
+        updated_at = raw_entry.get("updated_at") or created_at
+        entries.append(
+            {
+                "entry_key": str(
+                    raw_entry.get("entry_key")
+                    or f"{speaker}:{normalized_sequence}:{raw_entry.get('prompt_key') or 'entry'}"
+                ),
+                "speaker": speaker,
+                "text": text,
+                "status": str(raw_entry.get("status") or "final"),
+                "source": str(raw_entry.get("source") or ""),
+                "prompt_key": raw_entry.get("prompt_key"),
+                "stage_id": raw_entry.get("stage_id"),
+                "node_id": raw_entry.get("node_id"),
+                "turn_id": raw_entry.get("turn_id"),
+                "sequence": normalized_sequence,
+                "created_at": str(created_at) if created_at else None,
+                "updated_at": str(updated_at) if updated_at else None,
+            }
+        )
+    entries.sort(
+        key=lambda item: (
+            int(item.get("sequence") or 0),
+            str(item.get("created_at") or ""),
+        )
+    )
+    return entries
+
+
+def _next_subtitle_sequence(history: list[dict[str, Any]]) -> int:
+    if not history:
+        return 1
+    return max(int(entry.get("sequence") or 0) for entry in history) + 1
+
+
+def _split_subtitle_segments(text: str | None) -> list[str]:
+    normalized = (text or "").strip()
+    if not normalized:
+        return []
+
+    segments: list[str] = []
+    for line in normalized.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        compact_line = line.strip()
+        if not compact_line:
+            continue
+        parts = re.findall(r"[^。！？!?]+[。！？!?]?", compact_line)
+        cleaned_parts = [part.strip() for part in parts if part.strip()]
+        if cleaned_parts:
+            segments.extend(cleaned_parts)
+        else:
+            segments.append(compact_line)
+    return segments
+
+
+def _upsert_subtitle_history_entry(
+    history: list[dict[str, Any]],
+    *,
+    entry_key: str,
+    speaker: str,
+    text: str,
+    status: str,
+    source: str,
+    prompt_key: str | None,
+    stage_id: str | None,
+    node_id: str | None,
+    turn_id: str | None = None,
+) -> bool:
+    normalized_text = text.strip()
+    if not normalized_text:
+        return False
+
+    timestamp = _now().isoformat()
+    for entry in history:
+        if entry.get("entry_key") != entry_key:
+            continue
+        changed = False
+        for key, value in {
+            "speaker": speaker,
+            "text": normalized_text,
+            "status": status,
+            "source": source,
+            "prompt_key": prompt_key,
+            "stage_id": stage_id,
+            "node_id": node_id,
+            "turn_id": turn_id,
+        }.items():
+            if entry.get(key) != value:
+                entry[key] = value
+                changed = True
+        if changed:
+            entry["updated_at"] = timestamp
+        return changed
+
+    history.append(
+        {
+            "entry_key": entry_key,
+            "speaker": speaker,
+            "text": normalized_text,
+            "status": status,
+            "source": source,
+            "prompt_key": prompt_key,
+            "stage_id": stage_id,
+            "node_id": node_id,
+            "turn_id": turn_id,
+            "sequence": _next_subtitle_sequence(history),
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+    )
+    return True
+
+
+def _sync_doctor_subtitle_history(
+    session_record: ConsultationSession,
+    question_item: QuestionItem | None,
+) -> None:
+    if not question_item:
+        return
+
+    prompt_text = _ensure_json_dict(session_record.engine_state).get(
+        "current_prompt"
+    )
+    subtitle_source = (
+        question_item.subtitle_text
+        or prompt_text
+        or question_item.question_text
+        or ""
+    )
+    segments = _split_subtitle_segments(subtitle_source)
+    if not segments:
+        return
+
+    history = _ensure_subtitle_history(session_record.subtitle_history_payload)
+    changed = False
+    for index, segment in enumerate(segments):
+        changed = _upsert_subtitle_history_entry(
+            history,
+            entry_key=f"doctor:{question_item.question_key}:{index}",
+            speaker="doctor",
+            text=segment,
+            status="final",
+            source="doctor_prompt",
+            prompt_key=question_item.question_key,
+            stage_id=question_item.stage_id,
+            node_id=question_item.node_id,
+        ) or changed
+    if changed:
+        session_record.subtitle_history_payload = history
+
+
+def _upsert_user_subtitle_preview(
+    session_record: ConsultationSession,
+    *,
+    prompt_key: str,
+    transcript_text: str,
+    source: str,
+) -> bool:
+    normalized_text = transcript_text.strip()
+    if not normalized_text:
+        return False
+
+    history = _ensure_subtitle_history(session_record.subtitle_history_payload)
+    changed = _upsert_subtitle_history_entry(
+        history,
+        entry_key=f"user:draft:{prompt_key}",
+        speaker="user",
+        text=normalized_text,
+        status="draft",
+        source=source,
+        prompt_key=prompt_key,
+        stage_id=session_record.current_stage_id,
+        node_id=session_record.current_node_id,
+    )
+    if changed:
+        session_record.subtitle_history_payload = history
+    return changed
+
+
+def _finalize_user_subtitle_entry(
+    session_record: ConsultationSession,
+    *,
+    prompt_key: str | None,
+    transcript_text: str,
+    turn_id: str,
+    source: str,
+) -> None:
+    normalized_text = transcript_text.strip()
+    if not normalized_text:
+        return
+
+    resolved_prompt_key = prompt_key or session_record.current_prompt_key or turn_id
+    history = _ensure_subtitle_history(session_record.subtitle_history_payload)
+    changed = _upsert_subtitle_history_entry(
+        history,
+        entry_key=f"user:draft:{resolved_prompt_key}",
+        speaker="user",
+        text=normalized_text,
+        status="final",
+        source=source,
+        prompt_key=prompt_key,
+        stage_id=session_record.current_stage_id,
+        node_id=session_record.current_node_id,
+        turn_id=turn_id,
+    )
+    if changed:
+        session_record.subtitle_history_payload = history
 
 
 def _extract_upstream_data(upstream: dict, *, error_code: int) -> dict[str, Any]:
@@ -204,6 +430,7 @@ def _sync_playlist_state(
     session_record.completed_prompt_count = _count_prompt_items_before(
         current_question_item, bundle
     )
+    _sync_doctor_subtitle_history(session_record, current_question_item)
 
 
 def _resolve_current_stage_progress(
@@ -730,6 +957,9 @@ def _serialize_session(
             if session_record.multimodal_live_updated_at
             else None
         ),
+        "subtitle_history": _ensure_subtitle_history(
+            session_record.subtitle_history_payload
+        ),
         "scale_handoff_payload": session_record.scale_handoff_payload or {},
         "required_scales": bundle.required_scales,
         "created_at": session_record.created_at.isoformat(),
@@ -867,20 +1097,49 @@ def _build_consultation_normalized_wav_object_key(
     return f"consultation-audio/{session_id}/{turn_id}/response.normalized.wav"
 
 
+def _ensure_multimodal_session_binding(
+    session_record: ConsultationSession,
+    *,
+    acting_user_id: str,
+) -> str:
+    if session_record.multimodal_session_id:
+        return session_record.multimodal_session_id
+
+    multimodal_data = _extract_upstream_data(
+        create_upstream_multimodal_session(
+            owner_session_id=session_record.id,
+            user_id=acting_user_id,
+        ),
+        error_code=5021,
+    )
+    multimodal_session = multimodal_data.get("multimodal_session") or {}
+    multimodal_session_id = (
+        multimodal_session.get("id") or multimodal_session.get("session_id")
+    )
+    if not multimodal_session_id:
+        raise ConsultationServiceError(
+            "multimodal session id missing",
+            code=5022,
+            status_code=502,
+        )
+
+    session_record.multimodal_session_id = str(multimodal_session_id)
+    session_record.updated_at = _now()
+    return session_record.multimodal_session_id
+
+
 def _refresh_multimodal_live_snapshot(
     session_record: ConsultationSession,
     *,
     acting_user_id: str,
 ) -> dict[str, Any]:
-    if not session_record.multimodal_session_id:
-        raise ConsultationServiceError(
-            "multimodal session not initialized",
-            code=4096,
-            status_code=409,
-        )
+    multimodal_session_id = _ensure_multimodal_session_binding(
+        session_record,
+        acting_user_id=acting_user_id,
+    )
     live_data = _extract_upstream_data(
         fetch_upstream_multimodal_live(
-            multimodal_session_id=session_record.multimodal_session_id,
+            multimodal_session_id=multimodal_session_id,
             acting_user_id=acting_user_id,
         ),
         error_code=5024,
@@ -971,6 +1230,7 @@ def create_consultation_session(
         multimodal_session_id=multimodal_session_id,
         multimodal_live_payload={},
         multimodal_live_updated_at=None,
+        subtitle_history_payload=[],
         created_at=now,
         updated_at=now,
     )
@@ -994,7 +1254,49 @@ def get_consultation_session(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
+        _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
         _sync_playlist_state(session_record, bundle)
+        db_session.flush()
+        return _serialize_session(session_record, bundle)
+
+
+def sync_consultation_subtitle_preview(
+    session_id: str,
+    payload: ConsultationSubtitlePreviewRequest,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    bundle = get_workflow_loader().load_bundle()
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        current_question_item = _resolve_current_question_item_object(
+            session_record, bundle
+        )
+        if (
+            not current_question_item
+            or not current_question_item.response_required
+            or payload.prompt_key != current_question_item.question_key
+        ):
+            _sync_playlist_state(session_record, bundle)
+            return _serialize_session(session_record, bundle)
+
+        changed = _upsert_user_subtitle_preview(
+            session_record,
+            prompt_key=current_question_item.question_key,
+            transcript_text=payload.transcript_text,
+            source=payload.source,
+        )
+        if changed:
+            session_record.updated_at = _now()
+        _sync_playlist_state(session_record, bundle)
+        db_session.flush()
         return _serialize_session(session_record, bundle)
 
 
@@ -1009,6 +1311,10 @@ def start_consultation_session(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
+        _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
         if session_record.status not in {"draft", "running"}:
             raise ConsultationServiceError(
                 "consultation session cannot be started in current status",
@@ -1190,16 +1496,35 @@ def submit_consultation_turn(
                 created_at=turn_timestamp,
             )
         db_session.add(consultation_turn)
+        _finalize_user_subtitle_entry(
+            session_record,
+            prompt_key=current_question_item.question_key
+            if current_question_item
+            else session_record.current_prompt_key,
+            transcript_text=normalized_text,
+            turn_id=turn_id,
+            source=(
+                "speech_final"
+                if payload.input_type == "speech"
+                else payload.input_type
+            ),
+        )
 
+        multimodal_session_id: str | None = None
         if (
             payload.input_type == "speech"
             and payload.audio_base64
             and payload.audio_format
-            and session_record.multimodal_session_id
         ):
+            multimodal_session_id = _ensure_multimodal_session_binding(
+                session_record,
+                acting_user_id=acting_user_id,
+            )
+
+        if multimodal_session_id:
             audio_turn_data = _extract_upstream_data(
                 submit_upstream_audio_turn(
-                    multimodal_session_id=session_record.multimodal_session_id,
+                    multimodal_session_id=multimodal_session_id,
                     consultation_session_id=session_record.id,
                     consultation_turn_id=turn_id,
                     question_key=current_question_item.question_key if current_question_item else None,
@@ -1273,15 +1598,13 @@ def get_consultation_turn_multimodal_bundle(
             )
         if consultation_turn.multimodal_bundle_payload:
             return consultation_turn.multimodal_bundle_payload
-        if not session_record.multimodal_session_id:
-            raise ConsultationServiceError(
-                "multimodal session not initialized",
-                code=4096,
-                status_code=409,
-            )
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
         bundle_data = _extract_upstream_data(
             fetch_upstream_multimodal_turn_bundle(
-                multimodal_session_id=session_record.multimodal_session_id,
+                multimodal_session_id=multimodal_session_id,
                 consultation_turn_id=consultation_turn.id,
                 acting_user_id=acting_user_id,
             ),
@@ -1606,15 +1929,13 @@ def submit_consultation_face_capture(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
-        if not session_record.multimodal_session_id:
-            raise ConsultationServiceError(
-                "multimodal session not initialized",
-                code=4096,
-                status_code=409,
-            )
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
         capture_data = _extract_upstream_data(
             submit_upstream_face_capture(
-                multimodal_session_id=session_record.multimodal_session_id,
+                multimodal_session_id=multimodal_session_id,
                 consultation_session_id=session_record.id,
                 question_key=question_key,
                 turn_id=consultation_turn_id,
@@ -1661,15 +1982,13 @@ def submit_consultation_pose_capture(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
-        if not session_record.multimodal_session_id:
-            raise ConsultationServiceError(
-                "multimodal session not initialized",
-                code=4096,
-                status_code=409,
-            )
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
         capture_data = _extract_upstream_data(
             submit_upstream_pose_capture(
-                multimodal_session_id=session_record.multimodal_session_id,
+                multimodal_session_id=multimodal_session_id,
                 consultation_session_id=session_record.id,
                 question_key=question_key,
                 turn_id=consultation_turn_id,

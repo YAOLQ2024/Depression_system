@@ -93,6 +93,21 @@ export type SpeechEmotionResultRecord = {
   updated_at?: string;
 };
 
+export type ConsultationSubtitleHistoryEntry = {
+  entry_key: string;
+  speaker: "doctor" | "user";
+  text: string;
+  status: "draft" | "final" | string;
+  source?: string | null;
+  prompt_key?: string | null;
+  stage_id?: string | null;
+  node_id?: string | null;
+  turn_id?: string | null;
+  sequence: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type MultimodalRankedLabel = {
   label: string;
   score: number;
@@ -184,6 +199,7 @@ export type ConsultationSession = {
   multimodal_session_id?: string | null;
   multimodal_live?: ConsultationMultimodalLive;
   multimodal_live_updated_at?: string | null;
+  subtitle_history?: ConsultationSubtitleHistoryEntry[];
   created_at?: string;
   updated_at?: string;
   started_at?: string | null;

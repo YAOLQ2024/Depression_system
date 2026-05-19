@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, LoaderCircle, PlayCircle, VideoOff } from "lucide-react";
 
@@ -22,11 +22,14 @@ import {
 import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
-import type { ConsultationSession } from "../types";
+import { previewMultimodalAudio } from "../services/api/multimodal.api";
+import type { ConsultationSession, ConsultationSubtitleHistoryEntry } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
 const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 const CAMERA_CAPTURE_INTERVAL_MS = 2500;
+const DOLPHIN_PREVIEW_TIMESLICE_MS = 1800;
+const DOLPHIN_PREVIEW_MIN_BYTES = 2048;
 
 type BrowserSpeechRecognitionResult = {
   0: {
@@ -92,52 +95,9 @@ function resolvePromptText(session: ConsultationSession | null) {
   return "当前题目内容待加载。";
 }
 
-function resolveSubtitleText(session: ConsultationSession | null) {
-  const subtitleText = session?.current_prompt_subtitle_text?.trim() || session?.current_question_item?.subtitle_text?.trim();
-  if (subtitleText) {
-    return subtitleText;
-  }
-
-  return resolvePromptText(session);
-}
-
-function splitPromptSegments(text: string) {
-  return text
-    .replace(/[!?！？]/g, "。")
-    .split("。")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map((segment) => `${segment}。`);
-}
-
-function buildDialoguePanelMessage(
-  session: ConsultationSession | null,
-  promptText: string,
-  subtitleText: string,
-  patientLineOverride?: string | null,
-) {
-  if (!session) {
-    return "数字人：会话尚未加载。\n患者：（等待会话恢复）";
-  }
-
-  const currentQuestion = session.current_question_item;
-  if (!currentQuestion?.response_required) {
-    const segments = splitPromptSegments(promptText);
-    const firstLine = segments[0] || promptText;
-    const secondLine = segments.slice(1).join("") || (subtitleText !== promptText ? subtitleText : "") || "接下来，我们正式开始吧。";
-    return `数字人：${firstLine}\n数字人：${secondLine}`;
-  }
-
-  let patientLine = patientLineOverride || "患者：（等待本轮患者回答）";
-  if (!patientLineOverride && session.status === "recording_response") {
-    patientLine = "患者：（正在录音）";
-  } else if (!patientLineOverride && session.status === "processing_response") {
-    patientLine = "患者：（本轮回答处理中）";
-  } else if (!patientLineOverride && session.status !== "waiting_user_input") {
-    patientLine = "患者：（当前阶段尚未进入回答窗口）";
-  }
-
-  return `数字人：${promptText}\n${patientLine}`;
+function formatSubtitleHistoryLine(entry: ConsultationSubtitleHistoryEntry) {
+  const speakerLabel = entry.speaker === "doctor" ? "数字人" : "用户";
+  return `${speakerLabel}：${entry.text.trim()}`;
 }
 
 function pickSupportedRecordingMimeType() {
@@ -189,6 +149,10 @@ function resolveRecordingExtension(mimeType: string) {
   return "webm";
 }
 
+function normalizeAudioMimeType(mimeType: string) {
+  return mimeType.split(";", 1)[0]?.trim().toLowerCase() || "audio/webm";
+}
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms);
@@ -228,6 +192,12 @@ export default function ConsultationPage() {
   );
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [recognitionInterimTranscript, setRecognitionInterimTranscript] = useState("");
+  const [livePreviewTranscript, setLivePreviewTranscript] = useState("");
+  const [subtitleUserTranscript, setSubtitleUserTranscript] = useState<string | null>(null);
+  const [subtitleFallbackToBrowser, setSubtitleFallbackToBrowser] = useState(false);
+  const [multimodalSessionId, setMultimodalSessionId] = useState<string | null>(
+    consultation?.multimodal_session_id ?? null,
+  );
   const { toast, pushToast } = useTimedToast();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -243,12 +213,17 @@ export default function ConsultationPage() {
   const isUnmountingRef = useRef(false);
   const frameIndexRef = useRef(0);
   const captureInFlightRef = useRef(false);
+  const liveRefreshInFlightRef = useRef(false);
   const speechTranscriptRef = useRef("");
   const recognitionInterimRef = useRef("");
+  const previewSequenceRef = useRef(0);
+  const previewQueueRef = useRef<Array<{ sequence: number; blob: Blob; mimeType: string; promptKey: string | null }>>([]);
+  const previewDrainInFlightRef = useRef(false);
+  const previewFailureToastShownRef = useRef(false);
+  const lastSyncedSubtitlePreviewRef = useRef("");
 
   const playableVideoUri = useMemo(() => resolvePlayableVideoUri(consultation), [consultation]);
   const promptText = useMemo(() => resolvePromptText(consultation), [consultation]);
-  const subtitleText = useMemo(() => resolveSubtitleText(consultation), [consultation]);
   const liveTranscriptText = useMemo(
     () => `${speechTranscript}${recognitionInterimTranscript}`.trim(),
     [recognitionInterimTranscript, speechTranscript],
@@ -281,25 +256,85 @@ export default function ConsultationPage() {
     lastRecording,
     recordingElapsedMs,
   ]);
-  const patientLineOverride = useMemo(() => {
+  const subtitleUserLine = useMemo(() => {
     if (!consultation?.current_question_item?.response_required) {
       return null;
     }
+    if (subtitleUserTranscript?.trim()) {
+      return `用户：${subtitleUserTranscript.trim()}`;
+    }
+    if (livePreviewTranscript.trim()) {
+      return `用户：${livePreviewTranscript.trim()}`;
+    }
+    if (subtitleFallbackToBrowser && liveTranscriptText) {
+      return `用户：${liveTranscriptText}`;
+    }
     if (isSubmittingResponse) {
-      return "患者：（本轮录音已结束，正在提交回答窗口）";
+      return "用户：（Dolphin 正在转写本轮语音）";
     }
     if (isRecording) {
-      return `患者：（正在录音 ${formatDuration(recordingElapsedMs)}）`;
+      return `用户：（Dolphin 实时识别中 ${formatDuration(recordingElapsedMs)}）`;
     }
     if (consultation.status === "waiting_user_input") {
-      return "患者：（回答窗口已开启，可开始语音回答）";
+      return "用户：（回答窗口已开启，可开始语音回答）";
     }
     return null;
-  }, [consultation?.current_question_item?.response_required, consultation?.status, isRecording, isSubmittingResponse, recordingElapsedMs]);
-  const dialoguePanelMessage = useMemo(
-    () => buildDialoguePanelMessage(consultation, promptText, subtitleText, patientLineOverride),
-    [consultation, patientLineOverride, promptText, subtitleText],
-  );
+  }, [
+    consultation?.current_question_item?.response_required,
+    consultation?.status,
+    isRecording,
+    isSubmittingResponse,
+    livePreviewTranscript,
+    liveTranscriptText,
+    recordingElapsedMs,
+    subtitleFallbackToBrowser,
+    subtitleUserTranscript,
+  ]);
+  const subtitlePanelLines = useMemo(() => {
+    if (!consultation) {
+      return ["数字人：会话尚未加载。", "用户：（等待会话恢复）"];
+    }
+
+    const persistedEntries = [...(consultation.subtitle_history || [])].sort(
+      (left, right) => left.sequence - right.sequence,
+    );
+    const lines = persistedEntries.map((entry) => formatSubtitleHistoryLine(entry));
+
+    if (subtitleUserLine?.trim()) {
+      const activeUserEntry = [...persistedEntries]
+        .reverse()
+        .find((entry) => entry.speaker === "user" && entry.prompt_key === currentPromptKey);
+      const persistedUserLine = activeUserEntry ? formatSubtitleHistoryLine(activeUserEntry) : null;
+      if (persistedUserLine !== subtitleUserLine.trim()) {
+        if (
+          activeUserEntry &&
+          activeUserEntry.status === "draft" &&
+          persistedUserLine &&
+          lines[lines.length - 1] === persistedUserLine
+        ) {
+          lines[lines.length - 1] = subtitleUserLine.trim();
+        } else {
+          lines.push(subtitleUserLine.trim());
+        }
+      }
+    }
+
+    if (lines.length > 0) {
+      return lines;
+    }
+
+    if (promptText.trim()) {
+      return [`数字人：${promptText.trim()}`];
+    }
+
+    return ["数字人：当前会话尚未产生字幕。"];
+  }, [
+    consultation?.session_id,
+    consultation?.subtitle_history,
+    currentPromptKey,
+    promptText,
+    subtitleUserLine,
+  ]);
 
   const currentStageOrder = consultation?.current_stage?.stage_order ?? consultation?.current_question_item?.stage_order ?? 1;
   const currentStageLabel =
@@ -312,19 +347,70 @@ export default function ConsultationPage() {
       consultation.current_question_item.response_required === false,
   );
 
+  const pushStoreToast = useEffectEvent((message: string, tone: "success" | "warning" | "error") => {
+    pushToast(message, tone);
+    actions.resetFeedback();
+  });
+
+  const refreshLiveSnapshot = useEffectEvent(async () => {
+    if (!consultation?.session_id) {
+      return null;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return null;
+    }
+    if (liveRefreshInFlightRef.current) {
+      return null;
+    }
+
+    liveRefreshInFlightRef.current = true;
+    try {
+      return await actions.refreshConsultationMultimodalLive();
+    } finally {
+      liveRefreshInFlightRef.current = false;
+    }
+  });
+
+  const syncSubtitlePreviewDraft = useEffectEvent(
+    async (
+      transcriptText: string,
+      source: "dolphin_preview" | "browser_fallback",
+    ) => {
+      if (!consultation?.session_id || !currentPromptKey) {
+        return null;
+      }
+      const normalizedText = transcriptText.trim();
+      if (!normalizedText) {
+        return null;
+      }
+      const dedupeKey = `${consultation.session_id}:${currentPromptKey}:${source}:${normalizedText}`;
+      if (lastSyncedSubtitlePreviewRef.current === dedupeKey) {
+        return null;
+      }
+
+      const updated = await actions.syncConsultationSubtitlePreview({
+        prompt_key: currentPromptKey,
+        transcript_text: normalizedText,
+        source,
+      });
+      if (updated) {
+        lastSyncedSubtitlePreviewRef.current = dedupeKey;
+      }
+      return updated;
+    },
+  );
+
   useEffect(() => {
     if (state.message) {
-      pushToast(state.message, "success");
-      actions.resetFeedback();
+      pushStoreToast(state.message, "success");
     }
-  }, [actions, pushToast, state.message]);
+  }, [state.message]);
 
   useEffect(() => {
     if (state.error) {
-      pushToast(state.error, "error");
-      actions.resetFeedback();
+      pushStoreToast(state.error, "error");
     }
-  }, [actions, pushToast, state.error]);
+  }, [state.error]);
 
   useEffect(() => {
     if (videoError) {
@@ -356,12 +442,45 @@ export default function ConsultationPage() {
   }, [consultation?.status, currentPromptKey, isRecording]);
 
   useEffect(() => {
+    if (consultation?.multimodal_session_id) {
+      setMultimodalSessionId(consultation.multimodal_session_id);
+    }
+  }, [consultation?.multimodal_session_id]);
+
+  useEffect(() => {
+    setSubtitleUserTranscript(null);
+    setLivePreviewTranscript("");
+    setSubtitleFallbackToBrowser(false);
+    previewSequenceRef.current = 0;
+    previewQueueRef.current = [];
+    previewFailureToastShownRef.current = false;
+    lastSyncedSubtitlePreviewRef.current = "";
+  }, [currentPromptKey]);
+
+  useEffect(() => {
     speechTranscriptRef.current = speechTranscript;
   }, [speechTranscript]);
 
   useEffect(() => {
     recognitionInterimRef.current = recognitionInterimTranscript;
   }, [recognitionInterimTranscript]);
+
+  useEffect(() => {
+    if (!isRecording || !subtitleFallbackToBrowser || !liveTranscriptText.trim()) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void syncSubtitlePreviewDraft(liveTranscriptText, "browser_fallback");
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    isRecording,
+    liveTranscriptText,
+    subtitleFallbackToBrowser,
+    syncSubtitlePreviewDraft,
+  ]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -383,13 +502,13 @@ export default function ConsultationPage() {
       return;
     }
 
-    void actions.refreshConsultationMultimodalLive();
+    void refreshLiveSnapshot();
     const timer = window.setInterval(() => {
-      void actions.refreshConsultationMultimodalLive();
+      void refreshLiveSnapshot();
     }, 2000);
 
     return () => window.clearInterval(timer);
-  }, [actions, consultation?.session_id]);
+  }, [consultation?.session_id]);
 
   useEffect(() => {
     if (!consultation?.current_question_item?.question_key || !cameraReady) {
@@ -530,7 +649,7 @@ export default function ConsultationPage() {
 
   async function handleRefresh() {
     await actions.refreshConsultation();
-    await actions.refreshConsultationMultimodalLive();
+    await refreshLiveSnapshot();
   }
 
   function cleanupRecorderResources() {
@@ -540,6 +659,34 @@ export default function ConsultationPage() {
     audioChunksRef.current = [];
   }
 
+  function resetPreviewTranscriptionState() {
+    setLivePreviewTranscript("");
+    setSubtitleFallbackToBrowser(false);
+    previewSequenceRef.current = 0;
+    previewQueueRef.current = [];
+    previewFailureToastShownRef.current = false;
+  }
+
+  async function ensureMultimodalSession() {
+    if (!consultation) {
+      throw new Error("当前没有可用的问诊会话，无法创建多模态会话。");
+    }
+
+    const existingSessionId = multimodalSessionId || consultation.multimodal_session_id;
+    if (existingSessionId) {
+      setMultimodalSessionId(existingSessionId);
+      return existingSessionId;
+    }
+
+    const refreshedConsultation = await actions.refreshConsultation();
+    const refreshedSessionId = refreshedConsultation?.multimodal_session_id || null;
+    if (!refreshedSessionId) {
+      throw new Error("当前问诊会话缺少多模态会话绑定，请刷新页面后重试。");
+    }
+
+    setMultimodalSessionId(refreshedSessionId);
+    return refreshedSessionId;
+  }
   function stopSpeechRecognition() {
     const recognition = speechRecognitionRef.current;
     if (!recognition) {
@@ -554,6 +701,77 @@ export default function ConsultationPage() {
       recognition.abort();
     }
     speechRecognitionRef.current = null;
+  }
+
+  async function drainPreviewQueue() {
+    if (previewDrainInFlightRef.current) {
+      return;
+    }
+
+    previewDrainInFlightRef.current = true;
+    try {
+      while (previewQueueRef.current.length > 0) {
+        const item = previewQueueRef.current.shift();
+        if (!item || item.promptKey !== currentPromptKey) {
+          continue;
+        }
+
+        try {
+          const ensuredMultimodalSessionId = await ensureMultimodalSession();
+          const normalizedMimeType = normalizeAudioMimeType(item.mimeType || item.blob.type || "audio/webm");
+          const preview = await previewMultimodalAudio(ensuredMultimodalSessionId, {
+            mime_type: normalizedMimeType,
+            audio_file: item.blob,
+            filename: `preview-${item.sequence}.${resolveRecordingExtension(normalizedMimeType)}`,
+          });
+
+          if (item.promptKey !== currentPromptKey) {
+            continue;
+          }
+
+          const previewText = preview.transcript_text.trim();
+          if (!previewText) {
+            continue;
+          }
+
+          setLivePreviewTranscript(previewText);
+          setSubtitleFallbackToBrowser(false);
+          void syncSubtitlePreviewDraft(previewText, "dolphin_preview");
+        } catch (caught) {
+          if (!previewFailureToastShownRef.current) {
+            previewFailureToastShownRef.current = true;
+            setSubtitleFallbackToBrowser(true);
+            pushToast(
+              caught instanceof Error
+                ? `Dolphin 实时转写失败，字幕区已回退到浏览器本地识别：${caught.message}`
+                : "Dolphin 实时转写失败，字幕区已回退到浏览器本地识别。",
+              "error",
+            );
+          }
+        }
+      }
+    } finally {
+      previewDrainInFlightRef.current = false;
+    }
+  }
+
+  function queuePreviewChunk(mimeType: string) {
+    if (!consultation?.current_question_item?.response_required) {
+      return;
+    }
+    const cumulativeBlob = new Blob(audioChunksRef.current, { type: mimeType });
+    if (cumulativeBlob.size < DOLPHIN_PREVIEW_MIN_BYTES) {
+      return;
+    }
+
+    previewSequenceRef.current += 1;
+    previewQueueRef.current = [{
+      sequence: previewSequenceRef.current,
+      blob: cumulativeBlob,
+      mimeType,
+      promptKey: currentPromptKey,
+    }];
+    void drainPreviewQueue();
   }
 
   function startSpeechRecognition() {
@@ -601,6 +819,9 @@ export default function ConsultationPage() {
 
   async function submitCameraCaptures(turnId?: string | null) {
     if (!consultation?.current_question_item?.question_key || !cameraVideoRef.current || captureInFlightRef.current) {
+      return;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       return;
     }
     if (!cameraReady) {
@@ -670,6 +891,8 @@ export default function ConsultationPage() {
         lastRecordingUrlRef.current = null;
       }
       setLastRecording(null);
+      resetPreviewTranscriptionState();
+      setSubtitleUserTranscript(null);
       audioChunksRef.current = [];
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
@@ -686,6 +909,7 @@ export default function ConsultationPage() {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
+          queuePreviewChunk(recorder.mimeType || event.data.type || mimeType || "audio/webm");
         }
       };
 
@@ -747,10 +971,14 @@ export default function ConsultationPage() {
             return;
           }
 
-          const resolvedMimeType = recorder.mimeType || blob.type || "audio/webm";
+          const resolvedMimeType = normalizeAudioMimeType(recorder.mimeType || blob.type || "audio/webm");
+          const transcriptCandidate = subtitleUserTranscript?.trim()
+            || livePreviewTranscript.trim()
+            || speechTranscriptRef.current.trim()
+            || recognitionInterimRef.current.trim()
+            || null;
           const submitted = await actions.submitConsultationAudioTurn({
-            transcript_text:
-              speechTranscriptRef.current.trim() || recognitionInterimRef.current.trim() || null,
+            transcript_text: transcriptCandidate,
             response_started_at: responseStartedAt.toISOString(),
             response_completed_at: completedAt.toISOString(),
             mime_type: resolvedMimeType,
@@ -761,6 +989,11 @@ export default function ConsultationPage() {
             return;
           }
 
+          const resolvedTranscript =
+            submitted.consultation_turn.transcript_text?.trim()
+            || transcriptCandidate
+            || null;
+          setSubtitleUserTranscript(resolvedTranscript);
           await submitCameraCaptures(submitted.consultation_turn.turn_id);
           pushToast("本轮语音回答已完成，情绪结果已更新到看板。", "success");
         } catch (caught) {
@@ -773,7 +1006,7 @@ export default function ConsultationPage() {
         }
       };
 
-      recorder.start();
+      recorder.start(DOLPHIN_PREVIEW_TIMESLICE_MS);
     } catch (caught) {
       const feedback = describeMediaAccessError("microphone", caught);
       cleanupRecorderResources();
@@ -939,7 +1172,7 @@ export default function ConsultationPage() {
           </div>
 
           <div className="absolute left-[5%] lg:left-[10%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
-            <DraggableMessagePanel title="实时字幕" message={dialoguePanelMessage} />
+            <DraggableMessagePanel title="实时字幕" lines={subtitlePanelLines} />
           </div>
         </div>
 

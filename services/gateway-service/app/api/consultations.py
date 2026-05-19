@@ -8,6 +8,7 @@ from app.clients.consultation_client import (
 )
 from app.clients.identity_client import forward_json_request
 from app.schemas.consultations import (
+    ConsultationSubtitlePreviewRequest,
     ConsultationTurnRequest,
     CreateConsultationRequest,
 )
@@ -141,9 +142,7 @@ def start_consultation(
     return upstream["payload"]
 
 
-@router.post(
-    "/consultations/{session_id}/question-items/{question_key}/complete"
-)
+@router.post("/consultations/{session_id}/question-items/{question_key}/complete")
 def complete_system_question_item(
     session_id: str,
     question_key: str,
@@ -197,7 +196,7 @@ async def submit_consultation_audio_turn(
     authorization: str | None = Header(default=None),
 ):
     _, user = _require_current_user(mcs_session, authorization)
-    fields = {}
+    fields: dict[str, str] = {}
     if transcript_text:
         fields["transcript_text"] = transcript_text
     if response_started_at:
@@ -232,6 +231,25 @@ def get_consultation_turn_detail(
         "GET",
         f"/api/v1/consultations/{session_id}/turns/{turn_id}",
         None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.post("/consultations/{session_id}/subtitle-preview")
+def sync_consultation_subtitle_preview(
+    session_id: str,
+    payload: ConsultationSubtitlePreviewRequest,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "POST",
+        f"/api/v1/consultations/{session_id}/subtitle-preview",
+        payload.model_dump(mode="json", exclude_none=True),
         acting_user_id=user["id"],
     )
     if upstream["status"] >= 400:
