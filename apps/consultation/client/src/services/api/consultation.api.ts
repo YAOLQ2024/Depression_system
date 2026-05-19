@@ -2,6 +2,7 @@ import { apiRequest } from "./client";
 import type {
   ConsultationMultimodalCapturePayload,
   ConsultationMultimodalLiveResponse,
+  ConsultationSubtitlePreviewPayload,
   ConsultationResponse,
   ConsultationTurnMultimodalBundleResponse,
   SubmitConsultationTurnPayload,
@@ -32,6 +33,14 @@ export async function startConsultationSession(sessionId: string) {
 
 export async function submitConsultationTurn(sessionId: string, payload: SubmitConsultationTurnPayload) {
   const data = await apiRequest<ConsultationResponse>(`/consultations/${sessionId}/turns`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return data.consultation;
+}
+
+export async function syncConsultationSubtitlePreview(sessionId: string, payload: ConsultationSubtitlePreviewPayload) {
+  const data = await apiRequest<ConsultationResponse>(`/consultations/${sessionId}/subtitle-preview`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

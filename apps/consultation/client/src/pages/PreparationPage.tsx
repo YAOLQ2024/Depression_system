@@ -178,6 +178,10 @@ export default function PreparationPage() {
   const hasSavedProfile = Boolean(profile.full_name.trim());
   const isReady = hasSavedProfile && isDeviceAuth && isDataAuth && isDoctorSelected;
   const readyCount = [hasSavedProfile, isDeviceAuth, isDataAuth, isDoctorSelected].filter(Boolean).length;
+  const resumableConsultationId =
+    state.consultation && state.consultation.status !== "handoff_ready"
+      ? state.consultation.session_id
+      : null;
 
   useEffect(() => {
     if (state.message) {
@@ -223,6 +227,10 @@ export default function PreparationPage() {
 
   const handleStartConsultation = async () => {
     if (!isReady) return;
+    if (resumableConsultationId) {
+      navigate(APP_PATHS.consultation, { state: { sessionId: resumableConsultationId } });
+      return;
+    }
     const started = await actions.handleStartConsultation();
     if (started) {
       navigate(APP_PATHS.consultation, { state: { sessionId: started.session_id } });

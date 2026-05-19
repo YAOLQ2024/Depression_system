@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 import threading
 from pathlib import Path
 
 from app.config import get_settings
+
+
+_DOLPHIN_CONTROL_TOKEN_PATTERN = re.compile(
+    r"(?:<(?:zh|cn|asr|notimestamp)>\s*)+",
+    flags=re.IGNORECASE,
+)
 
 
 class DolphinAsrError(Exception):
@@ -122,18 +129,23 @@ class DolphinAsrRuntime:
             )
             self._loaded_device = device
 
+    def _sanitize_transcript_text(self, text: str) -> str:
+        normalized = text.strip()
+        normalized = _DOLPHIN_CONTROL_TOKEN_PATTERN.sub("", normalized)
+        return normalized.strip()
+
     def _extract_transcript_text(self, result) -> str:
         if isinstance(result, str):
-            return result.strip()
+            return self._sanitize_transcript_text(result)
         if isinstance(result, dict):
             for key in ("text", "transcript", "transcript_text"):
                 value = result.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value.strip()
+                    return self._sanitize_transcript_text(value)
         for key in ("text", "transcript", "transcript_text"):
             value = getattr(result, key, None)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return self._sanitize_transcript_text(value)
         raise DolphinAsrError(
             "dolphin did not return transcript text",
             error_code="TRANSCRIPTION_FAILED",

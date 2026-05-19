@@ -9,6 +9,10 @@ export type SessionPersistenceMode = "local" | "session";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const SESSION_TOKEN_STORAGE_KEY = "mcs_session_token";
 const SESSION_PERSISTENCE_STORAGE_KEY = "mcs_session_persistence";
+const FLOW_STATE_KEY_PREFIXES = [
+  "mcs_consultation_session:",
+  "mcs_assessment_session:",
+];
 
 function isLoopbackHost(hostname: string) {
   return LOOPBACK_HOSTS.has(hostname);
@@ -85,6 +89,16 @@ export function clearSessionToken() {
   window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
 }
 
+function clearPersistedFlowState() {
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    for (const key of Object.keys(storage)) {
+      if (FLOW_STATE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+        storage.removeItem(key);
+      }
+    }
+  }
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getSessionToken();
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -104,6 +118,11 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     payload = await response.json();
   } catch {
     payload = {};
+  }
+
+  if (response.status === 401) {
+    clearSessionToken();
+    clearPersistedFlowState();
   }
 
   if (!response.ok || payload.code !== 0) {

@@ -1,12 +1,21 @@
+import { useEffect, useRef } from "react";
 import { motion, useDragControls } from "motion/react";
 
 interface DraggableMessagePanelProps {
-  message: string;
+  lines: string[];
   title?: string;
 }
 
-export function DraggableMessagePanel({ message, title = "AI 数字人医生" }: DraggableMessagePanelProps) {
+export function DraggableMessagePanel({ lines, title = "AI 数字人医生" }: DraggableMessagePanelProps) {
   const dragControls = useDragControls();
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!contentRef.current) {
+      return;
+    }
+    contentRef.current.scrollTop = contentRef.current.scrollHeight;
+  }, [lines]);
 
   return (
     <motion.div 
@@ -30,10 +39,20 @@ export function DraggableMessagePanel({ message, title = "AI 数字人医生" }:
             {title}
           </p>
         </div>
-        <div className="flex-1 overflow-y-auto w-full pointer-events-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 pr-2 mask-image-b pb-2 text-wrap break-words">
-          <p className="text-slate-100 text-[13px] md:text-sm leading-relaxed tracking-wide min-h-[60px] drop-shadow-sm pointer-events-auto cursor-text whitespace-pre-wrap">
-            {message}
-          </p>
+        <div
+          ref={contentRef}
+          className="flex-1 overflow-y-auto w-full pointer-events-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 pr-2 mask-image-b pb-2 text-wrap break-words"
+        >
+          <div className="min-h-[60px] space-y-2">
+            {lines.map((line, index) => (
+              <p
+                key={`${index}:${line}`}
+                className="text-slate-100 text-[13px] md:text-sm leading-relaxed tracking-wide drop-shadow-sm pointer-events-auto cursor-text whitespace-pre-wrap"
+              >
+                {line}
+              </p>
+            ))}
+          </div>
         </div>
       </div>
     </motion.div>

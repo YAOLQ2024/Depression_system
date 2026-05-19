@@ -19,6 +19,7 @@ import {
   getConsultationMultimodalLive,
   getConsultationSession,
   getConsultationTurnMultimodalBundle,
+  syncConsultationSubtitlePreview as syncConsultationSubtitlePreviewRequest,
   startConsultationSession,
   submitConsultationFaceCapture as submitConsultationFaceCaptureRequest,
   submitConsultationPoseCapture as submitConsultationPoseCaptureRequest,
@@ -26,6 +27,7 @@ import {
 } from "../services/api/consultation.api";
 import type {
   ConsultationMultimodalCapturePayload,
+  ConsultationSubtitlePreviewPayload,
   SubmitConsultationTurnPayload,
   UpdateUserProfilePayload,
 } from "../services/api/contracts";
@@ -123,6 +125,19 @@ export function useConsultationApp() {
     window.sessionStorage.removeItem(key);
   }
 
+  function clearPersistedFlowState() {
+    for (const storage of [window.localStorage, window.sessionStorage]) {
+      for (const key of Object.keys(storage)) {
+        if (
+          key.startsWith("mcs_consultation_session:") ||
+          key.startsWith("mcs_assessment_session:")
+        ) {
+          storage.removeItem(key);
+        }
+      }
+    }
+  }
+
   function saveConsultationSessionId(sessionId: string, userId?: string | null) {
     const key = getSessionStorageKey(userId || user?.id);
     if (key) {
@@ -175,6 +190,7 @@ export function useConsultationApp() {
       return await getCurrentUser();
     } catch {
       clearSessionToken();
+      clearPersistedFlowState();
       return null;
     }
   }
@@ -382,6 +398,23 @@ export function useConsultationApp() {
     }
   }
 
+  async function syncConsultationSubtitlePreview(payload: ConsultationSubtitlePreviewPayload) {
+    if (!consultation) {
+      return null;
+    }
+
+    try {
+      const updatedConsultation = await syncConsultationSubtitlePreviewRequest(
+        consultation.session_id,
+        payload,
+      );
+      setConsultation(updatedConsultation);
+      return updatedConsultation;
+    } catch {
+      return null;
+    }
+  }
+
   async function submitManualConsultationTurn() {
     const normalized = consultationInput.trim();
     if (!normalized) {
@@ -398,16 +431,21 @@ export function useConsultationApp() {
 
   async function refreshConsultation() {
     if (!consultation) {
-      return;
+      return null;
     }
 
     resetFeedback();
     setLoading(true);
 
     try {
-      setConsultation(await getConsultationSession(consultation.session_id));
+      const refreshedConsultation = await getConsultationSession(
+        consultation.session_id,
+      );
+      setConsultation(refreshedConsultation);
+      return refreshedConsultation;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "刷新失败");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -454,9 +492,10 @@ export function useConsultationApp() {
     }
 
     try {
-      const result = await submitConsultationFaceCaptureRequest(consultation.session_id, payload);
-      await refreshConsultationMultimodalLive();
-      return result;
+      return await submitConsultationFaceCaptureRequest(
+        consultation.session_id,
+        payload,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "上传表情采样失败");
       return null;
@@ -469,9 +508,10 @@ export function useConsultationApp() {
     }
 
     try {
-      const result = await submitConsultationPoseCaptureRequest(consultation.session_id, payload);
-      await refreshConsultationMultimodalLive();
-      return result;
+      return await submitConsultationPoseCaptureRequest(
+        consultation.session_id,
+        payload,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "上传姿态采样失败");
       return null;
@@ -586,6 +626,7 @@ export function useConsultationApp() {
     }
 
     clearSessionToken();
+    clearPersistedFlowState();
     clearConsultationSessionId();
     clearAssessmentSessionId();
     setUser(null);
@@ -631,6 +672,7 @@ export function useConsultationApp() {
       savePreparationProfile,
       handleStartConsultation,
       submitConsultationTurn,
+      syncConsultationSubtitlePreview,
       submitManualConsultationTurn,
       refreshConsultation,
       refreshConsultationMultimodalLive,
