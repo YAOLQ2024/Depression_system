@@ -14,8 +14,12 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import get_db_session
 from app.models import MultimodalAudioTurn, MultimodalSession
-from app.schemas.multimodal import CreateMultimodalSessionRequest
+from app.schemas.multimodal import CreateMultimodalSessionRequest, SubmitAudioTurnRequest
 from app.services.asr_runtime import DolphinAsrError, get_asr_runtime
+from app.services.multimodal_session_service import (
+    MultimodalServiceError as SessionPipelineError,
+    submit_audio_turn as process_audio_turn,
+)
 from app.services.audio_processing import (
     AudioProcessingError,
     cleanup_processing_directory,
@@ -93,6 +97,7 @@ def _serialize_audio_turn(record: MultimodalAudioTurn) -> dict:
         "question_key": record.question_key,
         "processing_status": record.processing_status,
         "audio_uri": record.audio_uri,
+        "normalized_wav_uri": record.normalized_wav_uri,
         "transcript_text": record.transcript_text,
         "transcript_confidence": record.transcript_confidence,
         "asr_provider": record.asr_provider,
@@ -113,24 +118,13 @@ def _serialize_audio_turn(record: MultimodalAudioTurn) -> dict:
     }
 
 
-def _serialize_audio_preview(
-    multimodal_session_id: str,
-    transcript_text: str,
-    transcript_confidence: float | None,
-    resolved_device: str,
-    duration_ms: int,
-) -> dict:
-    return {
-        "session_id": multimodal_session_id,
-        "transcript_text": transcript_text,
-        "transcript_confidence": transcript_confidence,
-        "resolved_device": resolved_device,
-        "duration_ms": duration_ms,
-        "asr_provider": "dolphin",
-    }
-
-
 def _translate_processing_error(exc: Exception) -> MultimodalServiceError:
+    if isinstance(exc, SessionPipelineError):
+        return MultimodalServiceError(
+            exc.message,
+            code=exc.code,
+            status_code=exc.status_code,
+        )
     if isinstance(exc, AudioProcessingError):
         return MultimodalServiceError(
             exc.message,
@@ -149,7 +143,12 @@ def _translate_processing_error(exc: Exception) -> MultimodalServiceError:
             code=5031,
             status_code=503,
         )
-    return MultimodalServiceError("audio processing failed", code=5001, status_code=500)
+    detail = str(exc).strip()
+    return MultimodalServiceError(
+        f"audio processing failed: {detail}" if detail else "audio processing failed",
+        code=5001,
+        status_code=500,
+    )
 
 
 def _validate_audio_turn_fields(
@@ -203,16 +202,32 @@ def _build_audio_object_key(
     )
 
 
+def _build_normalized_wav_object_key(
+    consultation_session_id: str,
+    question_key: str,
+    effective_turn_id: str,
+) -> str:
+    return (
+        f"consultation/{consultation_session_id}/{question_key}/"
+        f"{effective_turn_id}.normalized.wav"
+    )
+
+
 def _update_audio_turn_for_restart_failure(audio_turn_id: str) -> None:
     with get_db_session() as db_session:
         record = db_session.get(MultimodalAudioTurn, audio_turn_id)
         if record is None:
             return
-        if record.processing_status not in {"uploaded", "transcribing"}:
+        if record.processing_status not in {
+            "uploaded",
+            "transcribing",
+            "transcript_ready",
+            "analyzing",
+        }:
             return
         record.processing_status = "failed"
         record.error_code = "SERVICE_RESTARTED"
-        record.error_message = "asr processing was interrupted by service restart"
+        record.error_message = "audio processing was interrupted by service restart"
         record.updated_at = _now()
 
 
@@ -225,7 +240,7 @@ def _mark_audio_turn_transcribing(audio_turn_id: str) -> None:
         record.updated_at = _now()
 
 
-def _complete_audio_turn(
+def _mark_audio_turn_transcript_ready(
     audio_turn_id: str,
     transcript_text: str,
     transcript_confidence: float | None,
@@ -234,9 +249,51 @@ def _complete_audio_turn(
         record = db_session.get(MultimodalAudioTurn, audio_turn_id)
         if record is None:
             return
+        record.processing_status = "transcript_ready"
+        record.transcript_text = transcript_text
+        record.transcript_confidence = transcript_confidence
+        record.error_code = None
+        record.error_message = None
+        record.updated_at = _now()
+
+
+def _mark_audio_turn_analyzing(
+    audio_turn_id: str,
+    *,
+    normalized_wav_uri: str | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    with get_db_session() as db_session:
+        record = db_session.get(MultimodalAudioTurn, audio_turn_id)
+        if record is None:
+            return
+        record.processing_status = "analyzing"
+        if normalized_wav_uri:
+            record.normalized_wav_uri = normalized_wav_uri
+        if duration_ms is not None:
+            record.duration_ms = duration_ms
+        record.error_code = None
+        record.error_message = None
+        record.updated_at = _now()
+
+
+def _complete_audio_turn(
+    audio_turn_id: str,
+    transcript_text: str,
+    transcript_confidence: float | None,
+    normalized_wav_uri: str | None,
+    duration_ms: int | None = None,
+) -> None:
+    with get_db_session() as db_session:
+        record = db_session.get(MultimodalAudioTurn, audio_turn_id)
+        if record is None:
+            return
         record.processing_status = "completed"
         record.transcript_text = transcript_text
         record.transcript_confidence = transcript_confidence
+        record.normalized_wav_uri = normalized_wav_uri
+        if duration_ms is not None:
+            record.duration_ms = duration_ms
         record.error_code = None
         record.error_message = None
         record.updated_at = _now()
@@ -262,15 +319,84 @@ def _remove_active_future(audio_turn_id: str) -> None:
         _ACTIVE_TRANSCRIPTION_FUTURES.pop(audio_turn_id, None)
 
 
-def _run_transcription_job(audio_turn_id: str, wav_path: Path) -> None:
+def _run_transcription_job(
+    audio_turn_id: str,
+    multimodal_session_id: str,
+    consultation_session_id: str,
+    consultation_turn_id: str,
+    question_key: str,
+    original_audio_uri: str,
+    normalized_wav_object_key: str,
+    source_path: Path,
+    source_mime_type: str,
+    source_filename: str | None,
+    captured_at: datetime | None,
+) -> None:
     try:
         _mark_audio_turn_transcribing(audio_turn_id)
-        result = get_asr_runtime().transcribe(wav_path)
+        wav_path = source_path.parent / "transcription.wav"
+        convert_to_wav(source_path, wav_path)
+        actual_duration_ms = get_wav_duration_ms(wav_path)
+        if actual_duration_ms > get_settings()["upload_max_duration_ms"]:
+            raise MultimodalServiceError(
+                "audio duration exceeds limit",
+                code=4008,
+                status_code=413,
+            )
+        asr_result = get_asr_runtime().transcribe(wav_path)
+        transcript_text = str(asr_result.transcript_text or "").strip()
+        if not transcript_text:
+            raise DolphinAsrError(
+                "dolphin did not return transcript text",
+                error_code="TRANSCRIPTION_FAILED",
+            )
+        _mark_audio_turn_transcript_ready(
+            audio_turn_id,
+            transcript_text,
+            asr_result.transcript_confidence,
+        )
+
+        normalized_wav_bytes = wav_path.read_bytes()
+        normalized_wav_uri = upload_audio_object(
+            object_key=normalized_wav_object_key,
+            file_bytes=normalized_wav_bytes,
+            content_type="audio/wav",
+        )
+        _mark_audio_turn_analyzing(
+            audio_turn_id,
+            normalized_wav_uri=normalized_wav_uri,
+            duration_ms=actual_duration_ms,
+        )
+
+        result = process_audio_turn(
+            multimodal_session_id,
+            payload=SubmitAudioTurnRequest(
+                consultation_turn_id=consultation_turn_id,
+                consultation_session_id=consultation_session_id,
+                question_key=question_key,
+                original_audio_uri=original_audio_uri,
+                original_mime_type=source_mime_type,
+                source_filename=source_filename or source_path.name,
+                transcript_text=transcript_text,
+                normalized_wav_uri=normalized_wav_uri,
+                captured_at=captured_at or _now(),
+                frame_id=audio_turn_id,
+            ),
+            audio_emotion_wav_path=wav_path,
+        )
         _complete_audio_turn(
             audio_turn_id=audio_turn_id,
-            transcript_text=result.transcript_text,
-            transcript_confidence=result.transcript_confidence,
+            transcript_text=transcript_text,
+            transcript_confidence=asr_result.transcript_confidence,
+            normalized_wav_uri=str(
+                result.get("normalized_wav_uri") or normalized_wav_uri
+            ),
+            duration_ms=actual_duration_ms,
         )
+    except MultimodalServiceError as exc:
+        _fail_audio_turn(audio_turn_id, f"STORE_{exc.code}", exc.message)
+    except SessionPipelineError as exc:
+        _fail_audio_turn(audio_turn_id, f"PIPELINE_{exc.code}", exc.message)
     except DolphinAsrError as exc:
         _fail_audio_turn(audio_turn_id, exc.error_code, exc.message)
     except Exception as exc:
@@ -280,11 +406,32 @@ def _run_transcription_job(audio_turn_id: str, wav_path: Path) -> None:
         _remove_active_future(audio_turn_id)
 
 
-def _submit_transcription_job(audio_turn_id: str, wav_path: Path) -> Future:
+def _submit_transcription_job(
+    audio_turn_id: str,
+    multimodal_session_id: str,
+    consultation_session_id: str,
+    consultation_turn_id: str,
+    question_key: str,
+    original_audio_uri: str,
+    normalized_wav_object_key: str,
+    source_path: Path,
+    source_mime_type: str,
+    source_filename: str | None,
+    captured_at: datetime | None,
+) -> Future:
     future = _TRANSCRIPTION_EXECUTOR.submit(
         _run_transcription_job,
         audio_turn_id,
-        wav_path,
+        multimodal_session_id,
+        consultation_session_id,
+        consultation_turn_id,
+        question_key,
+        original_audio_uri,
+        normalized_wav_object_key,
+        source_path,
+        source_mime_type,
+        source_filename,
+        captured_at,
     )
     with _ACTIVE_TRANSCRIPTION_LOCK:
         _ACTIVE_TRANSCRIPTION_FUTURES[audio_turn_id] = future
@@ -357,79 +504,6 @@ def get_audio_turn(multimodal_session_id: str, audio_turn_id: str) -> dict:
         return _serialize_audio_turn(record)
 
 
-async def preview_audio_chunk(
-    multimodal_session_id: str,
-    mime_type: str,
-    audio_file: UploadFile,
-) -> dict:
-    if not mime_type:
-        raise MultimodalServiceError("mime_type is required", code=4005)
-
-    try:
-        get_asr_runtime().validate_model_assets()
-    except Exception as exc:
-        raise _translate_processing_error(exc) from exc
-
-    with get_db_session() as db_session:
-        session_record = db_session.get(MultimodalSession, multimodal_session_id)
-        if not session_record:
-            raise MultimodalServiceError(
-                "multimodal session not found",
-                code=4041,
-                status_code=404,
-            )
-
-    file_bytes = await audio_file.read()
-    if not file_bytes:
-        raise MultimodalServiceError("audio_file is empty", code=4006)
-
-    settings = get_settings()
-    if len(file_bytes) > settings["upload_max_bytes"]:
-        raise MultimodalServiceError(
-            "audio file exceeds size limit",
-            code=4007,
-            status_code=413,
-        )
-
-    try:
-        normalized_mime_type = resolve_mime_type(mime_type, audio_file.content_type)
-        suffix = resolve_audio_suffix(normalized_mime_type, audio_file.filename)
-    except Exception as exc:
-        raise _translate_processing_error(exc) from exc
-
-    preview_id = f"preview-{uuid.uuid4()}"
-    processing_dir = ensure_processing_directory(preview_id)
-    wav_path = processing_dir / "transcription.wav"
-
-    try:
-        source_path = write_source_audio_file(processing_dir, suffix, file_bytes)
-        convert_to_wav(source_path, wav_path)
-        actual_duration_ms = get_wav_duration_ms(wav_path)
-        if actual_duration_ms <= 0:
-            raise MultimodalServiceError("audio preview is empty", code=4006)
-        if actual_duration_ms > settings["asr_preview_max_duration_ms"]:
-            raise MultimodalServiceError(
-                "audio preview duration exceeds limit",
-                code=4011,
-                status_code=413,
-            )
-
-        result = get_asr_runtime().transcribe(wav_path)
-        return _serialize_audio_preview(
-            multimodal_session_id=multimodal_session_id,
-            transcript_text=result.transcript_text,
-            transcript_confidence=result.transcript_confidence,
-            resolved_device=result.resolved_device,
-            duration_ms=actual_duration_ms,
-        )
-    except MultimodalServiceError:
-        raise
-    except Exception as exc:
-        raise _translate_processing_error(exc) from exc
-    finally:
-        cleanup_processing_directory(preview_id)
-
-
 async def create_audio_turn(
     multimodal_session_id: str,
     consultation_session_id: str,
@@ -498,15 +572,16 @@ async def create_audio_turn(
         raise _translate_processing_error(exc) from exc
 
     audio_turn_id = str(uuid.uuid4())
+    effective_turn_id = turn_id or audio_turn_id
     processing_dir = ensure_processing_directory(audio_turn_id)
     source_path = processing_dir / f"source{suffix}"
-    wav_path = processing_dir / "transcription.wav"
 
     try:
         source_path = write_source_audio_file(processing_dir, suffix, file_bytes)
-        convert_to_wav(source_path, wav_path)
-        actual_duration_ms = get_wav_duration_ms(wav_path)
-        if actual_duration_ms > settings["upload_max_duration_ms"]:
+        if (
+            duration_ms is not None
+            and duration_ms > settings["upload_max_duration_ms"]
+        ):
             raise MultimodalServiceError(
                 "audio duration exceeds limit",
                 code=4008,
@@ -524,6 +599,11 @@ async def create_audio_turn(
             file_bytes=file_bytes,
             content_type=normalized_mime_type,
         )
+        normalized_wav_object_key = _build_normalized_wav_object_key(
+            consultation_session_id=consultation_session_id,
+            question_key=question_key,
+            effective_turn_id=effective_turn_id,
+        )
 
         now = _now()
         with get_db_session() as db_session:
@@ -531,18 +611,19 @@ async def create_audio_turn(
                 id=audio_turn_id,
                 multimodal_session_id=multimodal_session_id,
                 consultation_session_id=consultation_session_id,
-                turn_id=turn_id,
+                turn_id=effective_turn_id,
                 stage_id=stage_id,
                 node_id=node_id,
                 question_key=question_key,
                 prompt_key=prompt_key,
                 audio_uri=audio_uri,
+                normalized_wav_uri=None,
                 storage_provider="minio",
                 storage_object_key=object_key,
                 source_filename=audio_file.filename,
                 mime_type=normalized_mime_type,
                 file_size_bytes=len(file_bytes),
-                duration_ms=actual_duration_ms,
+                duration_ms=duration_ms,
                 processing_status="uploaded",
                 transcript_text=None,
                 transcript_confidence=None,
@@ -556,21 +637,40 @@ async def create_audio_turn(
             )
             db_session.add(record)
 
-        future = _submit_transcription_job(audio_turn_id, wav_path)
-        resolved_device = get_asr_runtime().resolve_device()
-        if resolved_device == "cuda":
-            try:
-                await asyncio.wait_for(
-                    asyncio.wrap_future(future),
-                    timeout=settings["asr_sync_timeout_ms"] / 1000,
-                )
-                return get_audio_turn(multimodal_session_id, audio_turn_id)
-            except asyncio.TimeoutError:
-                _mark_audio_turn_transcribing(audio_turn_id)
-                return get_audio_turn(multimodal_session_id, audio_turn_id)
-
-        _mark_audio_turn_transcribing(audio_turn_id)
-        return get_audio_turn(multimodal_session_id, audio_turn_id)
+        future = _submit_transcription_job(
+            audio_turn_id,
+            multimodal_session_id,
+            consultation_session_id,
+            effective_turn_id,
+            question_key,
+            audio_uri,
+            normalized_wav_object_key,
+            source_path,
+            normalized_mime_type,
+            audio_file.filename,
+            response_completed_at or response_started_at,
+        )
+        try:
+            _mark_audio_turn_transcribing(audio_turn_id)
+            timeout_seconds = settings["asr_sync_timeout_ms"] / 1000
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + timeout_seconds
+            while True:
+                current_turn = get_audio_turn(multimodal_session_id, audio_turn_id)
+                if current_turn["processing_status"] in {
+                    "transcript_ready",
+                    "analyzing",
+                    "completed",
+                    "failed",
+                }:
+                    return current_turn
+                if loop.time() >= deadline:
+                    return current_turn
+                await asyncio.sleep(0.2)
+        except MultimodalServiceError:
+            future.cancel()
+            cleanup_processing_directory(audio_turn_id)
+            raise
     except MultimodalServiceError:
         cleanup_processing_directory(audio_turn_id)
         raise
@@ -586,7 +686,12 @@ def recover_incomplete_audio_turns() -> None:
             for record in db_session.execute(
                 select(MultimodalAudioTurn).where(
                     MultimodalAudioTurn.processing_status.in_(
-                        ["uploaded", "transcribing"]
+                        [
+                            "uploaded",
+                            "transcribing",
+                            "transcript_ready",
+                            "analyzing",
+                        ]
                     )
                 )
             ).scalars()

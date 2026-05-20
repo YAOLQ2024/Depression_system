@@ -5,6 +5,7 @@ import io
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Union
 
 import cv2
 import numpy as np
@@ -106,6 +107,27 @@ def decode_audio_to_16k_mono(audio_base64: str, audio_format: str, sampling_rate
     return audio.astype(np.float32, copy=False)
 
 
+def load_audio_file_to_16k_mono(audio_path: Union[str, Path]) -> np.ndarray:
+    try:
+        import soundfile as sf
+    except ImportError as exc:
+        raise RuntimeError("soundfile_not_installed") from exc
+
+    try:
+        audio, sr = sf.read(str(audio_path), dtype="float32", always_2d=False)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("invalid_audio_bytes") from exc
+
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.ndim == 2:
+        audio = np.mean(audio, axis=1)
+    if audio.size == 0:
+        raise ValueError("empty_audio")
+    if sr != MODEL_SAMPLE_RATE:
+        audio = resample_linear(audio, sr, MODEL_SAMPLE_RATE)
+    return audio.astype(np.float32, copy=False)
+
+
 def build_pose_no_person_result() -> dict:
     return {
         "status": "no_pose",
@@ -130,6 +152,21 @@ def infer_text_emotion(request: TextEmotionInferRequest) -> dict:
 def infer_audio_emotion(request: AudioEmotionInferRequest) -> dict:
     try:
         audio_16k = decode_audio_to_16k_mono(request.audio_base64, request.audio_format, request.sampling_rate)
+    except RuntimeError as exc:
+        return error_response(str(exc), 5002)
+    except ValueError as exc:
+        return error_response(str(exc), 4002)
+    try:
+        engine = runtime_store.get_audio_engine()
+        result = predict_audio(engine, audio_16k)
+        return success_response({"result": result})
+    except Exception:  # noqa: BLE001
+        return error_response("model_inference_failed", 5001)
+
+
+def infer_audio_emotion_from_wav_path(wav_path: Union[str, Path]) -> dict:
+    try:
+        audio_16k = load_audio_file_to_16k_mono(wav_path)
     except RuntimeError as exc:
         return error_response(str(exc), 5002)
     except ValueError as exc:

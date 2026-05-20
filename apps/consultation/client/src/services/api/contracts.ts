@@ -4,9 +4,7 @@ import type {
   BootstrapPayload,
   ConsultationMultimodalLive,
   ConsultationSession,
-  ConsultationTurnRecord,
   ConsultationTurnMultimodalBundle,
-  SpeechEmotionResultRecord,
   UserRecord,
 } from "../../types";
 
@@ -50,29 +48,22 @@ export type ConsultationResponse = {
   consultation: ConsultationSession;
 };
 
-export type ConsultationAudioTurnResponse = {
-  consultation: ConsultationSession;
-  consultation_turn: ConsultationTurnRecord;
-  speech_emotion_result: SpeechEmotionResultRecord;
-};
-
 export type SubmitConsultationTurnPayload = {
   input_type: string;
+  turn_id?: string | null;
   raw_input?: string | null;
   audio_uri?: string | null;
   transcript_text?: string | null;
-  audio_base64?: string | null;
-  audio_format?: string | null;
-  sampling_rate?: number | null;
+  transcript_source?:
+    | "dolphin_final"
+    | "manual_input"
+    | "continue_button"
+    | "silence"
+    | "recognition_failure"
+    | null;
   response_started_at?: string | null;
   response_completed_at?: string | null;
   [key: string]: unknown;
-};
-
-export type ConsultationSubtitlePreviewPayload = {
-  prompt_key: string;
-  transcript_text: string;
-  source: "dolphin_preview" | "browser_fallback";
 };
 
 export type ConsultationMultimodalCapturePayload = {
@@ -88,11 +79,6 @@ export type ConsultationMultimodalCapturePayload = {
 export type ConsultationMultimodalLiveResponse = ConsultationMultimodalLive;
 
 export type ConsultationTurnMultimodalBundleResponse = ConsultationTurnMultimodalBundle;
-
-export type ConsultationTurnDetailResponse = {
-  consultation_turn: ConsultationTurnRecord;
-  speech_emotion_result?: SpeechEmotionResultRecord | null;
-};
 
 export type AssessmentSessionResponse = {
   assessment_session: AssessmentSession;

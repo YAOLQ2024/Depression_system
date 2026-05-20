@@ -29,6 +29,7 @@ from app.schemas import (
 from app.services.asr_runtime import DolphinAsrError, get_asr_runtime
 from app.services.non_eeg_inference import (
     infer_audio_emotion,
+    infer_audio_emotion_from_wav_path,
     infer_face_emotion,
     infer_pose_emotion,
     infer_text_emotion,
@@ -403,6 +404,40 @@ def _prepare_normalized_audio(
         raise MultimodalServiceError(exc.message, 4004, exc.status_code) from exc
 
 
+def _materialize_transcription_wav(
+    *,
+    consultation_turn_id: str,
+    audio_base64: str,
+    audio_format: str | None,
+) -> PreparedNormalizedAudio:
+    processing_id = f"turn-asr-{consultation_turn_id}"
+    processing_dir = ensure_processing_directory(processing_id)
+    source_suffix = f".{(audio_format or 'wav').strip().lower().lstrip('.') or 'wav'}"
+
+    try:
+        source_bytes = base64.b64decode(audio_base64)
+        source_path = write_source_audio_file(
+            processing_dir,
+            source_suffix,
+            source_bytes,
+        )
+        wav_path = processing_dir / "transcription.wav"
+        if source_suffix == ".wav":
+            wav_path.write_bytes(source_bytes)
+        else:
+            convert_to_wav(source_path, wav_path)
+        normalized_wav_bytes = wav_path.read_bytes()
+        return PreparedNormalizedAudio(
+            processing_id=processing_id,
+            normalized_wav_uri="",
+            normalized_wav_bytes=normalized_wav_bytes,
+            wav_path=wav_path,
+        )
+    except AudioProcessingError as exc:
+        cleanup_processing_directory(processing_id)
+        raise MultimodalServiceError(exc.message, 4004, exc.status_code) from exc
+
+
 def _infer_audio_emotion_payload(
     *,
     session_id: str,
@@ -424,6 +459,12 @@ def _infer_audio_emotion_payload(
             )
         )
     )
+
+
+def _infer_audio_emotion_from_wav_path_payload(
+    wav_path: Path,
+) -> dict[str, Any]:
+    return _extract_result_or_raise(infer_audio_emotion_from_wav_path(wav_path))
 
 
 def _transcribe_audio_payload(wav_path: Path) -> dict[str, Any]:
@@ -569,6 +610,7 @@ def warmup_multimodal_session(
             runtime_store.get_text_engine()
         if "audio" in modalities:
             runtime_store.get_audio_engine()
+            get_asr_runtime().warmup()
         if "face" in modalities:
             runtime_store.get_face_engine()
         if "pose" in modalities:
@@ -792,6 +834,9 @@ def submit_audio_turn(
     session_id: str,
     payload: SubmitAudioTurnRequest,
     acting_user_id: str | None = None,
+    *,
+    transcription_wav_path: Path | None = None,
+    audio_emotion_wav_path: Path | None = None,
 ) -> dict[str, Any]:
     with get_db_session() as db_session:
         session = db_session.get(MultimodalSession, session_id)
@@ -805,7 +850,14 @@ def submit_audio_turn(
         resolved_audio_format = payload.audio_format
         resolved_sampling_rate = payload.sampling_rate
         prepared_audio: PreparedNormalizedAudio | None = None
-        if not resolved_audio_base64:
+        materialized_audio: PreparedNormalizedAudio | None = None
+        effective_transcription_wav_path = transcription_wav_path
+        effective_audio_emotion_wav_path = audio_emotion_wav_path
+        if (
+            not resolved_audio_base64
+            and effective_transcription_wav_path is None
+            and effective_audio_emotion_wav_path is None
+        ):
             prepared_audio = _prepare_normalized_audio(payload)
             resolved_normalized_wav_uri = prepared_audio.normalized_wav_uri
             resolved_audio_base64 = base64.b64encode(
@@ -815,6 +867,21 @@ def submit_audio_turn(
             )
             resolved_audio_format = "wav"
             resolved_sampling_rate = 16000
+            effective_transcription_wav_path = prepared_audio.wav_path
+            effective_audio_emotion_wav_path = prepared_audio.wav_path
+        elif resolved_audio_base64 and (
+            effective_transcription_wav_path is None
+            or effective_audio_emotion_wav_path is None
+        ):
+            materialized_audio = _materialize_transcription_wav(
+                consultation_turn_id=payload.consultation_turn_id,
+                audio_base64=resolved_audio_base64,
+                audio_format=resolved_audio_format,
+            )
+            if effective_transcription_wav_path is None:
+                effective_transcription_wav_path = materialized_audio.wav_path
+            if effective_audio_emotion_wav_path is None:
+                effective_audio_emotion_wav_path = materialized_audio.wav_path
 
         working_payload = payload.model_copy(
             update={
@@ -823,6 +890,9 @@ def submit_audio_turn(
                 "sampling_rate": resolved_sampling_rate,
                 "normalized_wav_uri": resolved_normalized_wav_uri,
             }
+        )
+        provided_transcript_text = (
+            str(payload.transcript_text or "").strip() or None
         )
         _record_capture(
             db_session,
@@ -839,14 +909,23 @@ def submit_audio_turn(
                 "original_audio_uri": payload.original_audio_uri,
                 "normalized_wav_uri": resolved_normalized_wav_uri,
                 "sampling_rate": resolved_sampling_rate,
-                "audio_base64_length": len(resolved_audio_base64),
+                "audio_base64_length": (
+                    len(resolved_audio_base64)
+                    if resolved_audio_base64 is not None
+                    else None
+                ),
                 "has_transcript_text": bool(payload.transcript_text and payload.transcript_text.strip()),
             },
             captured_at=captured_at,
         )
 
         try:
-            if prepared_audio is not None:
+            if effective_audio_emotion_wav_path is not None:
+                speech_future = _AUDIO_TURN_EXECUTOR.submit(
+                    _infer_audio_emotion_from_wav_path_payload,
+                    effective_audio_emotion_wav_path,
+                )
+            else:
                 speech_future = _AUDIO_TURN_EXECUTOR.submit(
                     _infer_audio_emotion_payload,
                     session_id=session.id,
@@ -856,26 +935,24 @@ def submit_audio_turn(
                     audio_format=resolved_audio_format or "wav",
                     sampling_rate=resolved_sampling_rate,
                 )
+            speech_raw_result = speech_future.result()
+            if provided_transcript_text is not None:
+                asr_payload = {
+                    "transcript_text": provided_transcript_text,
+                    "transcript_confidence": None,
+                }
+            else:
+                if effective_transcription_wav_path is None:
+                    raise MultimodalServiceError(
+                        "transcription audio is not ready",
+                        5003,
+                        500,
+                    )
                 asr_future = _AUDIO_TURN_EXECUTOR.submit(
                     _transcribe_audio_payload,
-                    prepared_audio.wav_path,
+                    effective_transcription_wav_path,
                 )
-                speech_raw_result = speech_future.result()
                 asr_payload = asr_future.result()
-            else:
-                speech_raw_result = _infer_audio_emotion_payload(
-                    session_id=session.id,
-                    frame_id=payload.frame_id,
-                    captured_at=captured_at,
-                    audio_base64=resolved_audio_base64,
-                    audio_format=resolved_audio_format or "wav",
-                    sampling_rate=resolved_sampling_rate,
-                )
-                asr_payload = {
-                    "transcript_text": None,
-                    "transcript_confidence": None,
-                    "resolved_device": None,
-                }
         except DolphinAsrError as exc:
             raise MultimodalServiceError(
                 exc.message,
@@ -883,8 +960,9 @@ def submit_audio_turn(
                 503 if exc.error_code == "MODEL_NOT_READY" else 500,
             ) from exc
         finally:
-            if prepared_audio is not None:
-                cleanup_processing_directory(prepared_audio.processing_id)
+            for prepared in (materialized_audio, prepared_audio):
+                if prepared is not None:
+                    cleanup_processing_directory(prepared.processing_id)
 
         final_transcript_text = (
             str(asr_payload.get("transcript_text") or "").strip() or None
@@ -941,6 +1019,8 @@ def submit_audio_turn(
         return {
             "multimodal_session": _snapshot(session),
             "transcript_text": final_transcript_text,
+            "transcript_confidence": asr_payload.get("transcript_confidence"),
+            "asr_provider": "dolphin" if final_transcript_text else None,
             "normalized_wav_uri": resolved_normalized_wav_uri,
             "speech_emotion": speech_result,
             "text_emotion": text_result,
@@ -1003,14 +1083,12 @@ def submit_face_capture(
         )
 
         _refresh_live_payload(session, face_result)
-        _refresh_session_summary(db_session, session, modalities=("face",))
         db_session.add(session)
         turn_bundle = None
         if payload.consultation_turn_id:
             db_session.flush()
             turn_bundle = _upsert_turn_bundle(db_session, session.id, payload.consultation_turn_id)
         db_session.flush()
-        db_session.refresh(session)
         return {
             "capture_id": capture_row.id,
             "session_id": session.id,
@@ -1083,14 +1161,12 @@ def submit_pose_capture(
         )
 
         _refresh_live_payload(session, pose_result)
-        _refresh_session_summary(db_session, session, modalities=("pose",))
         db_session.add(session)
         turn_bundle = None
         if payload.consultation_turn_id:
             db_session.flush()
             turn_bundle = _upsert_turn_bundle(db_session, session.id, payload.consultation_turn_id)
         db_session.flush()
-        db_session.refresh(session)
         return {
             "capture_id": capture_row.id,
             "session_id": session.id,

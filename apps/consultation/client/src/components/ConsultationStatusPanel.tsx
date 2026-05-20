@@ -120,8 +120,14 @@ function getVoiceDetail(live: SpeechMultimodalLive, isRecording: boolean) {
   return "等待语音提交";
 }
 
-function getTextBody(live: TextMultimodalLive, localTranscript?: string) {
-  return localTranscript?.trim() || live.transcript_text?.trim() || "等待患者语音转写文本。";
+function getTextBody(live: TextMultimodalLive, transcriptPending: boolean) {
+  if (live.transcript_text?.trim()) {
+    return live.transcript_text.trim();
+  }
+  if (transcriptPending) {
+    return "Dolphin 识别中，等待本轮最终转写文本。";
+  }
+  return "等待患者语音转写文本。";
 }
 
 function SectionCard({
@@ -207,7 +213,7 @@ export function ConsultationStatusPanel({
   cameraStatusTitle = "摄像头监测中",
   cameraStatusTone = "pending",
   microphoneStatusText = "麦克风待命",
-  localTranscript = "",
+  transcriptPending = false,
 }: {
   consultation: ConsultationSession;
   onRefresh: () => void;
@@ -220,7 +226,7 @@ export function ConsultationStatusPanel({
   cameraStatusTitle?: string;
   cameraStatusTone?: MediaDeviceStatusTone;
   microphoneStatusText?: string;
-  localTranscript?: string;
+  transcriptPending?: boolean;
 }) {
   const snapshot = resolveLiveData(consultation);
   const stageOrder = consultation.current_stage?.stage_order ?? consultation.current_question_item?.stage_order ?? 1;
@@ -358,7 +364,7 @@ export function ConsultationStatusPanel({
               </div>
             </div>
             <div className="mt-2 flex-1 rounded-[14px] border border-white/8 bg-slate-950/20 px-2 py-2 text-[12px] leading-6 text-slate-200">
-              {getTextBody(snapshot.text, localTranscript)}
+              {getTextBody(snapshot.text, transcriptPending)}
             </div>
           </div>
         </SectionCard>

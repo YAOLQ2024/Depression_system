@@ -73,6 +73,11 @@ class DolphinAsrRuntime:
     def resolve_device(self) -> str:
         return self._resolve_device()
 
+    def warmup(self) -> str:
+        device = self._resolve_device()
+        self._ensure_loaded(device)
+        return device
+
     def _load_model_from_candidates(self, dolphin_module, model_name: str, device: str):
         model_dir = get_settings()["dolphin_model_dir"]
         parent_dir = model_dir.parent

@@ -35,6 +35,7 @@ class ConsultationTurn(Base):
     original_audio_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     normalized_wav_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcript_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     structured_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     multimodal_bundle_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     branch_taken: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -43,9 +44,3 @@ class ConsultationTurn(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     session = relationship("ConsultationSession", back_populates="turns")
-    speech_emotion_result = relationship(
-        "SpeechEmotionResult",
-        back_populates="consultation_turn",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )

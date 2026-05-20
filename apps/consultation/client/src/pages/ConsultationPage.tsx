@@ -22,50 +22,19 @@ import {
 import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
-import { previewMultimodalAudio } from "../services/api/multimodal.api";
+import {
+  getMultimodalAudioTurn,
+  warmupMultimodalSession,
+  uploadMultimodalAudioTurn,
+} from "../services/api/multimodal.api";
 import type { ConsultationSession, ConsultationSubtitleHistoryEntry } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
 const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 const CAMERA_CAPTURE_INTERVAL_MS = 2500;
-const DOLPHIN_PREVIEW_TIMESLICE_MS = 1800;
-const DOLPHIN_PREVIEW_MIN_BYTES = 2048;
-
-type BrowserSpeechRecognitionResult = {
-  0: {
-    transcript: string;
-  };
-  isFinal: boolean;
-  length: number;
-};
-
-type BrowserSpeechRecognitionEvent = Event & {
-  resultIndex: number;
-  results: ArrayLike<BrowserSpeechRecognitionResult>;
-};
-
-type BrowserSpeechRecognitionErrorEvent = Event & {
-  error?: string;
-};
-
-type BrowserSpeechRecognition = EventTarget & {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onend: ((event: Event) => void) | null;
-  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-};
-
-type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
 declare global {
   interface Window {
-    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
     webkitAudioContext?: typeof AudioContext;
   }
 }
@@ -106,13 +75,6 @@ function pickSupportedRecordingMimeType() {
   }
 
   return RECORDING_MIME_CANDIDATES.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "";
-}
-
-function getSpeechRecognitionConstructor() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
 async function captureVideoFrame(videoElement: HTMLVideoElement, mimeType = "image/jpeg") {
@@ -159,6 +121,13 @@ function sleep(ms: number) {
   });
 }
 
+function createClientTurnId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `turn-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 type LocalRecordingSnapshot = {
   promptKey: string;
   durationMs: number;
@@ -190,11 +159,7 @@ export default function ConsultationPage() {
   const [microphoneFeedback, setMicrophoneFeedback] = useState<MediaDeviceFeedback>(() =>
     getInitialMediaFeedback("microphone"),
   );
-  const [speechTranscript, setSpeechTranscript] = useState("");
-  const [recognitionInterimTranscript, setRecognitionInterimTranscript] = useState("");
-  const [livePreviewTranscript, setLivePreviewTranscript] = useState("");
   const [subtitleUserTranscript, setSubtitleUserTranscript] = useState<string | null>(null);
-  const [subtitleFallbackToBrowser, setSubtitleFallbackToBrowser] = useState(false);
   const [multimodalSessionId, setMultimodalSessionId] = useState<string | null>(
     consultation?.multimodal_session_id ?? null,
   );
@@ -205,7 +170,6 @@ export default function ConsultationPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<Date | null>(null);
   const answerWindowPromptKeyRef = useRef<string | null>(null);
@@ -214,30 +178,20 @@ export default function ConsultationPage() {
   const frameIndexRef = useRef(0);
   const captureInFlightRef = useRef(false);
   const liveRefreshInFlightRef = useRef(false);
-  const speechTranscriptRef = useRef("");
-  const recognitionInterimRef = useRef("");
-  const previewSequenceRef = useRef(0);
-  const previewQueueRef = useRef<Array<{ sequence: number; blob: Blob; mimeType: string; promptKey: string | null }>>([]);
-  const previewDrainInFlightRef = useRef(false);
-  const previewFailureToastShownRef = useRef(false);
-  const lastSyncedSubtitlePreviewRef = useRef("");
+  const warmedUpMultimodalSessionIdsRef = useRef<Set<string>>(new Set());
 
   const playableVideoUri = useMemo(() => resolvePlayableVideoUri(consultation), [consultation]);
   const promptText = useMemo(() => resolvePromptText(consultation), [consultation]);
-  const liveTranscriptText = useMemo(
-    () => `${speechTranscript}${recognitionInterimTranscript}`.trim(),
-    [recognitionInterimTranscript, speechTranscript],
-  );
   const currentPromptKey = consultation?.current_question_item?.question_key ?? consultation?.current_prompt_key ?? null;
   const responseWindowStatusText = useMemo(() => {
     if (!consultation?.current_question_item?.response_required) {
       return "";
     }
     if (isSubmittingResponse) {
-      return "本轮录音已结束，正在提交回答窗口。";
+      return "Dolphin 正在转写本轮语音。";
     }
     if (isRecording) {
-      return `本地录音中 ${formatDuration(recordingElapsedMs)}`;
+      return `本地录音中 ${formatDuration(recordingElapsedMs)}，停止后进入 Dolphin 转写。`;
     }
     if (consultation.status === "waiting_user_input") {
       return answerWindowOpenedAt ? "回答窗口已开启，可开始本轮语音回答。" : "当前题目已进入等待回答态。";
@@ -263,17 +217,11 @@ export default function ConsultationPage() {
     if (subtitleUserTranscript?.trim()) {
       return `用户：${subtitleUserTranscript.trim()}`;
     }
-    if (livePreviewTranscript.trim()) {
-      return `用户：${livePreviewTranscript.trim()}`;
-    }
-    if (subtitleFallbackToBrowser && liveTranscriptText) {
-      return `用户：${liveTranscriptText}`;
-    }
     if (isSubmittingResponse) {
       return "用户：（Dolphin 正在转写本轮语音）";
     }
     if (isRecording) {
-      return `用户：（Dolphin 实时识别中 ${formatDuration(recordingElapsedMs)}）`;
+      return `用户：（Dolphin 识别中 ${formatDuration(recordingElapsedMs)}）`;
     }
     if (consultation.status === "waiting_user_input") {
       return "用户：（回答窗口已开启，可开始语音回答）";
@@ -284,10 +232,7 @@ export default function ConsultationPage() {
     consultation?.status,
     isRecording,
     isSubmittingResponse,
-    livePreviewTranscript,
-    liveTranscriptText,
     recordingElapsedMs,
-    subtitleFallbackToBrowser,
     subtitleUserTranscript,
   ]);
   const subtitlePanelLines = useMemo(() => {
@@ -371,35 +316,6 @@ export default function ConsultationPage() {
     }
   });
 
-  const syncSubtitlePreviewDraft = useEffectEvent(
-    async (
-      transcriptText: string,
-      source: "dolphin_preview" | "browser_fallback",
-    ) => {
-      if (!consultation?.session_id || !currentPromptKey) {
-        return null;
-      }
-      const normalizedText = transcriptText.trim();
-      if (!normalizedText) {
-        return null;
-      }
-      const dedupeKey = `${consultation.session_id}:${currentPromptKey}:${source}:${normalizedText}`;
-      if (lastSyncedSubtitlePreviewRef.current === dedupeKey) {
-        return null;
-      }
-
-      const updated = await actions.syncConsultationSubtitlePreview({
-        prompt_key: currentPromptKey,
-        transcript_text: normalizedText,
-        source,
-      });
-      if (updated) {
-        lastSyncedSubtitlePreviewRef.current = dedupeKey;
-      }
-      return updated;
-    },
-  );
-
   useEffect(() => {
     if (state.message) {
       pushStoreToast(state.message, "success");
@@ -449,38 +365,7 @@ export default function ConsultationPage() {
 
   useEffect(() => {
     setSubtitleUserTranscript(null);
-    setLivePreviewTranscript("");
-    setSubtitleFallbackToBrowser(false);
-    previewSequenceRef.current = 0;
-    previewQueueRef.current = [];
-    previewFailureToastShownRef.current = false;
-    lastSyncedSubtitlePreviewRef.current = "";
   }, [currentPromptKey]);
-
-  useEffect(() => {
-    speechTranscriptRef.current = speechTranscript;
-  }, [speechTranscript]);
-
-  useEffect(() => {
-    recognitionInterimRef.current = recognitionInterimTranscript;
-  }, [recognitionInterimTranscript]);
-
-  useEffect(() => {
-    if (!isRecording || !subtitleFallbackToBrowser || !liveTranscriptText.trim()) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void syncSubtitlePreviewDraft(liveTranscriptText, "browser_fallback");
-    }, 600);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    isRecording,
-    liveTranscriptText,
-    subtitleFallbackToBrowser,
-    syncSubtitlePreviewDraft,
-  ]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -531,7 +416,6 @@ export default function ConsultationPage() {
       isUnmountingRef.current = true;
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
-      speechRecognitionRef.current?.abort();
       if (lastRecordingUrlRef.current) {
         URL.revokeObjectURL(lastRecordingUrlRef.current);
       }
@@ -613,6 +497,26 @@ export default function ConsultationPage() {
     }
   }, [consultation?.current_prompt_key, playableVideoUri]);
 
+  const warmupMultimodalRuntime = useEffectEvent(async (sessionId: string) => {
+    if (!sessionId || warmedUpMultimodalSessionIdsRef.current.has(sessionId)) {
+      return;
+    }
+    warmedUpMultimodalSessionIdsRef.current.add(sessionId);
+    try {
+      await warmupMultimodalSession(sessionId);
+    } catch {
+      warmedUpMultimodalSessionIdsRef.current.delete(sessionId);
+    }
+  });
+
+  useEffect(() => {
+    const sessionId = multimodalSessionId || consultation?.multimodal_session_id || null;
+    if (!sessionId) {
+      return;
+    }
+    void warmupMultimodalRuntime(sessionId);
+  }, [consultation?.multimodal_session_id, multimodalSessionId, warmupMultimodalRuntime]);
+
   async function handlePlayCurrentVideo() {
     const videoElement = videoRef.current;
     if (!videoElement) {
@@ -659,14 +563,6 @@ export default function ConsultationPage() {
     audioChunksRef.current = [];
   }
 
-  function resetPreviewTranscriptionState() {
-    setLivePreviewTranscript("");
-    setSubtitleFallbackToBrowser(false);
-    previewSequenceRef.current = 0;
-    previewQueueRef.current = [];
-    previewFailureToastShownRef.current = false;
-  }
-
   async function ensureMultimodalSession() {
     if (!consultation) {
       throw new Error("当前没有可用的问诊会话，无法创建多模态会话。");
@@ -675,6 +571,7 @@ export default function ConsultationPage() {
     const existingSessionId = multimodalSessionId || consultation.multimodal_session_id;
     if (existingSessionId) {
       setMultimodalSessionId(existingSessionId);
+      void warmupMultimodalRuntime(existingSessionId);
       return existingSessionId;
     }
 
@@ -685,139 +582,9 @@ export default function ConsultationPage() {
     }
 
     setMultimodalSessionId(refreshedSessionId);
+    void warmupMultimodalRuntime(refreshedSessionId);
     return refreshedSessionId;
   }
-  function stopSpeechRecognition() {
-    const recognition = speechRecognitionRef.current;
-    if (!recognition) {
-      return;
-    }
-    recognition.onresult = null;
-    recognition.onerror = null;
-    recognition.onend = null;
-    try {
-      recognition.stop();
-    } catch {
-      recognition.abort();
-    }
-    speechRecognitionRef.current = null;
-  }
-
-  async function drainPreviewQueue() {
-    if (previewDrainInFlightRef.current) {
-      return;
-    }
-
-    previewDrainInFlightRef.current = true;
-    try {
-      while (previewQueueRef.current.length > 0) {
-        const item = previewQueueRef.current.shift();
-        if (!item || item.promptKey !== currentPromptKey) {
-          continue;
-        }
-
-        try {
-          const ensuredMultimodalSessionId = await ensureMultimodalSession();
-          const normalizedMimeType = normalizeAudioMimeType(item.mimeType || item.blob.type || "audio/webm");
-          const preview = await previewMultimodalAudio(ensuredMultimodalSessionId, {
-            mime_type: normalizedMimeType,
-            audio_file: item.blob,
-            filename: `preview-${item.sequence}.${resolveRecordingExtension(normalizedMimeType)}`,
-          });
-
-          if (item.promptKey !== currentPromptKey) {
-            continue;
-          }
-
-          const previewText = preview.transcript_text.trim();
-          if (!previewText) {
-            setSubtitleFallbackToBrowser(true);
-            continue;
-          }
-
-          setLivePreviewTranscript(previewText);
-          setSubtitleFallbackToBrowser(false);
-          void syncSubtitlePreviewDraft(previewText, "dolphin_preview");
-        } catch (caught) {
-          if (!previewFailureToastShownRef.current) {
-            previewFailureToastShownRef.current = true;
-            setSubtitleFallbackToBrowser(true);
-            pushToast(
-              caught instanceof Error
-                ? `Dolphin 实时转写失败，字幕区已回退到浏览器本地识别：${caught.message}`
-                : "Dolphin 实时转写失败，字幕区已回退到浏览器本地识别。",
-              "error",
-            );
-          }
-        }
-      }
-    } finally {
-      previewDrainInFlightRef.current = false;
-    }
-  }
-
-  function queuePreviewChunk(mimeType: string) {
-    if (!consultation?.current_question_item?.response_required) {
-      return;
-    }
-    const cumulativeBlob = new Blob(audioChunksRef.current, { type: mimeType });
-    if (cumulativeBlob.size < DOLPHIN_PREVIEW_MIN_BYTES) {
-      return;
-    }
-
-    previewSequenceRef.current += 1;
-    previewQueueRef.current = [{
-      sequence: previewSequenceRef.current,
-      blob: cumulativeBlob,
-      mimeType,
-      promptKey: currentPromptKey,
-    }];
-    void drainPreviewQueue();
-  }
-
-  function startSpeechRecognition() {
-    const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
-    if (!SpeechRecognitionCtor) {
-      pushToast("当前浏览器不支持内置语音转写，文本模态可能无法同步出结果。", "warning");
-      return;
-    }
-
-    const recognition = new SpeechRecognitionCtor();
-    recognition.lang = "zh-CN";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onresult = (event) => {
-      let finalText = "";
-      let interimText = "";
-      for (let index = 0; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const transcript = result[0]?.transcript?.trim() || "";
-        if (!transcript) {
-          continue;
-        }
-        if (result.isFinal) {
-          finalText += transcript;
-        } else {
-          interimText += transcript;
-        }
-      }
-      speechTranscriptRef.current = finalText;
-      recognitionInterimRef.current = interimText;
-      setSpeechTranscript(finalText);
-      setRecognitionInterimTranscript(interimText);
-    };
-    recognition.onerror = (event) => {
-      if (event.error && event.error !== "no-speech" && event.error !== "aborted") {
-        pushToast(`浏览器语音识别不可用：${event.error}`, "warning");
-      }
-    };
-    recognition.onend = () => {
-      speechRecognitionRef.current = null;
-    };
-    speechRecognitionRef.current = recognition;
-    recognition.start();
-  }
-
   async function submitCameraCaptures(turnId?: string | null) {
     if (!consultation?.current_question_item?.question_key || !cameraVideoRef.current || captureInFlightRef.current) {
       return;
@@ -861,6 +628,40 @@ export default function ConsultationPage() {
     }
   }
 
+  async function waitForTranscriptReadyAudioTurn(
+    sessionId: string,
+    audioTurnId: string,
+  ) {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const audioTurn = await getMultimodalAudioTurn(sessionId, audioTurnId);
+      const transcriptText = audioTurn.transcript_text?.trim() || "";
+      if (transcriptText) {
+        return audioTurn;
+      }
+      if (audioTurn.processing_status === "failed") {
+        throw new Error(audioTurn.error_message || "Dolphin 语音转写失败");
+      }
+      await sleep(200);
+    }
+
+    throw new Error("Dolphin 语音转写超时，请重试。");
+  }
+
+  async function waitForCompletedAudioTurn(
+    sessionId: string,
+    audioTurnId: string,
+  ) {
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const audioTurn = await getMultimodalAudioTurn(sessionId, audioTurnId);
+      if (audioTurn.processing_status === "completed" || audioTurn.processing_status === "failed") {
+        return audioTurn;
+      }
+      await sleep(500);
+    }
+
+    return null;
+  }
+
   async function startBrowserRecording() {
     if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       const feedback = getUnsupportedMediaFeedback("microphone");
@@ -892,25 +693,18 @@ export default function ConsultationPage() {
         lastRecordingUrlRef.current = null;
       }
       setLastRecording(null);
-      resetPreviewTranscriptionState();
       setSubtitleUserTranscript(null);
       audioChunksRef.current = [];
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       recordingStartedAtRef.current = startedAt;
-      speechTranscriptRef.current = "";
-      recognitionInterimRef.current = "";
-      setSpeechTranscript("");
-      setRecognitionInterimTranscript("");
       setRecordingElapsedMs(0);
       setIsRecording(true);
       setMicrophoneFeedback(getActiveMicrophoneFeedback());
-      startSpeechRecognition();
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
-          queuePreviewChunk(recorder.mimeType || event.data.type || mimeType || "audio/webm");
         }
       };
 
@@ -931,7 +725,6 @@ export default function ConsultationPage() {
         if (isUnmountingRef.current) {
           cleanupRecorderResources();
           recordingStartedAtRef.current = null;
-          stopSpeechRecognition();
           return;
         }
 
@@ -959,7 +752,6 @@ export default function ConsultationPage() {
         setRecordingElapsedMs(0);
         setIsSubmittingResponse(true);
         setMicrophoneFeedback(getMicrophoneCompletedFeedback());
-        stopSpeechRecognition();
 
         try {
           if (!consultation || !currentPromptKey) {
@@ -972,31 +764,63 @@ export default function ConsultationPage() {
             return;
           }
 
+          const ensuredMultimodalSessionId = await ensureMultimodalSession();
           const resolvedMimeType = normalizeAudioMimeType(recorder.mimeType || blob.type || "audio/webm");
-          const transcriptCandidate = subtitleUserTranscript?.trim()
-            || livePreviewTranscript.trim()
-            || speechTranscriptRef.current.trim()
-            || recognitionInterimRef.current.trim()
-            || null;
-          const submitted = await actions.submitConsultationAudioTurn({
-            transcript_text: transcriptCandidate,
+          const consultationTurnId = createClientTurnId();
+          const uploadedAudioTurn = await uploadMultimodalAudioTurn(ensuredMultimodalSessionId, {
+            consultation_session_id: consultation.session_id,
+            question_key: currentPromptKey,
+            prompt_key: currentPromptKey,
+            stage_id: consultation.current_stage_id || consultation.current_question_item?.stage_id || "unknown",
+            node_id: consultation.current_node_id || consultation.current_question_item?.node_id || "unknown",
+            duration_ms: completedAt.getTime() - responseStartedAt.getTime(),
             response_started_at: responseStartedAt.toISOString(),
             response_completed_at: completedAt.toISOString(),
             mime_type: resolvedMimeType,
+            turn_id: consultationTurnId,
             audio_file: blob,
             filename: `${currentPromptKey}.${resolveRecordingExtension(resolvedMimeType)}`,
           });
-          if (!submitted) {
-            return;
-          }
 
-          const resolvedTranscript =
-            submitted.consultation_turn.transcript_text?.trim()
-            || transcriptCandidate
-            || null;
+          const transcriptReadyAudioTurn =
+            (uploadedAudioTurn.transcript_text?.trim() || "").length > 0
+              ? uploadedAudioTurn
+              : await waitForTranscriptReadyAudioTurn(
+                  ensuredMultimodalSessionId,
+                  uploadedAudioTurn.audio_turn_id,
+                );
+          const finalizedTranscript = transcriptReadyAudioTurn.transcript_text?.trim() || "";
+          if (!finalizedTranscript) {
+            throw new Error("Dolphin 未返回有效转写文本，请重试。");
+          }
+          const resolvedTranscript = finalizedTranscript;
+          const resolvedTranscriptSource = "dolphin_final";
           setSubtitleUserTranscript(resolvedTranscript);
-          await submitCameraCaptures(submitted.consultation_turn.turn_id);
-          pushToast("本轮语音回答已完成，情绪结果已更新到看板。", "success");
+
+          await actions.submitConsultationTurn({
+            input_type: "speech",
+            turn_id: consultationTurnId,
+            raw_input: resolvedTranscript,
+            audio_uri: transcriptReadyAudioTurn.audio_uri,
+            transcript_text: resolvedTranscript,
+            transcript_source: resolvedTranscriptSource,
+            response_started_at: responseStartedAt.toISOString(),
+            response_completed_at: completedAt.toISOString(),
+          });
+          await submitCameraCaptures(consultationTurnId);
+          if (transcriptReadyAudioTurn.processing_status === "completed") {
+            await refreshLiveSnapshot();
+          } else {
+            void waitForCompletedAudioTurn(
+              ensuredMultimodalSessionId,
+              uploadedAudioTurn.audio_turn_id,
+            ).then(async (completedAudioTurn) => {
+              if (completedAudioTurn?.processing_status === "completed") {
+                await refreshLiveSnapshot();
+              }
+            }).catch(() => {});
+          }
+          pushToast("本轮语音回答已完成，Dolphin 最终转写已返回。多模态结果会继续补齐到看板。", "success");
         } catch (caught) {
           pushToast(
             caught instanceof Error ? caught.message : "语音提交失败，请重新录音。",
@@ -1007,12 +831,11 @@ export default function ConsultationPage() {
         }
       };
 
-      recorder.start(DOLPHIN_PREVIEW_TIMESLICE_MS);
+      recorder.start();
     } catch (caught) {
       const feedback = describeMediaAccessError("microphone", caught);
       cleanupRecorderResources();
       recordingStartedAtRef.current = null;
-      stopSpeechRecognition();
       setIsRecording(false);
       setRecordingElapsedMs(0);
       setMicrophoneFeedback(feedback);
@@ -1025,7 +848,6 @@ export default function ConsultationPage() {
     if (!recorder || recorder.state === "inactive") {
       cleanupRecorderResources();
       recordingStartedAtRef.current = null;
-      stopSpeechRecognition();
       setIsRecording(false);
       setRecordingElapsedMs(0);
       return;
@@ -1173,7 +995,7 @@ export default function ConsultationPage() {
           </div>
 
           <div className="absolute left-[5%] lg:left-[10%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
-            <DraggableMessagePanel title="实时字幕" lines={subtitlePanelLines} />
+            <DraggableMessagePanel title="字幕状态" lines={subtitlePanelLines} />
           </div>
         </div>
 
@@ -1222,7 +1044,7 @@ export default function ConsultationPage() {
                     cameraStatusTitle={cameraFeedback.title}
                     cameraStatusTone={cameraFeedback.tone}
                     microphoneStatusText={microphoneFeedback.title}
-                    localTranscript={liveTranscriptText}
+                    transcriptPending={isRecording || isSubmittingResponse}
                     className="h-full"
                   />
                 </div>
