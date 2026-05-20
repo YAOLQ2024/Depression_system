@@ -72,25 +72,11 @@ export type ConsultationTurnRecord = {
   raw_input?: string | null;
   audio_uri?: string | null;
   transcript_text?: string | null;
+  transcript_source?: string | null;
   multimodal_bundle_payload?: Record<string, unknown> | null;
   response_started_at?: string | null;
   response_completed_at?: string | null;
   created_at?: string;
-};
-
-export type SpeechEmotionResultRecord = {
-  speech_emotion_result_id: string;
-  consultation_turn_id: string;
-  consultation_session_id: string;
-  model_name: string;
-  model_version: string;
-  primary_label?: string | null;
-  primary_score?: number | null;
-  top3_payload?: MultimodalRankedLabel[];
-  inference_status: string;
-  error_message?: string | null;
-  created_at?: string;
-  updated_at?: string;
 };
 
 export type ConsultationSubtitleHistoryEntry = {

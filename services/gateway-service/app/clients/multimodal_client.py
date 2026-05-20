@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from urllib import error, request
 
 from app.config import get_settings
@@ -33,11 +34,26 @@ def _handle_unavailable(exc: error.URLError) -> dict:
     }
 
 
+def _handle_timeout(timeout_seconds: int | float) -> dict:
+    return {
+        "status": 504,
+        "payload": {
+            "code": 5040,
+            "message": (
+                "multimodal service request timed out "
+                f"after {timeout_seconds} seconds"
+            ),
+            "data": {},
+        },
+    }
+
+
 def forward_multimodal_request(
     method: str,
     path: str,
     payload: dict | None,
     acting_user_id: str,
+    timeout_seconds: int = 15,
 ) -> dict:
     settings = get_settings()
     target_url = f"{settings['multimodal_service_url']}{path}"
@@ -52,11 +68,15 @@ def forward_multimodal_request(
 
     req = request.Request(target_url, data=data, headers=headers, method=method)
     try:
-        with request.urlopen(req, timeout=15) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
             return _handle_upstream_response(response)
     except error.HTTPError as exc:
         return _handle_upstream_error(exc)
+    except (TimeoutError, socket.timeout):
+        return _handle_timeout(timeout_seconds)
     except error.URLError as exc:
+        if isinstance(exc.reason, TimeoutError):
+            return _handle_timeout(timeout_seconds)
         return _handle_unavailable(exc)
 
 
@@ -66,6 +86,7 @@ def forward_multimodal_raw_request(
     body: bytes,
     content_type: str,
     acting_user_id: str,
+    timeout_seconds: int = 30,
 ) -> dict:
     settings = get_settings()
     target_url = f"{settings['multimodal_service_url']}{path}"
@@ -76,9 +97,13 @@ def forward_multimodal_raw_request(
     }
     req = request.Request(target_url, data=body, headers=headers, method=method)
     try:
-        with request.urlopen(req, timeout=30) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
             return _handle_upstream_response(response)
     except error.HTTPError as exc:
         return _handle_upstream_error(exc)
+    except (TimeoutError, socket.timeout):
+        return _handle_timeout(timeout_seconds)
     except error.URLError as exc:
+        if isinstance(exc.reason, TimeoutError):
+            return _handle_timeout(timeout_seconds)
         return _handle_unavailable(exc)

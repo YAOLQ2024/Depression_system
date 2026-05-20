@@ -20,8 +20,15 @@ export type MultimodalAudioTurnRecord = {
   session_id: string;
   consultation_session_id: string;
   question_key: string;
-  processing_status: "uploaded" | "transcribing" | "completed" | "failed";
-  audio_uri: string;
+  processing_status:
+    | "uploaded"
+    | "transcribing"
+    | "transcript_ready"
+    | "analyzing"
+    | "completed"
+    | "failed";
+  audio_uri: string | null;
+  normalized_wav_uri?: string | null;
   transcript_text: string | null;
   transcript_confidence: number | null;
   asr_provider: string;
@@ -33,25 +40,12 @@ export type MultimodalAudioTurnRecord = {
   updated_at: string;
 };
 
-export type MultimodalAudioPreviewRecord = {
-  session_id: string;
-  transcript_text: string;
-  transcript_confidence: number | null;
-  resolved_device: string;
-  duration_ms: number;
-  asr_provider: string;
-};
-
 type MultimodalSessionResponse = {
   multimodal_session: MultimodalSessionRecord;
 };
 
 type MultimodalAudioTurnResponse = {
   audio_turn: MultimodalAudioTurnRecord;
-};
-
-type MultimodalAudioPreviewResponse = {
-  audio_preview: MultimodalAudioPreviewRecord;
 };
 
 export async function createMultimodalSession(payload: {
@@ -67,6 +61,22 @@ export async function createMultimodalSession(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  return data.multimodal_session;
+}
+
+export async function warmupMultimodalSession(
+  sessionId: string,
+  payload: { modalities?: string[] } = {},
+) {
+  const data = await apiRequest<MultimodalSessionResponse>(
+    `/multimodal/sessions/${sessionId}/warmup`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        modalities: payload.modalities || ["text", "audio", "face", "pose"],
+      }),
+    },
+  );
   return data.multimodal_session;
 }
 
@@ -128,26 +138,4 @@ export async function getMultimodalAudioTurn(sessionId: string, audioTurnId: str
     },
   );
   return data.audio_turn;
-}
-
-export async function previewMultimodalAudio(
-  sessionId: string,
-  payload: {
-    mime_type: string;
-    audio_file: Blob;
-    filename: string;
-  },
-) {
-  const formData = new FormData();
-  formData.set("mime_type", payload.mime_type);
-  formData.set("audio_file", payload.audio_file, payload.filename);
-
-  const data = await apiRequest<MultimodalAudioPreviewResponse>(
-    `/multimodal/sessions/${sessionId}/audio-preview`,
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
-  return data.audio_preview;
 }

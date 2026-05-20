@@ -128,43 +128,6 @@ def create_multimodal_session(*, owner_session_id: str, user_id: str) -> dict:
         acting_user_id=user_id,
     )
 
-
-def submit_audio_turn(
-    *,
-    multimodal_session_id: str,
-    consultation_session_id: str,
-    consultation_turn_id: str,
-    question_key: str | None,
-    transcript_text: str | None,
-    audio_base64: str | None = None,
-    audio_format: str | None = None,
-    sampling_rate: int | None = None,
-    original_audio_uri: str | None = None,
-    original_mime_type: str | None = None,
-    source_filename: str | None = None,
-    captured_at: str | None,
-    acting_user_id: str,
-) -> dict:
-    return _forward_multimodal_request(
-        "POST",
-        f"/api/v1/multimodal/sessions/{multimodal_session_id}/audio-turns",
-        {
-            "consultation_turn_id": consultation_turn_id,
-            "consultation_session_id": consultation_session_id,
-            "question_key": question_key,
-            "transcript_text": transcript_text,
-            "audio_base64": audio_base64,
-            "audio_format": audio_format,
-            "sampling_rate": sampling_rate,
-            "original_audio_uri": original_audio_uri,
-            "original_mime_type": original_mime_type,
-            "source_filename": source_filename,
-            "captured_at": captured_at,
-        },
-        acting_user_id=acting_user_id,
-    )
-
-
 def get_multimodal_live(*, multimodal_session_id: str, acting_user_id: str) -> dict:
     return _forward_multimodal_request(
         "GET",

@@ -29,7 +29,6 @@ from app.services.multimodal_store import (
     create_audio_turn,
     create_or_get_multimodal_session,
     get_audio_turn,
-    preview_audio_chunk,
 )
 from app.services.responses import error_response, success_response
 
@@ -204,35 +203,6 @@ def get_audio_turn_status(session_id: str, audio_turn_id: str):
         {"audio_turn": audio_turn},
         message="audio turn status loaded",
     )
-
-
-@router.post("/sessions/{session_id}/audio-preview")
-async def post_audio_preview(
-    session_id: str,
-    request: Request,
-    x_mcs_user_id: str | None = Header(default=None),
-):
-    try:
-        get_multimodal_session(session_id, acting_user_id=x_mcs_user_id)
-        form = await request.form()
-        audio_file = form.get("audio_file")
-        if not isinstance(audio_file, StarletteUploadFile):
-            raise HTTPException(
-                status_code=400,
-                detail=error_response(message="audio_file is required", code=4006),
-            )
-        mime_type = str(form.get("mime_type") or "")
-        result = await preview_audio_chunk(
-            multimodal_session_id=session_id,
-            mime_type=mime_type,
-            audio_file=audio_file,
-        )
-        return success_response(
-            {"audio_preview": result},
-            message="audio preview transcribed",
-        )
-    except (SessionServiceError, StoreServiceError) as exc:
-        raise _translate_error(exc) from exc
 
 
 @router.post("/sessions/{session_id}/captures/face")

@@ -7,13 +7,12 @@
 - `POST /api/v1/multimodal/sessions/{session_id}/captures/face`
 - `POST /api/v1/multimodal/sessions/{session_id}/captures/pose`
 - `POST /api/v1/multimodal/sessions/{session_id}/audio-turns`
+- `GET /api/v1/multimodal/sessions/{session_id}/audio-turns/{audio_turn_id}`
 - `GET /api/v1/multimodal/sessions/{session_id}/live`
 - `GET /api/v1/multimodal/sessions/{session_id}/turns/{turn_id}/bundle`
 
 当前明确不包含：
 
-- ASR 语音转写
-- MinIO 音频落盘
 - EEG 模态
 - 最终风险结论
 
@@ -26,7 +25,8 @@
 | `/api/v1/multimodal/sessions` | `POST` | 创建多模态会话 | 已实现 |
 | `/api/v1/multimodal/sessions/{session_id}` | `GET` | 获取会话状态 | 已实现 |
 | `/api/v1/multimodal/sessions/{session_id}/warmup` | `POST` | 预热非 EEG 运行时 | 已实现 |
-| `/api/v1/multimodal/sessions/{session_id}/audio-turns` | `POST` | 基于整段音频补齐 `speech_emotion` / `text_emotion` | 已实现 |
+| `/api/v1/multimodal/sessions/{session_id}/audio-turns` | `POST` | 创建一条音频处理任务，触发 Dolphin ASR，并在后台补齐 `speech_emotion` / `text_emotion` | 已实现 |
+| `/api/v1/multimodal/sessions/{session_id}/audio-turns/{audio_turn_id}` | `GET` | 查询音频 turn 的分阶段状态、最终 transcript 与错误信息 | 已实现 |
 | `/api/v1/multimodal/sessions/{session_id}/captures/face` | `POST` | 提交 face 连续采样帧并保存细粒度结果 | 已实现 |
 | `/api/v1/multimodal/sessions/{session_id}/captures/pose` | `POST` | 提交 pose 连续采样帧并保存细粒度结果 | 已实现 |
 | `/api/v1/multimodal/sessions/{session_id}/live` | `GET` | 返回前端右侧看板使用的聚合结果 | 已实现 |
@@ -81,6 +81,31 @@
 - `text_features`
 - `face_features`
 - `pose_features`
+
+### 3.4 `audio-turns` 推荐状态语义
+
+`audio-turns` 对前端继续保持单入口，不拆成三个 HTTP 接口。
+
+推荐状态语义：
+
+- `uploaded`
+- `transcribing`
+- `transcript_ready`
+- `analyzing`
+- `completed`
+- `failed`
+
+其中：
+
+- `transcript_ready` 表示 Dolphin 最终 transcript 已可返回前端显示
+- `completed` 表示 `speech_emotion`、`text_emotion`、turn bundle 都已补齐
+
+推荐处理顺序：
+
+1. 浏览器上传原始 `webm`
+2. Dolphin ASR 优先直接消费原始 `webm`
+3. `transcript_text` 就绪后立刻可被前端读取
+4. `webm -> wav`、`speech emotion`、`text emotion`、bundle 生成继续后台补齐
 
 ## 4. 当前落库结构
 

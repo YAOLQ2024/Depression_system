@@ -27,6 +27,7 @@ class MultimodalAudioTurn(Base):
     question_key: Mapped[str] = mapped_column(String(128), nullable=False)
     prompt_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     audio_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_wav_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     storage_provider: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_object_key: Mapped[str] = mapped_column(Text, nullable=False)
     source_filename: Mapped[str | None] = mapped_column(Text, nullable=True)

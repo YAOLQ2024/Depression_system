@@ -587,6 +587,7 @@ stages:
 - `POST /api/v1/multimodal/sessions`
 - `POST /api/v1/multimodal/sessions/{session_id}/warmup`
 - `POST /api/v1/multimodal/sessions/{session_id}/audio-turns`
+- `GET /api/v1/multimodal/sessions/{session_id}/audio-turns/{audio_turn_id}`
 - `POST /api/v1/multimodal/sessions/{session_id}/captures/face`
 - `POST /api/v1/multimodal/sessions/{session_id}/captures/pose`
 - `GET /api/v1/multimodal/sessions/{session_id}/live`
@@ -594,9 +595,61 @@ stages:
 
 其中：
 
-- `audio-turns` 负责整段回答音频的存储与异步/同步推理
+- `audio-turns` 负责创建一次回答音频处理任务，并尽快返回 `audio_turn_id`
+- `GET /audio-turns/{audio_turn_id}` 负责查询该 turn 的分阶段状态与最终 transcript
 - `captures/face` / `captures/pose` 负责提交抽样帧
 - `live` 负责返回当前看板状态
+
+## 8.4 问诊音频链建议收敛为“单入口 + 分阶段状态机”
+
+建议继续保持一个对前端暴露的音频入口，而不是拆成：
+
+- `ASR` 一个接口
+- `speech emotion` 一个接口
+- `text emotion` 一个接口
+
+原因：
+
+- 前端只需要提交一次录音，不应该自己编排三段调用
+- 如果拆成三个接口，重试、幂等、失败恢复和 turn 绑定都会明显更复杂
+- 真正需要拆开的不是 HTTP 入口，而是后端内部处理阶段
+
+推荐对外协议：
+
+- `POST /api/v1/multimodal/sessions/{session_id}/audio-turns`
+- `GET /api/v1/multimodal/sessions/{session_id}/audio-turns/{audio_turn_id}`
+
+推荐内部状态：
+
+- `uploaded`
+- `transcribing`
+- `transcript_ready`
+- `analyzing`
+- `completed`
+- `failed`
+
+推荐前端消费方式：
+
+- 字幕区只等待 `transcript_ready`，或者 `transcript_text != null`
+- 一旦 Dolphin 最终稿就绪，立即显示最终字幕并提交问诊 turn
+- `completed` 只表示 `speech_emotion`、`text_emotion`、turn bundle 都已经补齐
+
+推荐后端处理顺序：
+
+1. 浏览器上传原始 `webm`
+2. 后端快速创建 `audio_turn_id`
+3. 先把原始 `webm` 规范化为本地 `wav`
+4. 基于同一份本地 `wav` 跑 Dolphin ASR
+5. `transcript_text` 一出来就把 turn 推进到 `transcript_ready`
+6. 同一份本地 `wav` 继续供 `speech emotion` 使用
+7. 基于最终 `transcript_text` 异步跑 `text emotion`
+8. 原始 `webm` 已先上传保留 `audio_uri`，`normalized_wav_uri` 与 turn bundle 继续后台补齐
+
+注意：
+
+- 如果对象存储上传较慢，不应阻塞最终字幕显示
+- `audio_uri`、`normalized_wav_uri` 可以后补
+- `consultation_turns.audio_uri` 当前是可空字段，因此允许先出 transcript 再补 URI
 
 ## 9. 数据库与对象存储设计
 
@@ -799,22 +852,42 @@ stages:
 建议：
 
 - 同一段音频上传一次
+- 对前端仍保持单入口 `audio-turns`
 - `multimodal-service` 内部分别调用：
   - Dolphin ASR
   - Audio Emotion ONNX
+
+进一步建议：
+
+- 不要把 `ASR`、`speech emotion`、`text emotion` 拆成三个前端接口
+- 只把后端内部处理阶段拆开
+- `POST /audio-turns` 负责创建任务
+- `GET /audio-turns/{audio_turn_id}` 负责查询阶段状态
+
+推荐语义：
+
+- `transcript_ready` 代表“最终字幕可以显示”
+- `completed` 代表“语音情绪、文本情绪、bundle 已全部补齐”
 
 ## 11.2 文本情绪识别在 ASR 之后执行
 
 流程应为：
 
 1. 先完成 ASR
-2. 拿到 transcript
+2. 一拿到 transcript 就把最终字幕返回前端
 3. 再调用 Text Emotion ONNX
+4. 等文本情绪补齐后再进入 `completed`
 
 也就是说：
 
 - 文本情绪不是基于 prompt 文本
 - 而是基于用户回答的转写文本
+
+补充建议：
+
+- 不把“Dolphin 直接处理原始 `webm`”当作稳定能力
+- `webm -> wav` 规范化放在 ASR 前置阶段
+- 本地 `wav` 主要供 `speech emotion` 和标准化归档使用
 
 ## 11.3 face / pose 持续运行，保存“连续时间流 + turn 汇总 + session 汇总”三层结果
 
@@ -1141,25 +1214,32 @@ Step 4 不建议一把做完。
 - 把每道题的一段原始音频上传到后端
 - `multimodal-service` 把音频写入对象存储
 - 音频 URI 回写数据库
+- 但对象存储上传不应阻塞最终字幕返回
 
 完成标志：
 
-- 每个 `consultation_turn` 都能关联一段原始音频 URI
+- 每个 `consultation_turn` 最终都能关联一段原始音频 URI
+- 字幕显示关键路径不依赖 `audio_uri` 已经回写完成
 
 #### Step 4C-3：ASR 转写与 turn 落库
 
 目标：
 
-- 上传音频后调用 Dolphin ASR
-- 保存最终 transcript
-- 把“问题文本 + 用户音频 + transcript”一一绑定到同一个 turn
+- 上传音频后先规范化为本地 `wav`
+- Dolphin ASR 基于同一份本地 `wav` 运行
+- `transcript_text` 一就绪就立刻对前端可见
+- 把“问题文本 + transcript”先绑定到同一个 turn
+- `speech_emotion` / `text_emotion` / `audio_uri` / `normalized_wav_uri` 后补齐
 
 完成标志：
 
-- 每道题都能在数据库中看到：
+- 每道题都能先稳定拿到最终 transcript，并在数据库中看到：
   - `question_text`
-  - `audio_uri`
   - `transcript_text`
+- 后续再补齐：
+  - `audio_uri`
+  - `speech_emotion`
+  - `text_emotion`
 
 #### Step 4C-4：问诊问题项推进
 
@@ -1180,6 +1260,7 @@ Step 4 不建议一把做完。
 
 - 对每段回答音频跑语音情绪模型
 - 结果按 turn 保存
+- 该步骤异步执行，不阻塞最终字幕显示
 
 完成标志：
 
@@ -1194,6 +1275,7 @@ Step 4 不建议一把做完。
 
 - 用 ASR transcript 调文本情绪模型
 - 结果按 turn 保存
+- 该步骤异步执行，不阻塞最终字幕显示
 
 完成标志：
 
