@@ -562,12 +562,12 @@ stages:
 
 `GET /consultations/{session_id}` 建议返回新增字段：
 
-- `current_prompt_key`
-- `current_prompt_order`
-- `current_prompt_video_asset_id`
-- `current_prompt_video_uri`
-- `current_prompt_question_text`
-- `current_prompt_subtitle_text`
+- `current_question_key`
+- `current_question_order`
+- `current_question_video_asset_id`
+- `current_question_video_uri`
+- `current_question_text`
+- `current_question_subtitle_text`
 - `total_prompt_count`
 - `completed_prompt_count`
 - `current_stage`
@@ -575,7 +575,7 @@ stages:
 
 说明：
 
-- 这里保留 `current_prompt_*` 命名只是为了兼容现有服务内部语义
+- 统一使用 `current_question_*` 命名，不再保留 `current_prompt_*` 兼容字段
 - 对外产品语义可以解释为“当前问题项 / 当前视频项”
 - `response_required` 继续从 `current_question_item.response_required` 读取
 - `multimodal_session_id` 属于后续多模态接线步骤，不在 `4A-3` 首批落地范围内
@@ -668,12 +668,12 @@ stages:
 ### consultation_sessions 增加
 
 - `playlist_version`
-- `current_prompt_key`
-- `current_prompt_order`
-- `current_prompt_video_asset_id`
-- `current_prompt_video_uri`
-- `current_prompt_question_text`
-- `current_prompt_subtitle_text`
+- `current_question_key`
+- `current_question_order`
+- `current_question_video_asset_id`
+- `current_question_video_uri`
+- `current_question_text`
+- `current_question_subtitle_text`
 - `total_prompt_count`
 - `completed_prompt_count`
 
@@ -1114,12 +1114,12 @@ Step 4 不建议一把做完。
 - 为固定视频问诊补齐数据库字段
 - 首批落库字段至少包括：
   - `playlist_version`
-  - `current_prompt_key`
-  - `current_prompt_order`
-  - `current_prompt_video_asset_id`
-  - `current_prompt_video_uri`
-  - `current_prompt_question_text`
-  - `current_prompt_subtitle_text`
+  - `current_question_key`
+  - `current_question_order`
+  - `current_question_video_asset_id`
+  - `current_question_video_uri`
+  - `current_question_text`
+  - `current_question_subtitle_text`
   - `total_prompt_count`
   - `completed_prompt_count`
   - `turn_index`

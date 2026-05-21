@@ -103,8 +103,8 @@ graph TD
 
 当前仓库现状：
 
-- 当前**没有**这张表。
-- 当前系统里最接近这一层的东西并不存在，所以“整次就诊”还没有统一主键。
+- 当前已经有 `encounter_sessions`。
+- consultation / assessment / multimodal 主链已经开始写 `encounter_session_id`，但前端与文档口径仍在继续收口。
 
 ### Q6：L2 `flow_run` 推荐怎么设计？
 
@@ -126,16 +126,16 @@ graph TD
 
 - 数字人问诊流程由 `consultation_sessions.id` 表示。
 - 量表问诊流程由 `assessment_sessions.id` 表示。
-- `assessment_sessions.consultation_session_id` 只是把量表流程回链到数字人问诊流程，并没有上升到顶层就诊。
+- 当前已经改成 `assessment_sessions.source_consultation_flow_run_id` 回链数字人问诊流程，但物理表名仍未重命名。
 
 当前已有字段对应：
 
-| 当前表                    | 当前字段                    | 语义                   |
-| ------------------------- | --------------------------- | ---------------------- |
-| `consultation_sessions` | `id`                      | 数字人问诊流程实例主键 |
-| `consultation_sessions` | `workflow_id`             | 数字人问诊工作流 ID    |
-| `assessment_sessions`   | `id`                      | 量表问诊流程实例主键   |
-| `assessment_sessions`   | `consultation_session_id` | 与数字人问诊流程的关联 |
+| 当前表                    | 当前字段                               | 语义                   |
+| ------------------------- | -------------------------------------- | ---------------------- |
+| `consultation_sessions` | `id`                                 | 数字人问诊流程实例主键 |
+| `consultation_sessions` | `workflow_id`                        | 数字人问诊工作流 ID    |
+| `assessment_sessions`   | `id`                                 | 量表问诊流程实例主键   |
+| `assessment_sessions`   | `source_consultation_flow_run_id`    | 与数字人问诊流程的关联 |
 
 ### Q7：L3 `stage_run` 推荐怎么设计？
 
@@ -161,12 +161,11 @@ graph TD
 
 当前已有字段对应：
 
-| 当前表                    | 当前字段              | 语义                         |
-| ------------------------- | --------------------- | ---------------------------- |
-| `consultation_sessions` | `workflow_stage_id` | 更高层工作流阶段             |
-| `consultation_sessions` | `current_stage_id`  | 当前数字人内部阶段           |
-| `consultation_turns`    | `stage_id`          | 当前问答所属阶段             |
-| `consultation_turns`    | `workflow_stage_id` | 当前问答所属更高层工作流阶段 |
+| 当前表                    | 当前字段              | 语义               |
+| ------------------------- | --------------------- | ------------------ |
+| `consultation_sessions` | `workflow_stage_id` | 更高层工作流阶段   |
+| `consultation_sessions` | `current_stage_id`  | 当前数字人内部阶段 |
+| `consultation_turns`    | `stage_id`          | 当前问答所属阶段   |
 
 ### Q8：L4 `turn` 推荐怎么设计？
 
@@ -180,18 +179,18 @@ graph TD
 
 推荐字段：
 
-| 字段名                        | 含义               |
-| ----------------------------- | ------------------ |
-| `turn_id`                   | 问答窗口主键       |
-| `flow_run_id`               | 所属流程实例       |
-| `stage_id`                  | 所属阶段           |
-| `question_key`              | 当前问题唯一键     |
-| `turn_index`                | 当前流程中的第几轮 |
-| `prompt_video_uri`          | 当前数字人视频     |
-| `turn_window_started_at`    | 回答窗口开始时间   |
-| `turn_window_completed_at`  | 回答窗口结束时间   |
-| `transcript_text`           | 本轮最终文本       |
-| `multimodal_bundle_payload` | 本轮多模态汇总     |
+| 字段名                       | 含义               |
+| ---------------------------- | ------------------ |
+| `turn_id`                  | 问答窗口主键       |
+| `flow_run_id`              | 所属流程实例       |
+| `stage_id`                 | 所属阶段           |
+| `question_key`             | 当前问题唯一键     |
+| `turn_index`               | 当前流程中的第几轮 |
+| `question_video_uri`       | 当前数字人视频     |
+| `turn_window_started_at`   | 回答窗口开始时间   |
+| `turn_window_completed_at` | 回答窗口结束时间   |
+| `transcript_text`          | 本轮最终文本       |
+| `turn_summary_payload`     | 本轮多模态汇总     |
 
 当前仓库现状：
 
@@ -201,14 +200,14 @@ graph TD
 
 当前已有字段对应：
 
-| 当前表                 | 当前字段                      | 语义               |
-| ---------------------- | ----------------------------- | ------------------ |
-| `consultation_turns` | `id`                        | `turn_id`        |
-| `consultation_turns` | `prompt_key`                | 当前问题键         |
-| `consultation_turns` | `turn_index`                | 当前流程内轮次     |
-| `consultation_turns` | `response_started_at`       | 回答开始时间       |
-| `consultation_turns` | `response_completed_at`     | 回答结束时间       |
-| `consultation_turns` | `multimodal_bundle_payload` | 本轮多模态聚合结果 |
+| 当前表                 | 当前字段                    | 语义               |
+| ---------------------- | --------------------------- | ------------------ |
+| `consultation_turns` | `id`                      | `turn_id`        |
+| `consultation_turns` | `question_key`            | 当前问题键         |
+| `consultation_turns` | `turn_index`              | 当前流程内轮次     |
+| `consultation_turns` | `turn_window_started_at`  | 回答窗口开始时间   |
+| `consultation_turns` | `turn_window_completed_at` | 回答窗口结束时间   |
+| `consultation_turns` | `turn_summary_payload`    | 本轮多模态聚合结果 |
 
 ### Q9：L5 `sample / frame` 推荐怎么设计？
 
@@ -234,7 +233,7 @@ graph TD
 
 - `multimodal_captures` 存采样记录。
 - `multimodal_inference_results` 存推理结果。
-- `consultation_turn_id` 当前允许为空，这是合理的，因为有些 sample 只是会话级实时采样，不属于某一轮问答。
+- 当前已经统一成 `turn_id`，并且它允许为空；这是合理的，因为有些 sample 只是会话级实时采样，不属于某一轮问答。
 
 推荐语义规则：
 
@@ -325,7 +324,7 @@ graph TD
 当前系统里已经对的部分：
 
 - `consultation_turns` 作为 turn 层实体是对的
-- `stage_id` 和 `workflow_stage_id` 分层存在是对的
+- `consultation_sessions.workflow_stage_id` 与 `stage_id` 共存的分层方式仍可作为后续可进可退的保留能力
 - `multimodal_captures` / `multimodal_inference_results` 作为 sample 层实体是对的
 - `multimodal_turn_bundles` 作为 turn 聚合载体也是对的
 
@@ -352,7 +351,24 @@ graph TD
 
 所以当前代码不是“错”，而是**层级还没补到最上层**。
 
-### Q18：推荐的最终口径是什么？
+### Q18：现在物理表名为什么还是旧名字？
+
+因为当前重构先收口的是**字段语义、写路径、读路径和约束**，不是表名本身。
+
+也就是说：
+
+- 现在对外字段和运行时口径已经尽量切到 `encounter / flow_run / turn / sample`
+- 但数据库物理表名仍保持：
+  - `consultation_sessions`
+  - `assessment_sessions`
+  - `multimodal_sessions`
+  - `multimodal_captures`
+  - `multimodal_inference_results`
+  - `multimodal_turn_bundles`
+
+这是有意保留，不是漏改。原因是物理表重命名的破坏面更大，而当前收益主要是命名整洁，不影响主链运行。
+
+### Q19：推荐的最终口径是什么？
 
 推荐口径：
 

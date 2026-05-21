@@ -40,3 +40,9 @@ class ConsultationTurnRequest(BaseModel):
     transcript_source: ConsultationTranscriptSource | None = None
     response_started_at: datetime | None = None
     response_completed_at: datetime | None = None
+
+
+class ConsultationSessionStateSnapshot(BaseModel):
+    session_id: str
+    encounter_session_id: str | None = None
+    current_turn_id: str | None = None

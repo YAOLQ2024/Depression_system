@@ -40,7 +40,7 @@ declare global {
 }
 
 function resolvePlayableVideoUri(session: ConsultationSession | null) {
-  const candidate = session?.current_prompt_video_uri ?? session?.current_question_item?.video_uri ?? "";
+  const candidate = session?.current_question_video_uri ?? "";
   const normalized = candidate.trim();
 
   if (!normalized || normalized.toUpperCase() === "TBD") {
@@ -51,7 +51,7 @@ function resolvePlayableVideoUri(session: ConsultationSession | null) {
 }
 
 function resolvePromptText(session: ConsultationSession | null) {
-  const questionText = session?.current_prompt_question_text?.trim() || session?.current_question_item?.question_text?.trim();
+  const questionText = session?.current_question_text?.trim();
   if (questionText) {
     return questionText;
   }
@@ -121,13 +121,6 @@ function sleep(ms: number) {
   });
 }
 
-function createClientTurnId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `turn-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 type LocalRecordingSnapshot = {
   promptKey: string;
   durationMs: number;
@@ -182,7 +175,8 @@ export default function ConsultationPage() {
 
   const playableVideoUri = useMemo(() => resolvePlayableVideoUri(consultation), [consultation]);
   const promptText = useMemo(() => resolvePromptText(consultation), [consultation]);
-  const currentPromptKey = consultation?.current_question_item?.question_key ?? consultation?.current_prompt_key ?? null;
+  const currentQuestionKey = consultation?.current_question_key ?? null;
+  const currentTurnId = consultation?.current_turn_id ?? null;
   const responseWindowStatusText = useMemo(() => {
     if (!consultation?.current_question_item?.response_required) {
       return "";
@@ -196,7 +190,7 @@ export default function ConsultationPage() {
     if (consultation.status === "waiting_user_input") {
       return answerWindowOpenedAt ? "回答窗口已开启，可开始本轮语音回答。" : "当前题目已进入等待回答态。";
     }
-    if (lastRecording && lastRecording.promptKey === currentPromptKey) {
+    if (lastRecording && lastRecording.promptKey === currentQuestionKey) {
       return `已采集本轮录音 ${formatDuration(lastRecording.durationMs)}。`;
     }
     return "";
@@ -204,7 +198,7 @@ export default function ConsultationPage() {
     answerWindowOpenedAt,
     consultation?.current_question_item?.response_required,
     consultation?.status,
-    currentPromptKey,
+    currentQuestionKey,
     isRecording,
     isSubmittingResponse,
     lastRecording,
@@ -248,7 +242,7 @@ export default function ConsultationPage() {
     if (subtitleUserLine?.trim()) {
       const activeUserEntry = [...persistedEntries]
         .reverse()
-        .find((entry) => entry.speaker === "user" && entry.prompt_key === currentPromptKey);
+        .find((entry) => entry.speaker === "user" && entry.prompt_key === currentQuestionKey);
       const persistedUserLine = activeUserEntry ? formatSubtitleHistoryLine(activeUserEntry) : null;
       if (persistedUserLine !== subtitleUserLine.trim()) {
         if (
@@ -276,7 +270,7 @@ export default function ConsultationPage() {
   }, [
     consultation?.session_id,
     consultation?.subtitle_history,
-    currentPromptKey,
+    currentQuestionKey,
     promptText,
     subtitleUserLine,
   ]);
@@ -341,9 +335,9 @@ export default function ConsultationPage() {
   }, [cameraError, pushToast]);
 
   useEffect(() => {
-    if (consultation?.status === "waiting_user_input" && currentPromptKey) {
-      if (answerWindowPromptKeyRef.current !== currentPromptKey) {
-        answerWindowPromptKeyRef.current = currentPromptKey;
+    if (consultation?.status === "waiting_user_input" && currentQuestionKey) {
+      if (answerWindowPromptKeyRef.current !== currentQuestionKey) {
+        answerWindowPromptKeyRef.current = currentQuestionKey;
         setAnswerWindowOpenedAt(new Date().toISOString());
         setRecordingElapsedMs(0);
       }
@@ -351,11 +345,11 @@ export default function ConsultationPage() {
     }
 
     if (!isRecording) {
-      answerWindowPromptKeyRef.current = currentPromptKey;
+      answerWindowPromptKeyRef.current = currentQuestionKey;
       setAnswerWindowOpenedAt(null);
       setRecordingElapsedMs(0);
     }
-  }, [consultation?.status, currentPromptKey, isRecording]);
+  }, [consultation?.status, currentQuestionKey, consultation?.current_turn_id, isRecording]);
 
   useEffect(() => {
     if (consultation?.multimodal_session_id) {
@@ -365,7 +359,7 @@ export default function ConsultationPage() {
 
   useEffect(() => {
     setSubtitleUserTranscript(null);
-  }, [currentPromptKey]);
+  }, [currentQuestionKey]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -396,7 +390,7 @@ export default function ConsultationPage() {
   }, [consultation?.session_id]);
 
   useEffect(() => {
-    if (!consultation?.current_question_item?.question_key || !cameraReady) {
+    if (!consultation || !currentQuestionKey || !cameraReady) {
       return;
     }
     if (!["waiting_user_input", "recording_response", "processing_response", "running"].includes(consultation.status)) {
@@ -409,7 +403,7 @@ export default function ConsultationPage() {
     }, CAMERA_CAPTURE_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
-  }, [cameraReady, consultation?.current_question_item?.question_key, consultation?.status]);
+  }, [cameraReady, consultation?.status, currentQuestionKey]);
 
   useEffect(() => {
     return () => {
@@ -495,7 +489,7 @@ export default function ConsultationPage() {
           pushToast("浏览器阻止了自动播放，请点击数字人区域中央的播放按钮继续。", "warning");
         });
     }
-  }, [consultation?.current_prompt_key, playableVideoUri]);
+  }, [consultation?.current_question_key, playableVideoUri]);
 
   const warmupMultimodalRuntime = useEffectEvent(async (sessionId: string) => {
     if (!sessionId || warmedUpMultimodalSessionIdsRef.current.has(sessionId)) {
@@ -535,14 +529,19 @@ export default function ConsultationPage() {
   }
 
   async function handleVideoEnded() {
-    if (!consultation?.current_question_item || !canAutoCompleteSystemPrompt || isCompletingSystemQuestion) {
+    if (
+      !consultation?.current_question_item ||
+      !currentQuestionKey ||
+      !canAutoCompleteSystemPrompt ||
+      isCompletingSystemQuestion
+    ) {
       return;
     }
 
     setIsCompletingSystemQuestion(true);
 
     try {
-      const updated = await actions.completeConsultationSystemQuestionItem(consultation.current_question_item.question_key);
+      const updated = await actions.completeConsultationSystemQuestionItem(currentQuestionKey);
       if (!updated) {
         pushToast("问候视频已结束，但自动推进失败。请在右侧看板中点击刷新。", "warning");
       }
@@ -586,7 +585,7 @@ export default function ConsultationPage() {
     return refreshedSessionId;
   }
   async function submitCameraCaptures(turnId?: string | null) {
-    if (!consultation?.current_question_item?.question_key || !cameraVideoRef.current || captureInFlightRef.current) {
+    if (!currentQuestionKey || !cameraVideoRef.current || captureInFlightRef.current) {
       return;
     }
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
@@ -610,11 +609,11 @@ export default function ConsultationPage() {
       const endedAt = new Date().toISOString();
       const imageFile = new File([blob], `capture-${frameIndex}.jpg`, { type: blob.type || "image/jpeg" });
       const payload = {
-        question_key: consultation.current_question_item.question_key,
-        turn_id: turnId || null,
-        capture_started_at: startedAt,
-        capture_ended_at: endedAt,
-        frame_index: frameIndex,
+        question_key: currentQuestionKey,
+        turn_id: turnId || currentTurnId || null,
+        sample_started_at: startedAt,
+        sample_ended_at: endedAt,
+        sample_index: frameIndex,
         mime_type: imageFile.type || "image/jpeg",
         image_file: imageFile,
       };
@@ -738,7 +737,7 @@ export default function ConsultationPage() {
         }
         lastRecordingUrlRef.current = objectUrl;
         setLastRecording({
-          promptKey: currentPromptKey || "current",
+          promptKey: currentQuestionKey || "current",
           durationMs: completedAt.getTime() - responseStartedAt.getTime(),
           startedAt: responseStartedAt.toISOString(),
           completedAt: completedAt.toISOString(),
@@ -754,7 +753,7 @@ export default function ConsultationPage() {
         setMicrophoneFeedback(getMicrophoneCompletedFeedback());
 
         try {
-          if (!consultation || !currentPromptKey) {
+          if (!consultation || !currentQuestionKey) {
             pushToast("当前题目缺少转写所需上下文，请刷新后重试。", "error");
             return;
           }
@@ -766,11 +765,13 @@ export default function ConsultationPage() {
 
           const ensuredMultimodalSessionId = await ensureMultimodalSession();
           const resolvedMimeType = normalizeAudioMimeType(recorder.mimeType || blob.type || "audio/webm");
-          const consultationTurnId = createClientTurnId();
+          const consultationTurnId = consultation.current_turn_id || null;
+          if (!consultationTurnId) {
+            throw new Error("当前回答窗口缺少 turn_id，请刷新后重试。");
+          }
           const uploadedAudioTurn = await uploadMultimodalAudioTurn(ensuredMultimodalSessionId, {
-            consultation_session_id: consultation.session_id,
-            question_key: currentPromptKey,
-            prompt_key: currentPromptKey,
+            flow_run_id: consultation.session_id,
+            question_key: currentQuestionKey,
             stage_id: consultation.current_stage_id || consultation.current_question_item?.stage_id || "unknown",
             node_id: consultation.current_node_id || consultation.current_question_item?.node_id || "unknown",
             duration_ms: completedAt.getTime() - responseStartedAt.getTime(),
@@ -779,7 +780,7 @@ export default function ConsultationPage() {
             mime_type: resolvedMimeType,
             turn_id: consultationTurnId,
             audio_file: blob,
-            filename: `${currentPromptKey}.${resolveRecordingExtension(resolvedMimeType)}`,
+            filename: `${currentQuestionKey}.${resolveRecordingExtension(resolvedMimeType)}`,
           });
 
           const transcriptReadyAudioTurn =
@@ -930,7 +931,7 @@ export default function ConsultationPage() {
               <div className="relative flex w-full items-end justify-center">
                 <video
                   ref={videoRef}
-                  key={`${consultation.current_prompt_key || "current"}:${playableVideoUri}`}
+                  key={`${consultation.current_question_key || "current"}:${playableVideoUri}`}
                   src={playableVideoUri}
                   className="h-[min(84vh,920px)] w-auto max-w-[82vw] object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
                   playsInline

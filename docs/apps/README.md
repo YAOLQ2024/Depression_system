@@ -25,4 +25,3 @@
 
 - `consultation/`
 - `operations-console/`
-- `_templates/`

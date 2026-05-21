@@ -116,13 +116,21 @@ def _forward_multimodal_multipart_request(
         }
 
 
-def create_multimodal_session(*, owner_session_id: str, user_id: str) -> dict:
+def create_multimodal_session(
+    *,
+    user_id: str,
+    encounter_session_id: str | None = None,
+    flow_type: str,
+    flow_run_id: str,
+) -> dict:
     return _forward_multimodal_request(
         "POST",
         "/api/v1/multimodal/sessions",
         {
-            "owner_session_id": owner_session_id,
             "user_id": user_id,
+            "encounter_session_id": encounter_session_id,
+            "flow_type": flow_type,
+            "flow_run_id": flow_run_id,
             "enabled_modalities": ["text", "audio", "face", "pose"],
         },
         acting_user_id=user_id,
@@ -140,12 +148,12 @@ def get_multimodal_live(*, multimodal_session_id: str, acting_user_id: str) -> d
 def get_multimodal_turn_bundle(
     *,
     multimodal_session_id: str,
-    consultation_turn_id: str,
+    turn_id: str,
     acting_user_id: str,
 ) -> dict:
     return _forward_multimodal_request(
         "GET",
-        f"/api/v1/multimodal/sessions/{multimodal_session_id}/turns/{consultation_turn_id}/bundle",
+        f"/api/v1/multimodal/sessions/{multimodal_session_id}/turns/{turn_id}/bundle",
         None,
         acting_user_id=acting_user_id,
     )
@@ -154,12 +162,13 @@ def get_multimodal_turn_bundle(
 def submit_face_capture(
     *,
     multimodal_session_id: str,
-    consultation_session_id: str,
+    flow_run_id: str,
     question_key: str,
+    stage_id: str | None,
     turn_id: str | None,
-    capture_started_at: str,
-    capture_ended_at: str,
-    frame_index: int,
+    sample_started_at: str,
+    sample_ended_at: str,
+    sample_index: int,
     mime_type: str,
     file_bytes: bytes,
     filename: str,
@@ -168,11 +177,12 @@ def submit_face_capture(
     return _forward_multimodal_multipart_request(
         f"/api/v1/multimodal/sessions/{multimodal_session_id}/captures/face",
         fields={
-            "consultation_session_id": consultation_session_id,
+            "flow_run_id": flow_run_id,
             "question_key": question_key,
-            "capture_started_at": capture_started_at,
-            "capture_ended_at": capture_ended_at,
-            "frame_index": str(frame_index),
+            **({"stage_id": stage_id} if stage_id else {}),
+            "sample_started_at": sample_started_at,
+            "sample_ended_at": sample_ended_at,
+            "sample_index": str(sample_index),
             "mime_type": mime_type,
             **({"turn_id": turn_id} if turn_id else {}),
         },
@@ -186,12 +196,13 @@ def submit_face_capture(
 def submit_pose_capture(
     *,
     multimodal_session_id: str,
-    consultation_session_id: str,
+    flow_run_id: str,
     question_key: str,
+    stage_id: str | None,
     turn_id: str | None,
-    capture_started_at: str,
-    capture_ended_at: str,
-    frame_index: int,
+    sample_started_at: str,
+    sample_ended_at: str,
+    sample_index: int,
     mime_type: str,
     file_bytes: bytes,
     filename: str,
@@ -200,11 +211,12 @@ def submit_pose_capture(
     return _forward_multimodal_multipart_request(
         f"/api/v1/multimodal/sessions/{multimodal_session_id}/captures/pose",
         fields={
-            "consultation_session_id": consultation_session_id,
+            "flow_run_id": flow_run_id,
             "question_key": question_key,
-            "capture_started_at": capture_started_at,
-            "capture_ended_at": capture_ended_at,
-            "frame_index": str(frame_index),
+            **({"stage_id": stage_id} if stage_id else {}),
+            "sample_started_at": sample_started_at,
+            "sample_ended_at": sample_ended_at,
+            "sample_index": str(sample_index),
             "mime_type": mime_type,
             **({"turn_id": turn_id} if turn_id else {}),
         },

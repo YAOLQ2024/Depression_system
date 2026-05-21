@@ -13,11 +13,9 @@ class MultimodalStageContext(BaseModel):
 
 
 class CreateMultimodalSessionRequest(BaseModel):
-    owner_service: str = Field(default="consultation-service", min_length=1)
-    owner_session_id: str = Field(
-        min_length=1,
-        description="Owner session id, usually the consultation session id.",
-    )
+    encounter_session_id: str | None = None
+    flow_type: str = Field(min_length=1)
+    flow_run_id: str = Field(min_length=1)
     user_id: str | None = None
     stage_context: MultimodalStageContext | None = None
     enabled_modalities: list[str] = Field(
@@ -31,9 +29,10 @@ class WarmupMultimodalSessionRequest(BaseModel):
 
 
 class SubmitAudioTurnRequest(BaseModel):
-    consultation_turn_id: str = Field(min_length=1)
-    consultation_session_id: str | None = None
+    turn_id: str = Field(min_length=1)
+    flow_run_id: str = Field(min_length=1)
     question_key: str | None = None
+    stage_id: str | None = None
     audio_base64: str | None = None
     audio_format: str | None = None
     sampling_rate: int | None = None
@@ -47,15 +46,16 @@ class SubmitAudioTurnRequest(BaseModel):
 
 
 class SubmitFrameCaptureRequest(BaseModel):
-    consultation_session_id: str = Field(min_length=1)
+    flow_run_id: str = Field(min_length=1)
     question_key: str = Field(min_length=1)
+    stage_id: str | None = None
     image_base64: str = Field(min_length=1)
     image_format: str = Field(min_length=1)
     mime_type: str = Field(min_length=1)
-    consultation_turn_id: str | None = None
-    capture_started_at: datetime
-    capture_ended_at: datetime
-    frame_index: int = Field(ge=0)
+    turn_id: str | None = None
+    sample_started_at: datetime
+    sample_ended_at: datetime
+    sample_index: int = Field(ge=0)
     frame_id: str | None = None
 
 
@@ -63,13 +63,13 @@ class MultimodalSessionSnapshot(BaseModel):
     id: str
     session_id: str | None = None
     user_id: str | None = None
-    owner_service: str | None = None
-    owner_session_id: str
+    encounter_session_id: str | None = None
+    flow_type: str | None = None
+    flow_run_id: str | None = None
     status: str
     stage_context: dict[str, Any] = Field(default_factory=dict)
     enabled_modalities: list[str] = Field(default_factory=list)
-    latest_live_payload: dict[str, Any] = Field(default_factory=dict)
-    session_summary_payload: dict[str, Any] | None = None
+    live_state_payload: dict[str, Any] = Field(default_factory=dict)
     notes: str | None = None
     started_at: datetime | None = None
     created_at: datetime

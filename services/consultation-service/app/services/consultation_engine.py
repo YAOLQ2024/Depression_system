@@ -15,7 +15,7 @@ from app.clients.multimodal_client import (
     submit_pose_capture as submit_upstream_pose_capture,
 )
 from app.database import get_db_session
-from app.models import ConsultationSession, ConsultationTurn
+from app.models import ConsultationSession, ConsultationTurn, EncounterSession
 from app.schemas.consultations import (
     ConsultationTurnRequest,
     CreateConsultationSessionRequest,
@@ -227,7 +227,9 @@ def _finalize_user_subtitle_entry(
     if not normalized_text:
         return
 
-    resolved_prompt_key = prompt_key or session_record.current_prompt_key or turn_id
+    resolved_prompt_key = (
+        prompt_key or session_record.current_question_key or turn_id
+    )
     history = _ensure_subtitle_history(session_record.subtitle_history_payload)
     changed = _upsert_subtitle_history_entry(
         history,
@@ -372,12 +374,12 @@ def _sync_playlist_state(
         session_record, bundle
     )
     if not current_question_item:
-        session_record.current_prompt_key = None
-        session_record.current_prompt_order = None
-        session_record.current_prompt_video_asset_id = None
-        session_record.current_prompt_video_uri = None
-        session_record.current_prompt_question_text = None
-        session_record.current_prompt_subtitle_text = None
+        session_record.current_question_key = None
+        session_record.current_question_order = None
+        session_record.current_question_video_asset_id = None
+        session_record.current_question_video_uri = None
+        session_record.current_question_text = None
+        session_record.current_question_subtitle_text = None
         session_record.completed_prompt_count = (
             total_prompt_count
             if session_record.status
@@ -387,16 +389,16 @@ def _sync_playlist_state(
         )
         return
 
-    session_record.current_prompt_key = current_question_item.question_key
-    session_record.current_prompt_order = current_question_item.order
-    session_record.current_prompt_video_asset_id = (
+    session_record.current_question_key = current_question_item.question_key
+    session_record.current_question_order = current_question_item.order
+    session_record.current_question_video_asset_id = (
         current_question_item.video_asset_id
     )
-    session_record.current_prompt_video_uri = current_question_item.video_uri
-    session_record.current_prompt_question_text = (
+    session_record.current_question_video_uri = current_question_item.video_uri
+    session_record.current_question_text = (
         current_question_item.question_text
     )
-    session_record.current_prompt_subtitle_text = (
+    session_record.current_question_subtitle_text = (
         current_question_item.subtitle_text
         or current_question_item.question_text
     )
@@ -730,7 +732,50 @@ def _set_current_prompt(
     engine_state = _ensure_json_dict(session_record.engine_state)
     engine_state["current_prompt"] = prompt
     engine_state["waiting_node_type"] = waiting_node_type
+    if waiting_node_type != "speak_then_wait":
+        engine_state.pop("active_turn_id", None)
+        engine_state.pop("active_turn_question_key", None)
     session_record.engine_state = engine_state
+
+
+def _get_active_turn_id(session_record: ConsultationSession) -> str | None:
+    engine_state = _ensure_json_dict(session_record.engine_state)
+    active_turn_id = str(engine_state.get("active_turn_id") or "").strip()
+    return active_turn_id or None
+
+
+def _clear_active_turn(session_record: ConsultationSession) -> None:
+    engine_state = _ensure_json_dict(session_record.engine_state)
+    engine_state.pop("active_turn_id", None)
+    engine_state.pop("active_turn_question_key", None)
+    session_record.engine_state = engine_state
+
+
+def _ensure_active_turn(
+    session_record: ConsultationSession,
+    bundle: WorkflowBundle,
+) -> str:
+    engine_state = _ensure_json_dict(session_record.engine_state)
+    current_question_item = _resolve_current_question_item_object(
+        session_record,
+        bundle,
+    )
+    active_turn_question_key = (
+        current_question_item.question_key
+        if current_question_item
+        else session_record.current_question_key or session_record.current_node_id
+    )
+    active_turn_id = str(engine_state.get("active_turn_id") or "").strip()
+    if (
+        not active_turn_id
+        or engine_state.get("active_turn_question_key")
+        != active_turn_question_key
+    ):
+        active_turn_id = str(uuid.uuid4())
+        engine_state["active_turn_id"] = active_turn_id
+        engine_state["active_turn_question_key"] = active_turn_question_key
+        session_record.engine_state = engine_state
+    return active_turn_id
 
 
 def _mark_stage_completed(
@@ -777,15 +822,25 @@ def _advance_stage(
         session_record.status = "running"
         return
 
+    encounter_session = session_record.encounter_session
+
     if session_record.requires_human_review:
         session_record.workflow_stage_id = "clinical-decision"
         session_record.status = "paused_for_human_review"
+        if encounter_session is not None:
+            encounter_session.current_flow_type = "consultation"
+            encounter_session.status = "paused"
+            encounter_session.updated_at = _now()
     else:
         session_record.workflow_stage_id = bundle.scale_stage_id
         session_record.status = "handoff_ready"
         session_record.scale_handoff_payload = _build_scale_handoff_payload(
             session_record, bundle
         )
+        if encounter_session is not None:
+            encounter_session.current_flow_type = "assessment"
+            encounter_session.status = "in_progress"
+            encounter_session.updated_at = _now()
 
     session_record.current_stage_id = None
     session_record.current_node_id = None
@@ -854,6 +909,7 @@ def _auto_advance(
             )
             session_record.status = "waiting_user_input"
             _set_current_prompt(session_record, prompt, node.type)
+            _ensure_active_turn(session_record, bundle)
             return
 
         if node.type == "speak_then_complete":
@@ -890,6 +946,7 @@ def _serialize_session(
     )
     return {
         "session_id": session_record.id,
+        "encounter_session_id": session_record.encounter_session_id,
         "user_id": session_record.user_id,
         "workflow_id": session_record.workflow_id,
         "script_bundle": session_record.script_bundle,
@@ -904,20 +961,21 @@ def _serialize_session(
         "workflow_stage_id": session_record.workflow_stage_id,
         "current_stage_id": session_record.current_stage_id,
         "current_node_id": session_record.current_node_id,
-        "current_prompt_key": session_record.current_prompt_key,
-        "current_prompt_order": session_record.current_prompt_order,
-        "current_prompt_video_asset_id": (
-            session_record.current_prompt_video_asset_id
+        "current_question_key": session_record.current_question_key,
+        "current_question_order": session_record.current_question_order,
+        "current_question_video_asset_id": (
+            session_record.current_question_video_asset_id
         ),
-        "current_prompt_video_uri": session_record.current_prompt_video_uri,
-        "current_prompt_question_text": (
-            session_record.current_prompt_question_text
+        "current_question_video_uri": session_record.current_question_video_uri,
+        "current_question_text": (
+            session_record.current_question_text
         ),
-        "current_prompt_subtitle_text": (
-            session_record.current_prompt_subtitle_text
+        "current_question_subtitle_text": (
+            session_record.current_question_subtitle_text
         ),
         "current_stage": current_stage_progress,
         "status": session_record.status,
+        "current_turn_id": _get_active_turn_id(session_record),
         "assigned_doctor_persona": session_record.assigned_doctor_persona,
         "requires_human_review": session_record.requires_human_review,
         "current_prompt": current_prompt,
@@ -985,8 +1043,10 @@ def _ensure_multimodal_session_binding(
 
     multimodal_data = _extract_upstream_data(
         create_upstream_multimodal_session(
-            owner_session_id=session_record.id,
             user_id=acting_user_id,
+            encounter_session_id=session_record.encounter_session_id,
+            flow_type="consultation",
+            flow_run_id=session_record.id,
         ),
         error_code=5021,
     )
@@ -1047,11 +1107,14 @@ def create_consultation_session(
             "doctor persona not found", code=4006, status_code=404
         )
 
+    encounter_session_id = str(uuid.uuid4())
     consultation_session_id = str(uuid.uuid4())
     multimodal_data = _extract_upstream_data(
         create_upstream_multimodal_session(
-            owner_session_id=consultation_session_id,
             user_id=payload.user_id,
+            encounter_session_id=encounter_session_id,
+            flow_type="consultation",
+            flow_run_id=consultation_session_id,
         ),
         error_code=5021,
     )
@@ -1077,8 +1140,20 @@ def create_consultation_session(
         "device_status": payload.device_status,
         "consultation_ready_state": payload.consultation_ready_state,
     }
+    encounter_record = EncounterSession(
+        id=encounter_session_id,
+        user_id=payload.user_id,
+        entry_flow_type="consultation",
+        current_flow_type="consultation",
+        status="draft",
+        started_at=None,
+        completed_at=None,
+        created_at=now,
+        updated_at=now,
+    )
     session_record = ConsultationSession(
         id=consultation_session_id,
+        encounter_session_id=encounter_session_id,
         user_id=payload.user_id,
         workflow_id=bundle.workflow_id,
         script_bundle=bundle.script_bundle,
@@ -1104,6 +1179,7 @@ def create_consultation_session(
     _sync_playlist_state(session_record, bundle)
 
     with get_db_session() as db_session:
+        db_session.add(encounter_record)
         db_session.add(session_record)
         db_session.flush()
         db_session.refresh(session_record)
@@ -1155,6 +1231,12 @@ def start_consultation_session(
             session_record.started_at = _now()
         session_record.status = "running"
         session_record.updated_at = _now()
+        if session_record.encounter_session is not None:
+            session_record.encounter_session.status = "in_progress"
+            session_record.encounter_session.started_at = (
+                session_record.encounter_session.started_at or session_record.started_at
+            )
+            session_record.encounter_session.updated_at = _now()
         _auto_advance(session_record, bundle)
         _sync_playlist_state(session_record, bundle)
         db_session.flush()
@@ -1273,7 +1355,7 @@ def submit_consultation_turn(
         response_started_at, response_completed_at = _resolve_response_window(
             payload
         )
-        current_prompt_text = _ensure_json_dict(
+        active_prompt_text = _ensure_json_dict(
             session_record.engine_state
         ).get("current_prompt")
         turn_index = (
@@ -1282,57 +1364,72 @@ def submit_consultation_turn(
             .count()
             + 1
         )
-        turn_id = (payload.turn_id or "").strip() or str(uuid.uuid4())
+        active_turn_id = _get_active_turn_id(session_record)
+        requested_turn_id = (payload.turn_id or "").strip() or None
+        if (
+            active_turn_id
+            and requested_turn_id
+            and requested_turn_id != active_turn_id
+        ):
+            raise ConsultationServiceError(
+                "consultation turn id mismatch",
+                code=4096,
+                status_code=409,
+            )
+        turn_id = requested_turn_id or active_turn_id or str(uuid.uuid4())
 
         consultation_turn = ConsultationTurn(
-                id=turn_id,
-                session_id=session_record.id,
-                workflow_stage_id=session_record.workflow_stage_id,
-                stage_id=session_record.current_stage_id,
-                node_id=session_record.current_node_id,
-                turn_index=turn_index,
-                prompt_key=current_question_item.question_key
+            id=turn_id,
+            encounter_session_id=session_record.encounter_session_id,
+            consultation_flow_run_id=session_record.id,
+            session_id=session_record.id,
+            stage_id=session_record.current_stage_id,
+            node_id=session_record.current_node_id,
+            turn_index=turn_index,
+            question_key=current_question_item.question_key
+            if current_question_item
+            else None,
+            question_order=current_question_item.order
+            if current_question_item
+            else None,
+            question_video_asset_id=current_question_item.video_asset_id
+            if current_question_item
+            else None,
+            question_video_uri=current_question_item.video_uri
+            if current_question_item
+            else None,
+            question_text=current_question_item.question_text
+            if current_question_item
+            else active_prompt_text,
+            question_subtitle_text=(
+                (
+                    current_question_item.subtitle_text
+                    or current_question_item.question_text
+                )
                 if current_question_item
-                else None,
-                prompt_order=current_question_item.order
-                if current_question_item
-                else None,
-                prompt_video_asset_id=current_question_item.video_asset_id
-                if current_question_item
-                else None,
-                prompt_video_uri=current_question_item.video_uri
-                if current_question_item
-                else None,
-                prompt_question_text=current_question_item.question_text
-                if current_question_item
-                else current_prompt_text,
-                prompt_subtitle_text=(
-                    (
-                        current_question_item.subtitle_text
-                        or current_question_item.question_text
-                    )
-                    if current_question_item
-                    else current_prompt_text
-                ),
-                input_type=payload.input_type,
-                prompt_text=current_prompt_text,
-                raw_input=payload.raw_input,
-                audio_uri=payload.audio_uri,
-                transcript_text=payload.transcript_text,
-                transcript_source=transcript_source,
-                structured_fields=extracted_fields or None,
-                multimodal_bundle_payload=None,
-                branch_taken=branch_name,
-                response_started_at=response_started_at,
-                response_completed_at=response_completed_at,
-                created_at=turn_timestamp,
-            )
+                else active_prompt_text
+            ),
+            input_type=payload.input_type,
+            prompt_text=active_prompt_text,
+            raw_input=payload.raw_input,
+            audio_uri=payload.audio_uri,
+            transcript_text=payload.transcript_text,
+            transcript_source=transcript_source,
+            structured_fields=extracted_fields or None,
+            turn_summary_payload=None,
+            branch_taken=branch_name,
+            turn_window_started_at=response_started_at,
+            turn_window_completed_at=response_completed_at,
+            response_started_at=response_started_at,
+            response_completed_at=response_completed_at,
+            created_at=turn_timestamp,
+        )
         db_session.add(consultation_turn)
         _finalize_user_subtitle_entry(
             session_record,
             prompt_key=current_question_item.question_key
             if current_question_item
-            else session_record.current_prompt_key,
+            else session_record.current_question_key,
             transcript_text=normalized_text,
             turn_id=turn_id,
             source=transcript_source,
@@ -1350,16 +1447,18 @@ def submit_consultation_turn(
                 session_record,
                 acting_user_id=acting_user_id,
             )
-            consultation_turn.multimodal_bundle_payload = _extract_optional_upstream_data(
+            turn_bundle_payload = _extract_optional_upstream_data(
                 fetch_upstream_multimodal_turn_bundle(
                     multimodal_session_id=multimodal_session_id,
-                    consultation_turn_id=turn_id,
+                    turn_id=turn_id,
                     acting_user_id=acting_user_id,
                 ),
                 error_code=5025,
                 allowed_statuses={404},
             )
+            consultation_turn.turn_summary_payload = turn_bundle_payload
 
+        _clear_active_turn(session_record)
         session_record.status = "running"
         session_record.updated_at = _now()
         engine_state = _ensure_json_dict(session_record.engine_state)
@@ -1395,7 +1494,7 @@ def get_consultation_multimodal_live(
 
 def get_consultation_turn_multimodal_bundle(
     session_id: str,
-    consultation_turn_id: str,
+    turn_id: str,
     acting_user_id: str | None,
 ) -> dict[str, Any]:
     acting_user_id = _require_acting_user_id(acting_user_id)
@@ -1405,13 +1504,13 @@ def get_consultation_turn_multimodal_bundle(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
-        consultation_turn = db_session.get(ConsultationTurn, consultation_turn_id)
+        consultation_turn = db_session.get(ConsultationTurn, turn_id)
         if not consultation_turn or consultation_turn.session_id != session_record.id:
             raise ConsultationServiceError(
                 "consultation turn not found", code=4043, status_code=404
             )
-        if consultation_turn.multimodal_bundle_payload:
-            return consultation_turn.multimodal_bundle_payload
+        if consultation_turn.turn_summary_payload:
+            return consultation_turn.turn_summary_payload
         multimodal_session_id = _ensure_multimodal_session_binding(
             session_record,
             acting_user_id=acting_user_id,
@@ -1419,12 +1518,12 @@ def get_consultation_turn_multimodal_bundle(
         bundle_data = _extract_upstream_data(
             fetch_upstream_multimodal_turn_bundle(
                 multimodal_session_id=multimodal_session_id,
-                consultation_turn_id=consultation_turn.id,
+                turn_id=consultation_turn.id,
                 acting_user_id=acting_user_id,
             ),
             error_code=5025,
         )
-        consultation_turn.multimodal_bundle_payload = bundle_data
+        consultation_turn.turn_summary_payload = bundle_data
         db_session.add(consultation_turn)
         db_session.flush()
         return bundle_data
@@ -1434,10 +1533,10 @@ def submit_consultation_face_capture(
     session_id: str,
     *,
     question_key: str,
-    consultation_turn_id: str | None,
-    capture_started_at: str,
-    capture_ended_at: str,
-    frame_index: int,
+    turn_id: str | None,
+    sample_started_at: str,
+    sample_ended_at: str,
+    sample_index: int,
     mime_type: str,
     filename: str,
     file_bytes: bytes,
@@ -1457,12 +1556,13 @@ def submit_consultation_face_capture(
         capture_data = _extract_upstream_data(
             submit_upstream_face_capture(
                 multimodal_session_id=multimodal_session_id,
-                consultation_session_id=session_record.id,
+                flow_run_id=session_record.id,
                 question_key=question_key,
-                turn_id=consultation_turn_id,
-                capture_started_at=capture_started_at,
-                capture_ended_at=capture_ended_at,
-                frame_index=frame_index,
+                stage_id=session_record.current_stage_id,
+                turn_id=turn_id,
+                sample_started_at=sample_started_at,
+                sample_ended_at=sample_ended_at,
+                sample_index=sample_index,
                 mime_type=mime_type,
                 file_bytes=file_bytes,
                 filename=filename,
@@ -1470,10 +1570,10 @@ def submit_consultation_face_capture(
             ),
             error_code=5026,
         )
-        if consultation_turn_id:
-            consultation_turn = db_session.get(ConsultationTurn, consultation_turn_id)
+        if turn_id:
+            consultation_turn = db_session.get(ConsultationTurn, turn_id)
             if consultation_turn and consultation_turn.session_id == session_record.id:
-                consultation_turn.multimodal_bundle_payload = capture_data.get("turn_bundle")
+                consultation_turn.turn_summary_payload = capture_data.get("turn_bundle")
                 db_session.add(consultation_turn)
         db_session.flush()
         return capture_data
@@ -1483,10 +1583,10 @@ def submit_consultation_pose_capture(
     session_id: str,
     *,
     question_key: str,
-    consultation_turn_id: str | None,
-    capture_started_at: str,
-    capture_ended_at: str,
-    frame_index: int,
+    turn_id: str | None,
+    sample_started_at: str,
+    sample_ended_at: str,
+    sample_index: int,
     mime_type: str,
     filename: str,
     file_bytes: bytes,
@@ -1506,12 +1606,13 @@ def submit_consultation_pose_capture(
         capture_data = _extract_upstream_data(
             submit_upstream_pose_capture(
                 multimodal_session_id=multimodal_session_id,
-                consultation_session_id=session_record.id,
+                flow_run_id=session_record.id,
                 question_key=question_key,
-                turn_id=consultation_turn_id,
-                capture_started_at=capture_started_at,
-                capture_ended_at=capture_ended_at,
-                frame_index=frame_index,
+                stage_id=session_record.current_stage_id,
+                turn_id=turn_id,
+                sample_started_at=sample_started_at,
+                sample_ended_at=sample_ended_at,
+                sample_index=sample_index,
                 mime_type=mime_type,
                 file_bytes=file_bytes,
                 filename=filename,
@@ -1519,10 +1620,10 @@ def submit_consultation_pose_capture(
             ),
             error_code=5027,
         )
-        if consultation_turn_id:
-            consultation_turn = db_session.get(ConsultationTurn, consultation_turn_id)
+        if turn_id:
+            consultation_turn = db_session.get(ConsultationTurn, turn_id)
             if consultation_turn and consultation_turn.session_id == session_record.id:
-                consultation_turn.multimodal_bundle_payload = capture_data.get("turn_bundle")
+                consultation_turn.turn_summary_payload = capture_data.get("turn_bundle")
                 db_session.add(consultation_turn)
         db_session.flush()
         return capture_data

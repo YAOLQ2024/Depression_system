@@ -13,9 +13,9 @@ class MultimodalSession(Base):
     __tablename__ = "multimodal_sessions"
     __table_args__ = (
         UniqueConstraint(
-            "owner_service",
-            "owner_session_id",
-            name="uq_multimodal_sessions_owner",
+            "flow_type",
+            "flow_run_id",
+            name="uq_multimodal_sessions_flow_scope",
         ),
     )
 
@@ -24,9 +24,14 @@ class MultimodalSession(Base):
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    owner_service: Mapped[str] = mapped_column(String(128), nullable=False)
-    owner_session_id: Mapped[str] = mapped_column(
-        String(128),
+    encounter_session_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
+    flow_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    flow_run_id: Mapped[str] = mapped_column(
+        String(36),
         nullable=False,
         index=True,
     )
@@ -38,12 +43,7 @@ class MultimodalSession(Base):
         nullable=False,
         default=list,
     )
-    latest_live_payload: Mapped[dict | None] = mapped_column(
-        JSON,
-        nullable=True,
-        default=dict,
-    )
-    session_summary_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    live_state_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

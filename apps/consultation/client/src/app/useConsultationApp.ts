@@ -406,6 +406,7 @@ export function useConsultationApp() {
 
     await submitConsultationTurn({
       input_type: "manual_input",
+      turn_id: consultation?.current_turn_id || null,
       raw_input: normalized,
       transcript_text: normalized,
       transcript_source: "manual_input",
@@ -538,7 +539,8 @@ export function useConsultationApp() {
 
     try {
       const assessmentSession = await createAssessmentSession({
-        consultation_session_id: consultation.session_id,
+        encounter_session_id: consultation.encounter_session_id || null,
+        source_consultation_flow_run_id: consultation.session_id,
         scale_handoff_payload: consultation.scale_handoff_payload || {},
       });
       setAssessment(assessmentSession);

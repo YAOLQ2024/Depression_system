@@ -53,8 +53,8 @@
 
 4. `apps/consultation/client/src/types.ts`
    - 当前 `ConsultationSession` 已经预留了：
-     - `current_prompt_key`
-     - `current_prompt_video_uri`
+     - `current_question_key`
+     - `current_question_video_uri`
      - `current_question_item`
    - 说明问诊主链已经具备绑定“当前题目”的基础
 

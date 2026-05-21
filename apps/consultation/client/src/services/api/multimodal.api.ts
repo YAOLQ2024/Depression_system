@@ -2,8 +2,8 @@ import { apiRequest } from "./client";
 
 export type MultimodalSessionRecord = {
   session_id: string;
-  owner_service: string;
-  owner_session_id: string;
+  flow_type?: string | null;
+  flow_run_id?: string | null;
   user_id?: string | null;
   stage_context: {
     stage_id: string;
@@ -18,7 +18,7 @@ export type MultimodalSessionRecord = {
 export type MultimodalAudioTurnRecord = {
   audio_turn_id: string;
   session_id: string;
-  consultation_session_id: string;
+  flow_run_id?: string | null;
   question_key: string;
   processing_status:
     | "uploaded"
@@ -49,8 +49,9 @@ type MultimodalAudioTurnResponse = {
 };
 
 export async function createMultimodalSession(payload: {
-  owner_service: string;
-  owner_session_id: string;
+  flow_type: string;
+  flow_run_id: string;
+  encounter_session_id?: string | null;
   stage_context: {
     stage_id: string;
     stage_label: string;
@@ -83,9 +84,8 @@ export async function warmupMultimodalSession(
 export async function uploadMultimodalAudioTurn(
   sessionId: string,
   payload: {
-    consultation_session_id: string;
+    flow_run_id: string;
     question_key: string;
-    prompt_key?: string | null;
     stage_id: string;
     node_id: string;
     duration_ms?: number | null;
@@ -98,14 +98,11 @@ export async function uploadMultimodalAudioTurn(
   },
 ) {
   const formData = new FormData();
-  formData.set("consultation_session_id", payload.consultation_session_id);
+  formData.set("flow_run_id", payload.flow_run_id);
   formData.set("question_key", payload.question_key);
   formData.set("stage_id", payload.stage_id);
   formData.set("node_id", payload.node_id);
   formData.set("mime_type", payload.mime_type);
-  if (payload.prompt_key) {
-    formData.set("prompt_key", payload.prompt_key);
-  }
   if (payload.turn_id) {
     formData.set("turn_id", payload.turn_id);
   }

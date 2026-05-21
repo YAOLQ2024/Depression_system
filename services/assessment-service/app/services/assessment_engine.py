@@ -123,7 +123,10 @@ def _serialize_session(db_session: Session, session_record: AssessmentSession) -
     return {
         "session_id": session_record.id,
         "user_id": session_record.user_id,
-        "consultation_session_id": session_record.consultation_session_id,
+        "encounter_session_id": session_record.encounter_session_id,
+        "source_consultation_flow_run_id": (
+            session_record.source_consultation_flow_run_id
+        ),
         "status": session_record.status,
         "required_scales": _ensure_json_list(session_record.required_scales),
         "selected_scales": _ensure_json_list(session_record.selected_scales),
@@ -291,7 +294,10 @@ def _build_aggregate_payload(db_session: Session, session_record: AssessmentSess
     ).all()
     return {
         "assessment_session_id": session_record.id,
-        "consultation_session_id": session_record.consultation_session_id,
+        "encounter_session_id": session_record.encounter_session_id,
+        "source_consultation_flow_run_id": (
+            session_record.source_consultation_flow_run_id
+        ),
         "scale_count": len(results),
         "scale_results": [_serialize_result(result_record) for result_record in results],
         "source_handoff": _ensure_json_dict(session_record.scale_handoff_payload),
@@ -316,7 +322,8 @@ def create_assessment_session(payload: CreateAssessmentSessionRequest, acting_us
         session_record = AssessmentSession(
             id=str(uuid.uuid4()),
             user_id=payload.user_id,
-            consultation_session_id=payload.consultation_session_id,
+            encounter_session_id=payload.encounter_session_id,
+            source_consultation_flow_run_id=payload.source_consultation_flow_run_id,
             status="in_progress",
             required_scales=list(payload.scale_handoff_payload.get("required_scales") or selected_scales),
             selected_scales=selected_scales,

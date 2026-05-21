@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -13,6 +13,12 @@ class ConsultationSession(Base):
     __tablename__ = "consultation_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    encounter_session_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("encounter_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
     script_bundle: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -20,12 +26,12 @@ class ConsultationSession(Base):
     workflow_stage_id: Mapped[str] = mapped_column(String(128), nullable=False)
     current_stage_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     current_node_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    current_prompt_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    current_prompt_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    current_prompt_video_asset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    current_prompt_video_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
-    current_prompt_question_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    current_prompt_subtitle_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_question_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_question_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_question_video_asset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_question_video_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_question_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_question_subtitle_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_prompt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completed_prompt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -49,4 +55,8 @@ class ConsultationSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    encounter_session = relationship(
+        "EncounterSession",
+        back_populates="consultation_flow_runs",
+    )
     turns = relationship("ConsultationTurn", back_populates="session", cascade="all, delete-orphan")

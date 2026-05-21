@@ -38,7 +38,10 @@ def create_assessment_session(
         "/api/v1/assessment/sessions",
         {
             "user_id": user["id"],
-            "consultation_session_id": payload.consultation_session_id,
+            "encounter_session_id": payload.encounter_session_id,
+            "source_consultation_flow_run_id": (
+                payload.source_consultation_flow_run_id
+            ),
             "scale_handoff_payload": payload.scale_handoff_payload,
             "selected_scales": payload.selected_scales,
             "capture_context": payload.capture_context,

@@ -69,9 +69,9 @@ export type SubmitConsultationTurnPayload = {
 export type ConsultationMultimodalCapturePayload = {
   question_key: string;
   turn_id?: string | null;
-  capture_started_at: string;
-  capture_ended_at: string;
-  frame_index: number;
+  sample_started_at: string;
+  sample_ended_at: string;
+  sample_index: number;
   mime_type: string;
   image_file: File;
 };
@@ -85,7 +85,8 @@ export type AssessmentSessionResponse = {
 };
 
 export type CreateAssessmentSessionPayload = {
-  consultation_session_id: string;
+  encounter_session_id?: string | null;
+  source_consultation_flow_run_id?: string | null;
   scale_handoff_payload?: Record<string, unknown>;
 };
 

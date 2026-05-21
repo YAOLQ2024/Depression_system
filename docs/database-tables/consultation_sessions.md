@@ -28,12 +28,12 @@
 | `workflow_stage_id` | Workflow Stage ID | 工作流阶段ID | `String(128)`，非空 | 记录当前问诊处于更高层级的业务阶段，如问诊主链、人工决策、量表阶段。 | 需要把“问诊内部子阶段”和“跨服务业务阶段”区分开，便于网关与下游服务衔接。 | 问诊中、高风险分流、量表移交 |
 | `current_stage_id` | Current Stage ID | 当前子阶段ID | `String(128)`，可空 | 记录当前正处于哪个固定问诊子阶段。 | 没有它就无法从中断点继续推进四个固定子模块。 | 问候阶段、主诉阶段、现病史阶段、高风险阶段 |
 | `current_node_id` | Current Node ID | 当前节点ID | `String(128)`，可空 | 记录当前脚本节点位置。 | 同一阶段里包含多个节点，恢复执行时必须知道精确停在哪个节点。 | 问诊进行中、恢复执行 |
-| `current_prompt_key` | Current Prompt Key | 当前问题键 | `String(128)`，可空 | 缓存当前数字人问题项的键值。 | 前端播放结束上报 `question_key` 时，需要与数据库中的当前问题键做一致性校验。 | 问题展示、系统视频完成上报 |
-| `current_prompt_order` | Current Prompt Order | 当前问题顺序号 | `Integer`，可空 | 记录当前问题在播放清单中的顺序。 | 前端进度条和回放顺序需要稳定顺序号，而不能只依赖文本。 | 问题展示、进度计算 |
-| `current_prompt_video_asset_id` | Current Prompt Video Asset ID | 当前视频素材ID | `String(128)`，可空 | 指向当前问题对应的视频素材标识。 | 便于前端或素材服务定位具体视频资源，也便于回放与审计。 | 问题展示、素材定位 |
-| `current_prompt_video_uri` | Current Prompt Video URI | 当前视频地址 | `Text`，可空 | 保存当前问题对应视频的可播放地址。 | 前端需要直接拿到 URI 播放，不必每次再从资源清单反查。 | 问题展示 |
-| `current_prompt_question_text` | Current Prompt Question Text | 当前问题文案 | `Text`，可空 | 保存当前问题的标准提问文本。 | 前端、字幕栏和审计日志都需要明确知道系统在问什么。 | 问题展示、回放 |
-| `current_prompt_subtitle_text` | Current Prompt Subtitle Text | 当前字幕文案 | `Text`，可空 | 保存当前问题的字幕文本。 | 字幕和口播文案不一定完全相同，单独保存可支持无障碍和多终端展示。 | 问题展示 |
+| `current_question_key` | Current Question Key | 当前问题键 | `String(128)`，可空 | 缓存当前数字人问题项的键值。 | 前端播放结束上报 `question_key` 时，需要与数据库中的当前问题键做一致性校验。 | 问题展示、系统视频完成上报 |
+| `current_question_order` | Current Question Order | 当前问题顺序号 | `Integer`，可空 | 记录当前问题在播放清单中的顺序。 | 前端进度条和回放顺序需要稳定顺序号，而不能只依赖文本。 | 问题展示、进度计算 |
+| `current_question_video_asset_id` | Current Question Video Asset ID | 当前视频素材ID | `String(128)`，可空 | 指向当前问题对应的视频素材标识。 | 便于前端或素材服务定位具体视频资源，也便于回放与审计。 | 问题展示、素材定位 |
+| `current_question_video_uri` | Current Question Video URI | 当前视频地址 | `Text`，可空 | 保存当前问题对应视频的可播放地址。 | 前端需要直接拿到 URI 播放，不必每次再从资源清单反查。 | 问题展示 |
+| `current_question_text` | Current Question Text | 当前问题文案 | `Text`，可空 | 保存当前问题的标准提问文本。 | 前端、字幕栏和审计日志都需要明确知道系统在问什么。 | 问题展示、回放 |
+| `current_question_subtitle_text` | Current Question Subtitle Text | 当前字幕文案 | `Text`，可空 | 保存当前问题的字幕文本。 | 字幕和口播文案不一定完全相同，单独保存可支持无障碍和多终端展示。 | 问题展示 |
 | `total_prompt_count` | Total Prompt Count | 总问题项数量 | `Integer`，非空 | 记录本次问诊总共需要播放多少个固定问题项。 | 前端显示总进度和后端判断完成比例都需要该基数。 | 会话创建、进度展示 |
 | `completed_prompt_count` | Completed Prompt Count | 已完成问题项数量 | `Integer`，非空 | 记录当前已经完成的固定问题项数。 | 用于构建进度条和估算用户当前所处位置。 | 问诊进行中、进度展示 |
 | `status` | Session Status | 会话状态 | `String(64)`，索引，非空 | 保存当前会话状态，如 `draft`、`waiting_user_input`、`handoff_ready`。 | 外部系统需要快速判断会话是否可启动、是否等待用户、是否已经准备好移交。 | 全流程 |
@@ -56,4 +56,4 @@
 ## 4. 备注
 
 - 这张表是问诊域里最核心的“状态源”，很多前端展示字段其实都是从这里直接返回的。
-- `current_prompt_*` 一组字段属于“冗余但必要”的缓存字段，目的是降低前端展示和服务回放时对资源文件二次解析的依赖。
+- `current_question_*` 一组字段属于“冗余但必要”的缓存字段，目的是降低前端展示和服务回放时对资源文件二次解析的依赖。

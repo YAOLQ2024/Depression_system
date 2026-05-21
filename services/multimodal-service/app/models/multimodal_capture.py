@@ -19,7 +19,27 @@ class MultimodalCapture(Base):
         nullable=False,
         index=True,
     )
-    consultation_turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    flow_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
+    stage_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    question_key: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+    sample_index: Mapped[int | None] = mapped_column(nullable=True)
+    sample_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    sample_ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     modality: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     capture_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     source_ref_id: Mapped[str | None] = mapped_column(String(128), nullable=True)

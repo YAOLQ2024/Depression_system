@@ -68,14 +68,14 @@ def _serialize_session(record: MultimodalSession) -> dict:
     return {
         "id": record.id,
         "session_id": record.id,
-        "owner_service": record.owner_service,
-        "owner_session_id": record.owner_session_id,
+        "encounter_session_id": record.encounter_session_id,
+        "flow_type": record.flow_type,
+        "flow_run_id": record.flow_run_id,
         "user_id": record.user_id,
         "stage_context": _serialize_stage_context(record.stage_context),
         "status": record.status,
         "enabled_modalities": _default_modalities(record.enabled_modalities),
-        "latest_live_payload": dict(record.latest_live_payload or {}),
-        "session_summary_payload": record.session_summary_payload,
+        "live_state_payload": dict(record.live_state_payload or {}),
         "notes": record.notes,
         "started_at": started_at.isoformat() if started_at else None,
         "created_at": created_at.isoformat() if created_at else None,
@@ -93,7 +93,7 @@ def _serialize_audio_turn(record: MultimodalAudioTurn) -> dict:
     return {
         "audio_turn_id": record.id,
         "session_id": record.multimodal_session_id,
-        "consultation_session_id": record.consultation_session_id,
+        "flow_run_id": record.flow_run_id,
         "question_key": record.question_key,
         "processing_status": record.processing_status,
         "audio_uri": record.audio_uri,
@@ -152,7 +152,7 @@ def _translate_processing_error(exc: Exception) -> MultimodalServiceError:
 
 
 def _validate_audio_turn_fields(
-    consultation_session_id: str,
+    flow_run_id: str,
     question_key: str,
     stage_id: str,
     node_id: str,
@@ -161,9 +161,9 @@ def _validate_audio_turn_fields(
     response_started_at: datetime | None,
     response_completed_at: datetime | None,
 ) -> None:
-    if not consultation_session_id:
+    if not flow_run_id:
         raise MultimodalServiceError(
-            "consultation_session_id is required",
+            "flow_run_id is required",
             code=4001,
         )
     if not question_key:
@@ -191,24 +191,24 @@ def _validate_audio_turn_fields(
 
 
 def _build_audio_object_key(
-    consultation_session_id: str,
+    flow_run_id: str,
     question_key: str,
     audio_turn_id: str,
     suffix: str,
 ) -> str:
     return (
-        f"consultation/{consultation_session_id}/{question_key}/"
+        f"consultation/{flow_run_id}/{question_key}/"
         f"{audio_turn_id}{suffix}"
     )
 
 
 def _build_normalized_wav_object_key(
-    consultation_session_id: str,
+    flow_run_id: str,
     question_key: str,
     effective_turn_id: str,
 ) -> str:
     return (
-        f"consultation/{consultation_session_id}/{question_key}/"
+        f"consultation/{flow_run_id}/{question_key}/"
         f"{effective_turn_id}.normalized.wav"
     )
 
@@ -322,8 +322,9 @@ def _remove_active_future(audio_turn_id: str) -> None:
 def _run_transcription_job(
     audio_turn_id: str,
     multimodal_session_id: str,
-    consultation_session_id: str,
-    consultation_turn_id: str,
+    flow_run_id: str,
+    turn_id: str,
+    stage_id: str,
     question_key: str,
     original_audio_uri: str,
     normalized_wav_object_key: str,
@@ -371,9 +372,10 @@ def _run_transcription_job(
         result = process_audio_turn(
             multimodal_session_id,
             payload=SubmitAudioTurnRequest(
-                consultation_turn_id=consultation_turn_id,
-                consultation_session_id=consultation_session_id,
+                turn_id=turn_id,
+                flow_run_id=flow_run_id,
                 question_key=question_key,
+                stage_id=stage_id,
                 original_audio_uri=original_audio_uri,
                 original_mime_type=source_mime_type,
                 source_filename=source_filename or source_path.name,
@@ -409,8 +411,9 @@ def _run_transcription_job(
 def _submit_transcription_job(
     audio_turn_id: str,
     multimodal_session_id: str,
-    consultation_session_id: str,
-    consultation_turn_id: str,
+    flow_run_id: str,
+    turn_id: str,
+    stage_id: str,
     question_key: str,
     original_audio_uri: str,
     normalized_wav_object_key: str,
@@ -423,8 +426,9 @@ def _submit_transcription_job(
         _run_transcription_job,
         audio_turn_id,
         multimodal_session_id,
-        consultation_session_id,
-        consultation_turn_id,
+        flow_run_id,
+        turn_id,
+        stage_id,
         question_key,
         original_audio_uri,
         normalized_wav_object_key,
@@ -443,7 +447,6 @@ def create_or_get_multimodal_session(
     acting_user_id: str | None,
 ) -> dict:
     effective_user_id = acting_user_id or payload.user_id
-    owner_service = payload.owner_service or "consultation-service"
     stage_context = (
         payload.stage_context.model_dump() if payload.stage_context else {}
     )
@@ -452,16 +455,21 @@ def create_or_get_multimodal_session(
     with get_db_session() as db_session:
         existing = db_session.execute(
             select(MultimodalSession).where(
-                MultimodalSession.owner_service == owner_service,
-                MultimodalSession.owner_session_id == payload.owner_session_id,
+                MultimodalSession.flow_type == payload.flow_type,
+                MultimodalSession.flow_run_id == payload.flow_run_id,
             )
         ).scalar_one_or_none()
         if existing:
             now = _now()
             existing.user_id = effective_user_id or existing.user_id
+            existing.encounter_session_id = (
+                payload.encounter_session_id or existing.encounter_session_id
+            )
+            existing.flow_type = payload.flow_type or existing.flow_type
+            existing.flow_run_id = payload.flow_run_id or existing.flow_run_id
             existing.stage_context = stage_context or existing.stage_context or {}
             existing.enabled_modalities = enabled_modalities
-            existing.latest_live_payload = existing.latest_live_payload or {}
+            existing.live_state_payload = existing.live_state_payload or {}
             existing.notes = payload.notes if payload.notes is not None else existing.notes
             existing.status = "ready"
             existing.started_at = existing.started_at or existing.created_at or now
@@ -474,13 +482,14 @@ def create_or_get_multimodal_session(
         now = _now()
         record = MultimodalSession(
             id=str(uuid.uuid4()),
-            owner_service=owner_service,
-            owner_session_id=payload.owner_session_id,
+            encounter_session_id=payload.encounter_session_id,
+            flow_type=payload.flow_type,
+            flow_run_id=payload.flow_run_id,
             user_id=effective_user_id,
             stage_context=stage_context,
             status="ready",
             enabled_modalities=enabled_modalities,
-            latest_live_payload={},
+            live_state_payload={},
             notes=payload.notes,
             started_at=now,
             created_at=now,
@@ -506,9 +515,8 @@ def get_audio_turn(multimodal_session_id: str, audio_turn_id: str) -> dict:
 
 async def create_audio_turn(
     multimodal_session_id: str,
-    consultation_session_id: str,
+    flow_run_id: str,
     question_key: str,
-    prompt_key: str | None,
     stage_id: str,
     node_id: str,
     duration_ms: int | None,
@@ -519,7 +527,7 @@ async def create_audio_turn(
     audio_file: UploadFile,
 ) -> dict:
     _validate_audio_turn_fields(
-        consultation_session_id=consultation_session_id,
+        flow_run_id=flow_run_id,
         question_key=question_key,
         stage_id=stage_id,
         node_id=node_id,
@@ -543,12 +551,9 @@ async def create_audio_turn(
                 code=4041,
                 status_code=404,
             )
-        if (
-            session_record.owner_service == "consultation-service"
-            and session_record.owner_session_id != consultation_session_id
-        ):
+        if session_record.flow_run_id != flow_run_id:
             raise MultimodalServiceError(
-                "consultation session mismatch",
+                "flow run mismatch",
                 code=4091,
                 status_code=409,
             )
@@ -589,7 +594,7 @@ async def create_audio_turn(
             )
 
         object_key = _build_audio_object_key(
-            consultation_session_id=consultation_session_id,
+            flow_run_id=flow_run_id,
             question_key=question_key,
             audio_turn_id=audio_turn_id,
             suffix=suffix,
@@ -600,7 +605,7 @@ async def create_audio_turn(
             content_type=normalized_mime_type,
         )
         normalized_wav_object_key = _build_normalized_wav_object_key(
-            consultation_session_id=consultation_session_id,
+            flow_run_id=flow_run_id,
             question_key=question_key,
             effective_turn_id=effective_turn_id,
         )
@@ -610,12 +615,11 @@ async def create_audio_turn(
             record = MultimodalAudioTurn(
                 id=audio_turn_id,
                 multimodal_session_id=multimodal_session_id,
-                consultation_session_id=consultation_session_id,
+                flow_run_id=flow_run_id,
                 turn_id=effective_turn_id,
                 stage_id=stage_id,
                 node_id=node_id,
                 question_key=question_key,
-                prompt_key=prompt_key,
                 audio_uri=audio_uri,
                 normalized_wav_uri=None,
                 storage_provider="minio",
@@ -640,8 +644,9 @@ async def create_audio_turn(
         future = _submit_transcription_job(
             audio_turn_id,
             multimodal_session_id,
-            consultation_session_id,
+            flow_run_id,
             effective_turn_id,
+            stage_id,
             question_key,
             audio_uri,
             normalized_wav_object_key,
