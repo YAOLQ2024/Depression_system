@@ -27,8 +27,8 @@ def test_face_capture_accepts_step4d_form(monkeypatch) -> None:
             "primary_score": 0.76,
             "top_3_labels": [{"label": "平静", "score": 0.76}],
             "quality_flags": {"no_face": False, "blur": False, "low_light": False},
-            "capture_started_at": "2026-05-17T10:01:11Z",
-            "capture_ended_at": "2026-05-17T10:01:11Z",
+            "sample_started_at": "2026-05-17T10:01:11Z",
+            "sample_ended_at": "2026-05-17T10:01:11Z",
             "created_at": "2026-05-17T10:01:11Z",
         }
 
@@ -37,12 +37,12 @@ def test_face_capture_accepts_step4d_form(monkeypatch) -> None:
     response = client.post(
         "/api/v1/multimodal/sessions/mm-session-1/captures/face",
         data={
-            "consultation_session_id": "consult-1",
+            "flow_run_id": "consult-1",
             "question_key": "chief-complaint-001",
             "turn_id": "turn-1",
-            "capture_started_at": "2026-05-17T10:01:11Z",
-            "capture_ended_at": "2026-05-17T10:01:11Z",
-            "frame_index": "7",
+            "sample_started_at": "2026-05-17T10:01:11Z",
+            "sample_ended_at": "2026-05-17T10:01:11Z",
+            "sample_index": "7",
             "mime_type": "image/jpeg",
         },
         files={"image_file": ("frame.jpg", b"jpeg-bytes", "image/jpeg")},
@@ -55,10 +55,10 @@ def test_face_capture_accepts_step4d_form(monkeypatch) -> None:
     assert payload["data"]["capture_id"] == "face-cap-001"
     assert observed["session_id"] == "mm-session-1"
     req = observed["payload"]
-    assert req.consultation_session_id == "consult-1"
+    assert req.flow_run_id == "consult-1"
     assert req.question_key == "chief-complaint-001"
-    assert req.consultation_turn_id == "turn-1"
-    assert req.frame_index == 7
+    assert req.turn_id == "turn-1"
+    assert req.sample_index == 7
     assert req.mime_type == "image/jpeg"
     assert req.image_format == "jpeg"
     assert isinstance(req.image_base64, str) and len(req.image_base64) > 0
@@ -94,15 +94,52 @@ def test_bundle_route_returns_direct_bundle(monkeypatch) -> None:
     monkeypatch.setattr(
         api,
         "get_multimodal_turn_bundle",
-        lambda session_id, consultation_turn_id, acting_user_id=None: {
-            "turn_id": consultation_turn_id,
+        lambda session_id, turn_id, acting_user_id=None: {
+            "turn_id": turn_id,
             "session_id": session_id,
+            "flow_run_id": "consult-1",
+            "stage_id": "stage-02-chief-complaint",
             "question_key": "chief-complaint-001",
             "generated_at": "2026-05-17T10:01:25Z",
             "speech_features": {"primary_label": "语音平稳", "primary_score": 0.88, "top_3_labels": []},
             "text_features": {"primary_label": "中性", "primary_score": 0.79, "top_3_labels": [], "negative_terms": []},
-            "face_features": {"summary_type": "turn_window", "primary_label": "平静", "primary_score": 0.72, "top_3_labels": [], "sample_count": 6, "quality_flags": {"no_face_ratio": 0.0, "blur_ratio": 0.0, "low_light_ratio": 0.0}},
-            "pose_features": {"summary_type": "turn_window", "primary_label": "轻微前倾", "primary_score": 0.81, "top_3_labels": [], "sample_count": 8, "quality_flags": {"no_pose_ratio": 0.0, "body_cutoff_ratio": 0.0, "motion_blur_ratio": 0.0}},
+            "face_features": {
+                "summary_type": "turn_window",
+                "primary_label": "平静",
+                "primary_score": 0.5,
+                "primary_ratio": 0.5,
+                "sample_count": 6,
+                "valid_sample_count": 6,
+                "label_distribution": [
+                    {"label": "平静", "count": 3, "ratio": 0.5},
+                    {"label": "低落", "count": 2, "ratio": 0.3333},
+                    {"label": "焦虑", "count": 1, "ratio": 0.1667},
+                ],
+                "quality_distribution": {
+                    "no_face": {"count": 0, "ratio": 0.0},
+                    "blur": {"count": 0, "ratio": 0.0},
+                    "low_light": {"count": 0, "ratio": 0.0},
+                },
+                "quality_flags": {"no_face_ratio": 0.0, "blur_ratio": 0.0, "low_light_ratio": 0.0},
+            },
+            "pose_features": {
+                "summary_type": "turn_window",
+                "primary_label": "轻微前倾",
+                "primary_score": 0.625,
+                "primary_ratio": 0.625,
+                "sample_count": 8,
+                "valid_sample_count": 8,
+                "label_distribution": [
+                    {"label": "轻微前倾", "count": 5, "ratio": 0.625},
+                    {"label": "中性", "count": 3, "ratio": 0.375},
+                ],
+                "quality_distribution": {
+                    "no_pose": {"count": 0, "ratio": 0.0},
+                    "body_cutoff": {"count": 0, "ratio": 0.0},
+                    "motion_blur": {"count": 0, "ratio": 0.0},
+                },
+                "quality_flags": {"no_pose_ratio": 0.0, "body_cutoff_ratio": 0.0, "motion_blur_ratio": 0.0},
+            },
         },
     )
 
@@ -112,3 +149,4 @@ def test_bundle_route_returns_direct_bundle(monkeypatch) -> None:
     assert data["turn_id"] == "turn-1"
     assert "turn_bundle" not in data
     assert data["face_features"]["summary_type"] == "turn_window"
+    assert data["face_features"]["label_distribution"][0]["label"] == "平静"

@@ -18,14 +18,15 @@ class MultimodalAudioTurn(Base):
         nullable=False,
         index=True,
     )
-    consultation_session_id: Mapped[str] = mapped_column(
-        String(36), nullable=False, index=True
+    flow_run_id: Mapped[str] = mapped_column(
+        String(36),
+        nullable=False,
+        index=True,
     )
     turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     stage_id: Mapped[str] = mapped_column(String(128), nullable=False)
     node_id: Mapped[str] = mapped_column(String(128), nullable=False)
     question_key: Mapped[str] = mapped_column(String(128), nullable=False)
-    prompt_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     audio_uri: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_wav_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     storage_provider: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.database import get_db_session
 from app.models import (
@@ -127,8 +127,15 @@ def _build_pending_live_modality(modality: str) -> dict[str, Any]:
         base["top_3_labels"] = []
     if modality == "text":
         base["negative_terms"] = []
+        base["transcript_text"] = None
+        base["captured_at"] = None
+    if modality == "speech":
+        base["audio_uri"] = None
+        base["captured_at"] = None
     if modality in {"face", "pose"}:
         base["latest_capture_at"] = None
+        base["top_3_labels"] = []
+        base["quality_flags"] = {}
     return base
 
 
@@ -143,6 +150,79 @@ def _bool_ratio(payloads: Sequence[dict[str, Any]], key: str) -> float:
     return round(positive / len(payloads), 4)
 
 
+def _resolve_frame_quality_keys(modality: str) -> tuple[str, ...]:
+    if modality == "face":
+        return ("no_face", "blur", "low_light")
+    return ("no_pose", "body_cutoff", "motion_blur")
+
+
+def _extract_distribution_label(payload: dict[str, Any], modality: str) -> str | None:
+    quality_flags = payload.get("quality_flags") or {}
+    if modality == "face" and bool(quality_flags.get("no_face")):
+        return None
+    if modality == "pose" and bool(quality_flags.get("no_pose")):
+        return None
+
+    primary_label = str(payload.get("primary_label") or "").strip()
+    if primary_label:
+        return primary_label
+
+    top_label = _copy_labels(payload.get("top_3_labels"), limit=1)
+    if top_label:
+        return str(top_label[0]["label"]).strip() or None
+    return None
+
+
+def _build_label_distribution(
+    payloads: Sequence[dict[str, Any]],
+    modality: str,
+) -> tuple[list[dict[str, Any]], str | None, float | None, int]:
+    counts: Counter[str] = Counter()
+    for payload in payloads:
+        label = _extract_distribution_label(payload, modality)
+        if label:
+            counts[label] += 1
+
+    valid_sample_count = sum(counts.values())
+    if valid_sample_count <= 0:
+        return [], None, None, 0
+
+    sorted_items = sorted(
+        counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    )
+    distribution = [
+        {
+            "label": label,
+            "count": count,
+            "ratio": round(count / valid_sample_count, 4),
+        }
+        for label, count in sorted_items
+    ]
+    primary_label = distribution[0]["label"]
+    primary_ratio = distribution[0]["ratio"]
+    return distribution, primary_label, primary_ratio, valid_sample_count
+
+
+def _build_quality_distribution(
+    payloads: Sequence[dict[str, Any]],
+    modality: str,
+) -> dict[str, dict[str, Any]]:
+    distribution: dict[str, dict[str, Any]] = {}
+    for key in _resolve_frame_quality_keys(modality):
+        positive_count = 0
+        for payload in payloads:
+            quality_flags = payload.get("quality_flags") or {}
+            if bool(quality_flags.get(key)):
+                positive_count += 1
+        ratio = round(positive_count / len(payloads), 4) if payloads else 0.0
+        distribution[key] = {
+            "count": positive_count,
+            "ratio": ratio,
+        }
+    return distribution
+
+
 def _summarize_frame_payloads(
     modality: str,
     payloads: Sequence[dict[str, Any]],
@@ -150,67 +230,40 @@ def _summarize_frame_payloads(
     summary_type: str,
 ) -> dict[str, Any]:
     if not payloads:
-        if modality == "face":
-            return {
-                "summary_type": summary_type,
-                "primary_label": None,
-                "primary_score": None,
-                "top_3_labels": [],
-                "sample_count": 0,
-                "quality_flags": {"no_face_ratio": 0.0, "blur_ratio": 0.0, "low_light_ratio": 0.0},
-            }
         return {
             "summary_type": summary_type,
             "primary_label": None,
             "primary_score": None,
-            "top_3_labels": [],
+            "primary_ratio": None,
             "sample_count": 0,
-            "quality_flags": {"no_pose_ratio": 0.0, "body_cutoff_ratio": 0.0, "motion_blur_ratio": 0.0},
+            "valid_sample_count": 0,
+            "label_distribution": [],
+            "quality_distribution": _build_quality_distribution([], modality),
+            "quality_flags": {
+                f"{key}_ratio": 0.0 for key in _resolve_frame_quality_keys(modality)
+            },
         }
 
-    aggregated_scores: Counter[str] = Counter()
-    effective_count = 0
-    for payload in payloads:
-        labels = _copy_labels(payload.get("top_3_labels"))
-        if labels:
-            effective_count += 1
-        for label in labels:
-            aggregated_scores[label["label"]] += float(label["score"])
-
-    top_3_labels: list[dict[str, Any]] = []
-    primary_label: str | None = None
-    primary_score: float | None = None
-    if aggregated_scores:
-        divisor = max(effective_count, 1)
-        normalized_pairs = [
-            (label, score / divisor)
-            for label, score in aggregated_scores.items()
-        ]
-        top_3_labels = _top_labels_from_pairs(normalized_pairs, limit=3)
-        if top_3_labels:
-            primary_label = top_3_labels[0]["label"]
-            primary_score = top_3_labels[0]["score"]
-
-    if modality == "face":
-        quality_flags = {
-            "no_face_ratio": _bool_ratio(payloads, "no_face"),
-            "blur_ratio": _bool_ratio(payloads, "blur"),
-            "low_light_ratio": _bool_ratio(payloads, "low_light"),
-        }
-    else:
-        quality_flags = {
-            "no_pose_ratio": _bool_ratio(payloads, "no_pose"),
-            "body_cutoff_ratio": _bool_ratio(payloads, "body_cutoff"),
-            "motion_blur_ratio": _bool_ratio(payloads, "motion_blur"),
-        }
-
+    (
+        label_distribution,
+        primary_label,
+        primary_ratio,
+        valid_sample_count,
+    ) = _build_label_distribution(payloads, modality)
+    quality_distribution = _build_quality_distribution(payloads, modality)
     return {
         "summary_type": summary_type,
         "primary_label": primary_label,
-        "primary_score": primary_score,
-        "top_3_labels": top_3_labels,
+        "primary_score": primary_ratio,
+        "primary_ratio": primary_ratio,
         "sample_count": len(payloads),
-        "quality_flags": quality_flags,
+        "valid_sample_count": valid_sample_count,
+        "label_distribution": label_distribution,
+        "quality_distribution": quality_distribution,
+        "quality_flags": {
+            f"{key}_ratio": quality_distribution[key]["ratio"]
+            for key in quality_distribution
+        },
     }
 
 
@@ -225,8 +278,8 @@ def _normalize_speech_result(raw_result: dict[str, Any], payload: SubmitAudioTur
         "modality": "speech",
         "status": "ready",
         "question_key": payload.question_key,
-        "consultation_session_id": payload.consultation_session_id,
-        "turn_id": payload.consultation_turn_id,
+        "flow_run_id": payload.flow_run_id,
+        "turn_id": payload.turn_id,
         "primary_label": raw_result.get("label"),
         "primary_score": float(raw_result.get("score") or 0.0),
         "top_3_labels": top_3_labels,
@@ -249,8 +302,8 @@ def _normalize_text_result(raw_result: dict[str, Any], payload: SubmitAudioTurnR
         "modality": "text",
         "status": "ready",
         "question_key": payload.question_key,
-        "consultation_session_id": payload.consultation_session_id,
-        "turn_id": payload.consultation_turn_id,
+        "flow_run_id": payload.flow_run_id,
+        "turn_id": payload.turn_id,
         "primary_label": raw_result.get("label"),
         "primary_score": float(raw_result.get("score") or 0.0),
         "top_3_labels": top_3_labels,
@@ -269,8 +322,8 @@ def _normalize_face_result(raw_result: dict[str, Any], payload: SubmitFrameCaptu
         "status": "ready" if processing_status == "completed" else "pending",
         "processing_status": processing_status,
         "question_key": payload.question_key,
-        "consultation_session_id": payload.consultation_session_id,
-        "turn_id": payload.consultation_turn_id,
+        "flow_run_id": payload.flow_run_id,
+        "turn_id": payload.turn_id,
         "primary_label": raw_result.get("dominant_emotion_zh"),
         "primary_score": float(raw_result.get("confidence") or 0.0),
         "top_3_labels": _top_labels_from_scores(scores, limit=3),
@@ -279,9 +332,9 @@ def _normalize_face_result(raw_result: dict[str, Any], payload: SubmitFrameCaptu
             "blur": False,
             "low_light": False,
         },
-        "capture_started_at": _isoformat(payload.capture_started_at),
-        "capture_ended_at": _isoformat(payload.capture_ended_at),
-        "frame_index": payload.frame_index,
+        "sample_started_at": _isoformat(payload.sample_started_at),
+        "sample_ended_at": _isoformat(payload.sample_ended_at),
+        "sample_index": payload.sample_index,
     }
 
 
@@ -295,8 +348,8 @@ def _normalize_pose_result(raw_result: dict[str, Any], payload: SubmitFrameCaptu
         "status": "pending" if is_collecting else "ready",
         "processing_status": "processing" if is_collecting else "completed",
         "question_key": payload.question_key,
-        "consultation_session_id": payload.consultation_session_id,
-        "turn_id": payload.consultation_turn_id,
+        "flow_run_id": payload.flow_run_id,
+        "turn_id": payload.turn_id,
         "primary_label": None if is_collecting else label,
         "primary_score": None if is_collecting else float(raw_result.get("score") or 0.0),
         "top_3_labels": [] if is_collecting else _top_labels_from_scores(confidences, limit=3),
@@ -305,9 +358,9 @@ def _normalize_pose_result(raw_result: dict[str, Any], payload: SubmitFrameCaptu
             "body_cutoff": False,
             "motion_blur": False,
         },
-        "capture_started_at": _isoformat(payload.capture_started_at),
-        "capture_ended_at": _isoformat(payload.capture_ended_at),
-        "frame_index": payload.frame_index,
+        "sample_started_at": _isoformat(payload.sample_started_at),
+        "sample_ended_at": _isoformat(payload.sample_ended_at),
+        "sample_index": payload.sample_index,
     }
 
 
@@ -366,8 +419,8 @@ def _build_normalized_wav_object_key(payload: SubmitAudioTurnRequest) -> tuple[s
     except ValueError as exc:
         raise MultimodalServiceError("invalid original_audio_uri", 4007, 422) from exc
     object_key = (
-        f"consultation-audio/{payload.consultation_session_id}/"
-        f"{payload.consultation_turn_id}/normalized/response.wav"
+        f"consultation-audio/{payload.flow_run_id}/"
+        f"{payload.turn_id}/normalized/response.wav"
     )
     return bucket_name, object_key
 
@@ -378,7 +431,7 @@ def _prepare_normalized_audio(
     if not payload.original_audio_uri:
         raise MultimodalServiceError("original_audio_uri is required", 4006, 422)
     source_suffix = _resolve_audio_source_suffix(payload)
-    processing_id = f"turn-{payload.consultation_turn_id}"
+    processing_id = f"turn-{payload.turn_id}"
     processing_dir = ensure_processing_directory(processing_id)
     try:
         source_bytes = download_object_bytes(payload.original_audio_uri)
@@ -406,11 +459,11 @@ def _prepare_normalized_audio(
 
 def _materialize_transcription_wav(
     *,
-    consultation_turn_id: str,
+    turn_id: str,
     audio_base64: str,
     audio_format: str | None,
 ) -> PreparedNormalizedAudio:
-    processing_id = f"turn-asr-{consultation_turn_id}"
+    processing_id = f"turn-asr-{turn_id}"
     processing_dir = ensure_processing_directory(processing_id)
     source_suffix = f".{(audio_format or 'wav').strip().lower().lstrip('.') or 'wav'}"
 
@@ -500,13 +553,13 @@ def _snapshot(session: MultimodalSession) -> dict[str, Any]:
         "id": session.id,
         "session_id": session.id,
         "user_id": session.user_id,
-        "owner_service": session.owner_service,
-        "owner_session_id": session.owner_session_id,
+        "encounter_session_id": session.encounter_session_id,
+        "flow_type": session.flow_type,
+        "flow_run_id": session.flow_run_id,
         "status": session.status,
         "stage_context": _stage_context_payload(session),
         "enabled_modalities": list(session.enabled_modalities or []),
-        "latest_live_payload": dict(session.latest_live_payload or {}),
-        "session_summary_payload": session.session_summary_payload,
+        "live_state_payload": dict(session.live_state_payload or {}),
         "notes": session.notes,
         "started_at": session.started_at,
         "created_at": session.created_at,
@@ -538,23 +591,27 @@ def create_multimodal_session(
         raise MultimodalServiceError("multimodal session user mismatch", 4032, 403)
 
     effective_user_id = acting_user_id or payload.user_id
-    owner_service = payload.owner_service or "consultation-service"
     stage_context = payload.stage_context.model_dump() if payload.stage_context else {}
     now = _utcnow()
     with get_db_session() as db_session:
         existing = db_session.execute(
             select(MultimodalSession).where(
-                MultimodalSession.owner_service == owner_service,
-                MultimodalSession.owner_session_id == payload.owner_session_id,
+                MultimodalSession.flow_type == payload.flow_type,
+                MultimodalSession.flow_run_id == payload.flow_run_id,
             )
         ).scalar_one_or_none()
         if existing is not None:
             if acting_user_id:
                 _ensure_session_access(existing, acting_user_id)
             existing.user_id = effective_user_id or existing.user_id
+            existing.encounter_session_id = (
+                payload.encounter_session_id or existing.encounter_session_id
+            )
+            existing.flow_type = payload.flow_type or existing.flow_type
+            existing.flow_run_id = payload.flow_run_id or existing.flow_run_id
             existing.stage_context = stage_context or dict(existing.stage_context or {})
             existing.enabled_modalities = _normalize_modalities(payload.enabled_modalities)
-            existing.latest_live_payload = existing.latest_live_payload or {}
+            existing.live_state_payload = existing.live_state_payload or {}
             existing.notes = payload.notes if payload.notes is not None else existing.notes
             existing.started_at = existing.started_at or existing.created_at or now
             existing.created_at = existing.created_at or existing.started_at or now
@@ -566,12 +623,13 @@ def create_multimodal_session(
 
         session = MultimodalSession(
             user_id=effective_user_id,
-            owner_service=owner_service,
-            owner_session_id=payload.owner_session_id,
+            encounter_session_id=payload.encounter_session_id,
+            flow_type=payload.flow_type,
+            flow_run_id=payload.flow_run_id,
             stage_context=stage_context,
             status="created",
             enabled_modalities=_normalize_modalities(payload.enabled_modalities),
-            latest_live_payload={},
+            live_state_payload={},
             notes=payload.notes,
             started_at=now,
             created_at=now,
@@ -630,16 +688,28 @@ def _record_capture(
     db_session,
     *,
     session_id: str,
-    consultation_turn_id: str | None,
+    turn_id: str | None,
+    flow_run_id: str | None,
+    stage_id: str | None,
+    question_key: str | None,
     modality: str,
     capture_kind: str,
     source_ref_id: str | None,
+    sample_index: int | None,
+    sample_started_at: datetime | None,
+    sample_ended_at: datetime | None,
     capture_payload: dict[str, Any],
     captured_at: datetime | None,
 ) -> MultimodalCapture:
     row = MultimodalCapture(
         session_id=session_id,
-        consultation_turn_id=consultation_turn_id,
+        turn_id=turn_id,
+        flow_run_id=flow_run_id,
+        stage_id=stage_id,
+        question_key=question_key,
+        sample_index=sample_index,
+        sample_started_at=sample_started_at,
+        sample_ended_at=sample_ended_at,
         modality=modality,
         capture_kind=capture_kind,
         source_ref_id=source_ref_id,
@@ -657,16 +727,24 @@ def _record_inference_result(
     db_session,
     *,
     session_id: str,
-    consultation_turn_id: str | None,
+    turn_id: str | None,
+    flow_run_id: str | None,
+    stage_id: str | None,
+    question_key: str | None,
     modality: str,
     source_kind: str,
     source_ref_id: str | None,
+    sample_id: str | None,
     inference_payload: dict[str, Any],
     captured_at: datetime | None,
 ) -> MultimodalInferenceResult:
     row = MultimodalInferenceResult(
         session_id=session_id,
-        consultation_turn_id=consultation_turn_id,
+        turn_id=turn_id,
+        flow_run_id=flow_run_id,
+        stage_id=stage_id,
+        question_key=question_key,
+        sample_id=sample_id,
         modality=modality,
         source_kind=source_kind,
         source_ref_id=source_ref_id,
@@ -680,7 +758,7 @@ def _record_inference_result(
 
 
 def _refresh_live_payload(session: MultimodalSession, *results: dict[str, Any]) -> None:
-    live_payload = dict(session.latest_live_payload or {})
+    live_payload = dict(session.live_state_payload or {})
     for result in results:
         modality = str(result.get("modality") or "").strip().lower()
         if not modality:
@@ -690,7 +768,9 @@ def _refresh_live_payload(session: MultimodalSession, *results: dict[str, Any]) 
                 "status": result.get("status", "pending"),
                 "primary_label": result.get("primary_label"),
                 "primary_score": result.get("primary_score"),
-                "latest_capture_at": result.get("capture_ended_at"),
+                "top_3_labels": _copy_labels(result.get("top_3_labels")),
+                "quality_flags": dict(result.get("quality_flags") or {}),
+                "latest_capture_at": result.get("sample_ended_at"),
             }
         else:
             live_payload[modality] = {
@@ -699,9 +779,14 @@ def _refresh_live_payload(session: MultimodalSession, *results: dict[str, Any]) 
                 "primary_score": result.get("primary_score"),
                 "top_3_labels": _copy_labels(result.get("top_3_labels")),
             }
+            if modality == "speech":
+                live_payload[modality]["audio_uri"] = result.get("audio_uri")
+                live_payload[modality]["captured_at"] = result.get("captured_at")
             if modality == "text":
                 live_payload[modality]["negative_terms"] = list(result.get("negative_terms") or [])
-    session.latest_live_payload = live_payload
+                live_payload[modality]["transcript_text"] = result.get("transcript_text")
+                live_payload[modality]["captured_at"] = result.get("captured_at")
+    session.live_state_payload = dict(live_payload)
     session.updated_at = _utcnow()
     if session.status == "created":
         session.status = "active"
@@ -712,32 +797,18 @@ def _load_inference_payloads(
     *,
     session_id: str,
     modality: str,
-    consultation_turn_id: str | None = None,
+    turn_id: str | None = None,
 ) -> list[dict[str, Any]]:
     statement = select(MultimodalInferenceResult).where(
         MultimodalInferenceResult.session_id == session_id,
         MultimodalInferenceResult.modality == modality,
     )
-    if consultation_turn_id is not None:
-        statement = statement.where(MultimodalInferenceResult.consultation_turn_id == consultation_turn_id)
+    if turn_id is not None:
+        statement = statement.where(
+            MultimodalInferenceResult.turn_id == turn_id
+        )
     rows = db_session.execute(statement.order_by(MultimodalInferenceResult.created_at.asc())).scalars().all()
     return [dict(row.inference_payload or {}) for row in rows]
-
-
-def _refresh_session_summary(
-    db_session,
-    session: MultimodalSession,
-    *,
-    modalities: Sequence[str] = ("face", "pose"),
-) -> None:
-    summary_payload = dict(session.session_summary_payload or {})
-    for modality in modalities:
-        payloads = _load_inference_payloads(db_session, session_id=session.id, modality=modality)
-        if modality == "face":
-            summary_payload["face_summary"] = _summarize_frame_payloads("face", payloads, summary_type="session_window")
-        elif modality == "pose":
-            summary_payload["pose_summary"] = _summarize_frame_payloads("pose", payloads, summary_type="session_window")
-    session.session_summary_payload = summary_payload
 
 
 def _resolve_question_key(results_by_modality: dict[str, list[dict[str, Any]]]) -> str | None:
@@ -750,31 +821,39 @@ def _resolve_question_key(results_by_modality: dict[str, list[dict[str, Any]]]) 
     return None
 
 
-def _build_turn_bundle_payload(db_session, session_id: str, consultation_turn_id: str) -> dict[str, Any]:
+def _build_turn_bundle_payload(
+    db_session,
+    session_id: str,
+    turn_id: str,
+    *,
+    flow_run_id: str | None = None,
+    stage_id: str | None = None,
+    question_key: str | None = None,
+) -> dict[str, Any]:
     results_by_modality = {
         "speech": _load_inference_payloads(
             db_session,
             session_id=session_id,
             modality="speech",
-            consultation_turn_id=consultation_turn_id,
+            turn_id=turn_id,
         ),
         "text": _load_inference_payloads(
             db_session,
             session_id=session_id,
             modality="text",
-            consultation_turn_id=consultation_turn_id,
+            turn_id=turn_id,
         ),
         "face": _load_inference_payloads(
             db_session,
             session_id=session_id,
             modality="face",
-            consultation_turn_id=consultation_turn_id,
+            turn_id=turn_id,
         ),
         "pose": _load_inference_payloads(
             db_session,
             session_id=session_id,
             modality="pose",
-            consultation_turn_id=consultation_turn_id,
+            turn_id=turn_id,
         ),
     }
 
@@ -784,9 +863,11 @@ def _build_turn_bundle_payload(db_session, session_id: str, consultation_turn_id
     pose_summary = _summarize_frame_payloads("pose", results_by_modality["pose"], summary_type="turn_window")
 
     return {
-        "turn_id": consultation_turn_id,
+        "turn_id": turn_id,
         "session_id": session_id,
-        "question_key": _resolve_question_key(results_by_modality),
+        "flow_run_id": flow_run_id,
+        "stage_id": stage_id,
+        "question_key": question_key or _resolve_question_key(results_by_modality),
         "generated_at": _isoformat(_utcnow()),
         "speech_features": {
             "primary_label": latest_speech.get("primary_label") if latest_speech else None,
@@ -804,12 +885,27 @@ def _build_turn_bundle_payload(db_session, session_id: str, consultation_turn_id
     }
 
 
-def _upsert_turn_bundle(db_session, session_id: str, consultation_turn_id: str) -> dict[str, Any]:
-    bundle_payload = _build_turn_bundle_payload(db_session, session_id, consultation_turn_id)
+def _upsert_turn_bundle(
+    db_session,
+    session_id: str,
+    turn_id: str,
+    *,
+    flow_run_id: str | None = None,
+    stage_id: str | None = None,
+    question_key: str | None = None,
+) -> dict[str, Any]:
+    bundle_payload = _build_turn_bundle_payload(
+        db_session,
+        session_id,
+        turn_id,
+        flow_run_id=flow_run_id,
+        stage_id=stage_id,
+        question_key=question_key,
+    )
     row = db_session.execute(
         select(MultimodalTurnBundle).where(
             MultimodalTurnBundle.session_id == session_id,
-            MultimodalTurnBundle.consultation_turn_id == consultation_turn_id,
+            MultimodalTurnBundle.turn_id == turn_id,
         )
     ).scalar_one_or_none()
 
@@ -817,13 +913,20 @@ def _upsert_turn_bundle(db_session, session_id: str, consultation_turn_id: str) 
     if row is None:
         row = MultimodalTurnBundle(
             session_id=session_id,
-            consultation_turn_id=consultation_turn_id,
+            turn_id=turn_id,
+            flow_run_id=flow_run_id,
+            stage_id=stage_id,
+            question_key=question_key,
             bundle_payload=bundle_payload,
             created_at=now,
             updated_at=now,
         )
         db_session.add(row)
     else:
+        row.turn_id = turn_id
+        row.flow_run_id = flow_run_id
+        row.stage_id = stage_id
+        row.question_key = question_key or row.question_key
         row.bundle_payload = bundle_payload
         row.updated_at = now
         db_session.add(row)
@@ -874,7 +977,7 @@ def submit_audio_turn(
             or effective_audio_emotion_wav_path is None
         ):
             materialized_audio = _materialize_transcription_wav(
-                consultation_turn_id=payload.consultation_turn_id,
+                turn_id=payload.turn_id,
                 audio_base64=resolved_audio_base64,
                 audio_format=resolved_audio_format,
             )
@@ -897,12 +1000,18 @@ def submit_audio_turn(
         _record_capture(
             db_session,
             session_id=session.id,
-            consultation_turn_id=payload.consultation_turn_id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
             modality="audio",
             capture_kind="audio_turn",
             source_ref_id=payload.frame_id,
+            sample_index=None,
+            sample_started_at=payload.captured_at,
+            sample_ended_at=payload.captured_at,
             capture_payload={
-                "consultation_session_id": payload.consultation_session_id,
+                "flow_run_id": payload.flow_run_id,
                 "question_key": payload.question_key,
                 "audio_format": resolved_audio_format,
                 "audio_uri": payload.original_audio_uri,
@@ -975,10 +1084,14 @@ def submit_audio_turn(
         _record_inference_result(
             db_session,
             session_id=session.id,
-            consultation_turn_id=payload.consultation_turn_id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
             modality="speech",
             source_kind="audio_turn",
             source_ref_id=payload.frame_id,
+            sample_id=None,
             inference_payload=speech_result,
             captured_at=captured_at,
         )
@@ -1002,10 +1115,14 @@ def submit_audio_turn(
             _record_inference_result(
                 db_session,
                 session_id=session.id,
-                consultation_turn_id=payload.consultation_turn_id,
+                turn_id=payload.turn_id,
+                flow_run_id=payload.flow_run_id,
+                stage_id=payload.stage_id,
+                question_key=payload.question_key,
                 modality="text",
                 source_kind="transcript_text",
                 source_ref_id=payload.frame_id,
+                sample_id=None,
                 inference_payload=text_result,
                 captured_at=captured_at,
             )
@@ -1013,7 +1130,14 @@ def submit_audio_turn(
         _refresh_live_payload(session, *(result for result in [speech_result, text_result] if result is not None))
         db_session.add(session)
         db_session.flush()
-        bundle_payload = _upsert_turn_bundle(db_session, session.id, payload.consultation_turn_id)
+        bundle_payload = _upsert_turn_bundle(
+            db_session,
+            session.id,
+            payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
+        )
         db_session.flush()
         db_session.refresh(session)
         return {
@@ -1042,21 +1166,27 @@ def submit_face_capture(
         capture_row = _record_capture(
             db_session,
             session_id=session.id,
-            consultation_turn_id=payload.consultation_turn_id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
             modality="face",
             capture_kind="frame",
-            source_ref_id=str(payload.frame_index),
+            source_ref_id=str(payload.sample_index),
+            sample_index=payload.sample_index,
+            sample_started_at=payload.sample_started_at,
+            sample_ended_at=payload.sample_ended_at,
             capture_payload={
-                "consultation_session_id": payload.consultation_session_id,
+                "flow_run_id": payload.flow_run_id,
                 "question_key": payload.question_key,
                 "mime_type": payload.mime_type,
                 "image_format": payload.image_format,
                 "image_base64_length": len(payload.image_base64),
-                "capture_started_at": _isoformat(payload.capture_started_at),
-                "capture_ended_at": _isoformat(payload.capture_ended_at),
-                "frame_index": payload.frame_index,
+                "sample_started_at": _isoformat(payload.sample_started_at),
+                "sample_ended_at": _isoformat(payload.sample_ended_at),
+                "sample_index": payload.sample_index,
             },
-            captured_at=payload.capture_ended_at,
+            captured_at=payload.sample_ended_at,
         )
 
         raw_result = _extract_result_or_raise(
@@ -1065,8 +1195,8 @@ def submit_face_capture(
                     image_base64=payload.image_base64,
                     image_format=payload.image_format,
                     session_id=session.id,
-                    frame_id=payload.frame_id or f"face-{payload.frame_index}",
-                    timestamp=_isoformat(payload.capture_ended_at),
+                    frame_id=payload.frame_id or f"face-{payload.sample_index}",
+                    timestamp=_isoformat(payload.sample_ended_at),
                 )
             )
         )
@@ -1074,20 +1204,31 @@ def submit_face_capture(
         _record_inference_result(
             db_session,
             session_id=session.id,
-            consultation_turn_id=payload.consultation_turn_id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
             modality="face",
             source_kind="frame",
-            source_ref_id=str(payload.frame_index),
+            source_ref_id=str(payload.sample_index),
+            sample_id=capture_row.id,
             inference_payload=face_result,
-            captured_at=payload.capture_ended_at,
+            captured_at=payload.sample_ended_at,
         )
 
         _refresh_live_payload(session, face_result)
         db_session.add(session)
         turn_bundle = None
-        if payload.consultation_turn_id:
+        if payload.turn_id:
             db_session.flush()
-            turn_bundle = _upsert_turn_bundle(db_session, session.id, payload.consultation_turn_id)
+            turn_bundle = _upsert_turn_bundle(
+                db_session,
+                session.id,
+                payload.turn_id,
+                flow_run_id=payload.flow_run_id,
+                stage_id=payload.stage_id,
+                question_key=payload.question_key,
+            )
         db_session.flush()
         return {
             "capture_id": capture_row.id,
@@ -1099,8 +1240,8 @@ def submit_face_capture(
             "primary_score": face_result["primary_score"],
             "top_3_labels": face_result["top_3_labels"],
             "quality_flags": face_result["quality_flags"],
-            "capture_started_at": face_result["capture_started_at"],
-            "capture_ended_at": face_result["capture_ended_at"],
+            "sample_started_at": face_result["sample_started_at"],
+            "sample_ended_at": face_result["sample_ended_at"],
             "created_at": _isoformat(capture_row.created_at),
             "turn_bundle": turn_bundle,
         }
@@ -1120,21 +1261,27 @@ def submit_pose_capture(
         capture_row = _record_capture(
             db_session,
             session_id=session.id,
-            consultation_turn_id=payload.consultation_turn_id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
             modality="pose",
             capture_kind="frame",
-            source_ref_id=str(payload.frame_index),
+            source_ref_id=str(payload.sample_index),
+            sample_index=payload.sample_index,
+            sample_started_at=payload.sample_started_at,
+            sample_ended_at=payload.sample_ended_at,
             capture_payload={
-                "consultation_session_id": payload.consultation_session_id,
+                "flow_run_id": payload.flow_run_id,
                 "question_key": payload.question_key,
                 "mime_type": payload.mime_type,
                 "image_format": payload.image_format,
                 "image_base64_length": len(payload.image_base64),
-                "capture_started_at": _isoformat(payload.capture_started_at),
-                "capture_ended_at": _isoformat(payload.capture_ended_at),
-                "frame_index": payload.frame_index,
+                "sample_started_at": _isoformat(payload.sample_started_at),
+                "sample_ended_at": _isoformat(payload.sample_ended_at),
+                "sample_index": payload.sample_index,
             },
-            captured_at=payload.capture_ended_at,
+            captured_at=payload.sample_ended_at,
         )
 
         raw_result = _extract_result_or_raise(
@@ -1143,8 +1290,8 @@ def submit_pose_capture(
                     image_base64=payload.image_base64,
                     image_format=payload.image_format,
                     session_id=session.id,
-                    frame_id=payload.frame_id or f"pose-{payload.frame_index}",
-                    timestamp=_isoformat(payload.capture_ended_at),
+                    frame_id=payload.frame_id or f"pose-{payload.sample_index}",
+                    timestamp=_isoformat(payload.sample_ended_at),
                 )
             )
         )
@@ -1152,20 +1299,31 @@ def submit_pose_capture(
         _record_inference_result(
             db_session,
             session_id=session.id,
-            consultation_turn_id=payload.consultation_turn_id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
             modality="pose",
             source_kind="frame",
-            source_ref_id=str(payload.frame_index),
+            source_ref_id=str(payload.sample_index),
+            sample_id=capture_row.id,
             inference_payload=pose_result,
-            captured_at=payload.capture_ended_at,
+            captured_at=payload.sample_ended_at,
         )
 
         _refresh_live_payload(session, pose_result)
         db_session.add(session)
         turn_bundle = None
-        if payload.consultation_turn_id:
+        if payload.turn_id:
             db_session.flush()
-            turn_bundle = _upsert_turn_bundle(db_session, session.id, payload.consultation_turn_id)
+            turn_bundle = _upsert_turn_bundle(
+                db_session,
+                session.id,
+                payload.turn_id,
+                flow_run_id=payload.flow_run_id,
+                stage_id=payload.stage_id,
+                question_key=payload.question_key,
+            )
         db_session.flush()
         return {
             "capture_id": capture_row.id,
@@ -1177,8 +1335,8 @@ def submit_pose_capture(
             "primary_score": pose_result["primary_score"],
             "top_3_labels": pose_result["top_3_labels"],
             "quality_flags": pose_result["quality_flags"],
-            "capture_started_at": pose_result["capture_started_at"],
-            "capture_ended_at": pose_result["capture_ended_at"],
+            "sample_started_at": pose_result["sample_started_at"],
+            "sample_ended_at": pose_result["sample_ended_at"],
             "created_at": _isoformat(capture_row.created_at),
             "turn_bundle": turn_bundle,
         }
@@ -1190,7 +1348,7 @@ def get_multimodal_live(session_id: str, acting_user_id: str | None = None) -> d
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
-        live_payload = dict(session.latest_live_payload or {})
+        live_payload = dict(session.live_state_payload or {})
         return {
             "session_id": session.id,
             "updated_at": _isoformat(session.updated_at),
@@ -1203,7 +1361,7 @@ def get_multimodal_live(session_id: str, acting_user_id: str | None = None) -> d
 
 def get_multimodal_turn_bundle(
     session_id: str,
-    consultation_turn_id: str,
+    turn_id: str,
     acting_user_id: str | None = None,
 ) -> dict[str, Any]:
     with get_db_session() as db_session:
@@ -1215,7 +1373,7 @@ def get_multimodal_turn_bundle(
         row = db_session.execute(
             select(MultimodalTurnBundle).where(
                 MultimodalTurnBundle.session_id == session_id,
-                MultimodalTurnBundle.consultation_turn_id == consultation_turn_id,
+                MultimodalTurnBundle.turn_id == turn_id,
             )
         ).scalar_one_or_none()
         if row is None:

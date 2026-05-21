@@ -99,9 +99,9 @@ export default function ScaleQuestionnairePage() {
       user_id: "assessment-preview-user",
       status: "waiting_user_input",
       workflow_id: "assessment-preview",
-      current_prompt_key: `assessment-${currentQuestion.id}`,
-      current_prompt_question_text: currentQuestion.text,
-      current_prompt_subtitle_text: currentQuestion.text,
+      current_question_key: `assessment-${currentQuestion.id}`,
+      current_question_text: currentQuestion.text,
+      current_question_subtitle_text: currentQuestion.text,
       current_stage: {
         stage_id: "assessment",
         stage_label: "量表评估",

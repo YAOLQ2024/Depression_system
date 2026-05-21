@@ -19,7 +19,19 @@ class MultimodalInferenceResult(Base):
         nullable=False,
         index=True,
     )
-    consultation_turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    flow_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
+    stage_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    question_key: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+    sample_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     modality: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     source_ref_id: Mapped[str | None] = mapped_column(String(128), nullable=True)

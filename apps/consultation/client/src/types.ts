@@ -61,19 +61,26 @@ export type ConsultationQuestionItem = {
 export type ConsultationTurnRecord = {
   turn_id: string;
   session_id: string;
-  workflow_stage_id?: string | null;
+  encounter_session_id?: string | null;
+  consultation_flow_run_id?: string | null;
   stage_id?: string | null;
   node_id?: string | null;
   turn_index?: number | null;
-  prompt_key?: string | null;
-  prompt_order?: number | null;
-  prompt_question_text?: string | null;
+  question_key?: string | null;
+  question_order?: number | null;
+  question_text?: string | null;
+  question_subtitle_text?: string | null;
   input_type: string;
   raw_input?: string | null;
   audio_uri?: string | null;
+  original_audio_uri?: string | null;
+  normalized_wav_uri?: string | null;
   transcript_text?: string | null;
   transcript_source?: string | null;
-  multimodal_bundle_payload?: Record<string, unknown> | null;
+  turn_summary_payload?: Record<string, unknown> | null;
+  branch_taken?: string | null;
+  turn_window_started_at?: string | null;
+  turn_window_completed_at?: string | null;
   response_started_at?: string | null;
   response_completed_at?: string | null;
   created_at?: string;
@@ -141,6 +148,8 @@ export type ConsultationMultimodalLive = {
 export type ConsultationTurnMultimodalBundle = {
   turn_id?: string | null;
   session_id?: string | null;
+  flow_run_id?: string | null;
+  stage_id?: string | null;
   question_key?: string | null;
   generated_at?: string | null;
   speech_features?: Record<string, unknown>;
@@ -152,6 +161,7 @@ export type ConsultationTurnMultimodalBundle = {
 
 export type ConsultationSession = {
   session_id: string;
+  encounter_session_id?: string | null;
   user_id: string;
   workflow_id?: string | null;
   script_bundle?: string | null;
@@ -163,14 +173,15 @@ export type ConsultationSession = {
   workflow_stage_id?: string | null;
   current_stage_id?: string | null;
   current_node_id?: string | null;
-  current_prompt_key?: string | null;
-  current_prompt_order?: number | null;
-  current_prompt_video_asset_id?: string | null;
-  current_prompt_video_uri?: string | null;
-  current_prompt_question_text?: string | null;
-  current_prompt_subtitle_text?: string | null;
+  current_question_key?: string | null;
+  current_question_order?: number | null;
+  current_question_video_asset_id?: string | null;
+  current_question_video_uri?: string | null;
+  current_question_text?: string | null;
+  current_question_subtitle_text?: string | null;
   current_stage?: ConsultationStageProgress | null;
   status: string;
+  current_turn_id?: string | null;
   assigned_doctor_persona?: string | null;
   requires_human_review?: boolean;
   current_prompt?: string | null;
@@ -229,7 +240,8 @@ export type AssessmentResult = {
 export type AssessmentSession = {
   session_id: string;
   user_id: string;
-  consultation_session_id?: string | null;
+  encounter_session_id?: string | null;
+  source_consultation_flow_run_id?: string | null;
   status: string;
   required_scales: string[];
   selected_scales: string[];

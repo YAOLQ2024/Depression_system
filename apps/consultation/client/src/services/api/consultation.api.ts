@@ -70,9 +70,9 @@ function buildCaptureFormData(payload: ConsultationMultimodalCapturePayload) {
   if (payload.turn_id) {
     formData.append("turn_id", payload.turn_id);
   }
-  formData.append("capture_started_at", payload.capture_started_at);
-  formData.append("capture_ended_at", payload.capture_ended_at);
-  formData.append("frame_index", String(payload.frame_index));
+  formData.append("sample_started_at", payload.sample_started_at);
+  formData.append("sample_ended_at", payload.sample_ended_at);
+  formData.append("sample_index", String(payload.sample_index));
   formData.append("mime_type", payload.mime_type);
   formData.append("image_file", payload.image_file);
   return formData;

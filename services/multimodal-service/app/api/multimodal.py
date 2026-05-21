@@ -159,9 +159,8 @@ async def post_audio_turn(
                 )
             audio_turn = await create_audio_turn(
                 multimodal_session_id=session_id,
-                consultation_session_id=str(form.get("consultation_session_id") or ""),
+                flow_run_id=str(form.get("flow_run_id") or ""),
                 question_key=str(form.get("question_key") or ""),
-                prompt_key=str(form.get("prompt_key") or "") or None,
                 stage_id=str(form.get("stage_id") or ""),
                 node_id=str(form.get("node_id") or ""),
                 duration_ms=_parse_optional_int(form.get("duration_ms"), field_name="duration_ms"),
@@ -208,27 +207,29 @@ def get_audio_turn_status(session_id: str, audio_turn_id: str):
 @router.post("/sessions/{session_id}/captures/face")
 async def post_face_capture(
     session_id: str,
-    consultation_session_id: str = Form(...),
+    flow_run_id: str = Form(...),
     question_key: str = Form(...),
+    stage_id: str | None = Form(default=None),
     turn_id: str | None = Form(default=None),
-    capture_started_at: str = Form(...),
-    capture_ended_at: str = Form(...),
-    frame_index: int = Form(...),
+    sample_started_at: str = Form(...),
+    sample_ended_at: str = Form(...),
+    sample_index: int = Form(...),
     mime_type: str = Form(...),
     image_file: UploadFile = File(...),
     x_mcs_user_id: str | None = Header(default=None),
 ):
     payload = SubmitFrameCaptureRequest(
-        consultation_session_id=consultation_session_id,
+        flow_run_id=flow_run_id,
         question_key=question_key,
-        consultation_turn_id=turn_id,
-        capture_started_at=capture_started_at,
-        capture_ended_at=capture_ended_at,
-        frame_index=frame_index,
+        stage_id=stage_id,
+        turn_id=turn_id,
+        sample_started_at=sample_started_at,
+        sample_ended_at=sample_ended_at,
+        sample_index=sample_index,
         mime_type=mime_type,
         image_format=_detect_image_format(mime_type, image_file.filename),
         image_base64=await _to_base64(image_file),
-        frame_id=f"face-{frame_index}",
+        frame_id=f"face-{sample_index}",
     )
     try:
         result = submit_face_capture(session_id, payload, acting_user_id=x_mcs_user_id)
@@ -240,27 +241,29 @@ async def post_face_capture(
 @router.post("/sessions/{session_id}/captures/pose")
 async def post_pose_capture(
     session_id: str,
-    consultation_session_id: str = Form(...),
+    flow_run_id: str = Form(...),
     question_key: str = Form(...),
+    stage_id: str | None = Form(default=None),
     turn_id: str | None = Form(default=None),
-    capture_started_at: str = Form(...),
-    capture_ended_at: str = Form(...),
-    frame_index: int = Form(...),
+    sample_started_at: str = Form(...),
+    sample_ended_at: str = Form(...),
+    sample_index: int = Form(...),
     mime_type: str = Form(...),
     image_file: UploadFile = File(...),
     x_mcs_user_id: str | None = Header(default=None),
 ):
     payload = SubmitFrameCaptureRequest(
-        consultation_session_id=consultation_session_id,
+        flow_run_id=flow_run_id,
         question_key=question_key,
-        consultation_turn_id=turn_id,
-        capture_started_at=capture_started_at,
-        capture_ended_at=capture_ended_at,
-        frame_index=frame_index,
+        stage_id=stage_id,
+        turn_id=turn_id,
+        sample_started_at=sample_started_at,
+        sample_ended_at=sample_ended_at,
+        sample_index=sample_index,
         mime_type=mime_type,
         image_format=_detect_image_format(mime_type, image_file.filename),
         image_base64=await _to_base64(image_file),
-        frame_id=f"pose-{frame_index}",
+        frame_id=f"pose-{sample_index}",
     )
     try:
         result = submit_pose_capture(session_id, payload, acting_user_id=x_mcs_user_id)
@@ -278,16 +281,16 @@ def get_live(session_id: str, x_mcs_user_id: str | None = Header(default=None)):
     return success_response(result)
 
 
-@router.get("/sessions/{session_id}/turns/{consultation_turn_id}/bundle")
+@router.get("/sessions/{session_id}/turns/{turn_id}/bundle")
 def get_turn_bundle(
     session_id: str,
-    consultation_turn_id: str,
+    turn_id: str,
     x_mcs_user_id: str | None = Header(default=None),
 ):
     try:
         result = get_multimodal_turn_bundle(
             session_id,
-            consultation_turn_id,
+            turn_id,
             acting_user_id=x_mcs_user_id,
         )
     except (SessionServiceError, StoreServiceError) as exc:

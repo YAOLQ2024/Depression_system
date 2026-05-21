@@ -12,7 +12,7 @@ from app.database import Base
 class MultimodalTurnBundle(Base):
     __tablename__ = "multimodal_turn_bundles"
     __table_args__ = (
-        UniqueConstraint("session_id", "consultation_turn_id", name="uq_multimodal_turn_bundles_session_turn"),
+        UniqueConstraint("session_id", "turn_id", name="uq_multimodal_turn_bundles_session_turn"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -22,7 +22,18 @@ class MultimodalTurnBundle(Base):
         nullable=False,
         index=True,
     )
-    consultation_turn_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    turn_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    flow_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
+    stage_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    question_key: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
     bundle_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
