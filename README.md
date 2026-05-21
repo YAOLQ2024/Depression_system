@@ -71,64 +71,49 @@
 
 详细协作规范见：
 
-- [CONTRIBUTING.md](/home/ZR/data2/MCS/CONTRIBUTING.md)
+- [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## 本地运行
 
 以下命令默认都在仓库根目录 `depression-system/` 下执行。
 
-核心链路：
+最常用的是下面这几条。
 
-```bash
-make up-core
-```
+### 1. 默认启动
 
-协作骨架全起（不含可选 AI）：
-
-```bash
-make up
-```
-
-包含可选 AI：
-
-```bash
-make up-ai
-```
-
-配置检查：
-
-```bash
-make compose-config
-make phase-check
-```
-
-常用 Docker Compose 命令：
-
-整套开发环境一行重建并启动：
+整套开发环境重建并启动：
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml up -d --build
 ```
 
-整套开发环境拆成两步：
+### 2. 只让 multimodal-service 用 GPU
 
 ```bash
-docker compose -f infra/compose/docker-compose.dev.yml build
-docker compose -f infra/compose/docker-compose.dev.yml up -d
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build multimodal-service
 ```
 
-只重建并启动 `consultation` 及其依赖：
+如果镜像已经 build 过，只重启 GPU 版：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d multimodal-service
+```
+
+### 3. 只重建某个服务
+
+重建前端：
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml up -d --build consultation
 ```
 
-只启动 `consultation` 拆成两步：
+重建多模态服务（CPU）：
 
 ```bash
-docker compose -f infra/compose/docker-compose.dev.yml build consultation
-docker compose -f infra/compose/docker-compose.dev.yml up -d consultation
+docker compose -f infra/compose/docker-compose.dev.yml up -d --build multimodal-service
 ```
+
+### 4. 看状态和日志
 
 查看容器状态：
 
@@ -136,21 +121,32 @@ docker compose -f infra/compose/docker-compose.dev.yml up -d consultation
 docker compose -f infra/compose/docker-compose.dev.yml ps
 ```
 
-查看常用日志：
+查看日志：
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml logs -f consultation
 docker compose -f infra/compose/docker-compose.dev.yml logs -f gateway-service
+docker compose -f infra/compose/docker-compose.dev.yml logs -f multimodal-service
 ```
 
-停止并移除当前 compose 环境：
+### 5. 停止环境
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml down
 ```
 
+### 6. multimodal-service 构建说明
+
+`multimodal-service` 已拆成分层依赖，第一次 build 仍然会慢；后续如果只改 `app/` 代码，再执行：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
+```
+
+预期会看到 `requirements-heavy.txt` 和 `requirements-app.txt` 对应层命中 `CACHED`。
+
 ## 主要文档
 
-- [mcs_system_blueprint_v1.md](/home/ZR/data2/MCS/docs/mcs_system_blueprint_v1.md)
-- [docs/services/README.md](/home/ZR/data2/MCS/docs/services/README.md)
-- [docs/apps/README.md](/home/ZR/data2/MCS/docs/apps/README.md)
+- [mcs_system_blueprint_v1.md](./docs/mcs_system_blueprint_v1.md)
+- [docs/services/README.md](./docs/services/README.md)
+- [docs/apps/README.md](./docs/apps/README.md)

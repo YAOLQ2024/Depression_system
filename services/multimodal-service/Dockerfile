@@ -6,7 +6,8 @@ ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST} \
     PIP_DEFAULT_TIMEOUT=120 \
-    PIP_RETRIES=10
+    PIP_RETRIES=10 \
+    LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.11/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/lib/python3.11/site-packages/nvidia/cuda_cupti/lib:/usr/local/lib/python3.11/site-packages/nvidia/cufft/lib:/usr/local/lib/python3.11/site-packages/nvidia/curand/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusolver/lib:/usr/local/lib/python3.11/site-packages/nvidia/cusparse/lib:/usr/local/lib/python3.11/site-packages/nvidia/nccl/lib:/usr/local/lib/python3.11/site-packages/nvidia/nvtx/lib:/usr/local/lib/python3.11/site-packages/nvidia/nvjitlink/lib:${LD_LIBRARY_PATH}
 
 WORKDIR /app
 RUN set -eux; \
@@ -30,8 +31,14 @@ RUN set -eux; \
         sleep 5; \
     done; \
     rm -rf /var/lib/apt/lists/*
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
+COPY requirements-heavy.txt requirements-app.txt requirements.txt ./
+RUN pip install --no-cache-dir -r requirements-heavy.txt
+RUN pip install --no-cache-dir -r requirements-app.txt
+COPY alembic ./alembic
+COPY app ./app
+COPY runtime-assets ./runtime-assets
+COPY scripts ./scripts
+COPY tests ./tests
+COPY alembic.ini pyproject.toml README.md seed.py .env.example ./
 RUN sed -i 's/\r$//' scripts/start.sh && chmod +x scripts/start.sh
 CMD ["./scripts/start.sh"]

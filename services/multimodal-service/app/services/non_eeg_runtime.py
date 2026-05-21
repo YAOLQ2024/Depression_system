@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 from pathlib import Path
 from typing import Any
 
+import onnxruntime as ort
 from app.config import get_settings
 
 settings = get_settings()
@@ -22,6 +24,8 @@ from infer_face import build_runtime_engine as build_face_runtime_engine  # type
 from infer_pose import build_runtime_engine as build_pose_runtime_engine  # type: ignore
 from infer_pose import close_runtime_engine as close_pose_runtime_engine  # type: ignore
 
+logger = logging.getLogger(__name__)
+
 
 class NonEegRuntimeStore:
     def __init__(self) -> None:
@@ -30,7 +34,18 @@ class NonEegRuntimeStore:
         self._pose_engines: dict[str, Any] = {}
 
     def _providers(self) -> list[str]:
-        return [settings["model_provider"]]
+        requested = list(settings["model_providers"])
+        available = set(ort.get_available_providers())
+        selected = [provider for provider in requested if provider in available]
+        if not selected:
+            selected = ["CPUExecutionProvider"]
+        logger.info(
+            "Resolved ONNX providers requested=%s available=%s selected=%s",
+            requested,
+            sorted(available),
+            selected,
+        )
+        return selected
 
     def get_text_engine(self):
         return self._get_cached(

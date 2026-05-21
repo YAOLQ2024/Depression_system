@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+"""FastAPI entrypoint for the multimodal-service runtime."""
+
+# Keep this module lightweight so Docker rebuild tests only touch the app layer.
+
 from fastapi import FastAPI
 
 from app.api.multimodal import router as multimodal_router
