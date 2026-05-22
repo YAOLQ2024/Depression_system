@@ -17,12 +17,36 @@ branch_labels = None
 depends_on = None
 
 
+def _table_names(inspector: sa.Inspector) -> set[str]:
+    return set(inspector.get_table_names())
+
+
+def _column_names(inspector: sa.Inspector, table_name: str) -> set[str]:
+    return {column["name"] for column in inspector.get_columns(table_name)}
+
+
 def upgrade() -> None:
-    op.add_column(
-        "multimodal_audio_turns",
-        sa.Column("normalized_wav_uri", sa.Text(), nullable=True),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = _table_names(inspector)
+    if "multimodal_audio_turns" not in existing_tables:
+        return
+
+    audio_columns = _column_names(inspector, "multimodal_audio_turns")
+    if "normalized_wav_uri" not in audio_columns:
+        op.add_column(
+            "multimodal_audio_turns",
+            sa.Column("normalized_wav_uri", sa.Text(), nullable=True),
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("multimodal_audio_turns", "normalized_wav_uri")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = _table_names(inspector)
+    if "multimodal_audio_turns" not in existing_tables:
+        return
+
+    audio_columns = _column_names(inspector, "multimodal_audio_turns")
+    if "normalized_wav_uri" in audio_columns:
+        op.drop_column("multimodal_audio_turns", "normalized_wav_uri")
