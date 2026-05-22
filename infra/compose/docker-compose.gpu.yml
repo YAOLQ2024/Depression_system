@@ -1,0 +1,9 @@
+services:
+  multimodal-service:
+    runtime: nvidia
+    gpus: all
+    environment:
+      ASR_DEVICE: cuda
+      MODEL_PROVIDERS: CUDAExecutionProvider,CPUExecutionProvider
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility

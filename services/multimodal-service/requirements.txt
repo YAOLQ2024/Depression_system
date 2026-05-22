@@ -1,19 +1,2 @@
-fastapi==0.115.0
-python-multipart==0.0.9
-uvicorn[standard]==0.30.6
-psycopg[binary]==3.2.3
-sqlalchemy==2.0.36
-alembic==1.13.3
-pydantic-settings==2.6.0
-redis==5.2.0
-minio==7.2.20
-dataoceanai-dolphin==20260513
-torch==2.5.1
-torchaudio==2.5.1
-numpy==1.26.4
-onnxruntime==1.20.1
-transformers==4.46.2
-huggingface_hub==0.35.3
-soundfile==0.12.1
-opencv-python-headless==4.10.0.84
-mediapipe==0.10.14
+-r requirements-app.txt
+-r requirements-heavy.txt
