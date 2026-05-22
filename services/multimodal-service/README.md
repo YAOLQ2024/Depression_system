@@ -59,8 +59,13 @@
 - `DATABASE_URL`
 - `MINIO_ENDPOINT`
 - `MULTIMODAL_BUCKET`
-- `MODEL_PROVIDER`
+- `MODEL_PROVIDERS`
 - `POSE_WINDOW`
+
+`MODEL_PROVIDERS` 支持逗号分隔 provider 顺序，例如：
+
+- CPU 默认：`CPUExecutionProvider`
+- GPU 优先：`CUDAExecutionProvider,CPUExecutionProvider`
 
 ## 当前 Step 4D 已完成
 

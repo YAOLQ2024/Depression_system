@@ -17,6 +17,14 @@ def _as_int(value: str | None, default: int) -> int:
     return int(value)
 
 
+def _as_csv_list(value: str | None, default: list[str]) -> list[str]:
+    if value is None:
+        return list(default)
+    items = [item.strip() for item in value.split(",")]
+    normalized = [item for item in items if item]
+    return normalized or list(default)
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> dict:
     service_root = Path(__file__).resolve().parents[1]
@@ -27,6 +35,11 @@ def get_settings() -> dict:
         )
     )
     model_root = runtime_assets_dir / "models"
+
+    model_providers = _as_csv_list(
+        os.getenv("MODEL_PROVIDERS") or os.getenv("MODEL_PROVIDER"),
+        ["CPUExecutionProvider"],
+    )
 
     return {
         "app_name": os.getenv("APP_NAME", "Multimodal Service"),
@@ -62,7 +75,7 @@ def get_settings() -> dict:
         "upload_max_bytes": 25 * 1024 * 1024,
         "upload_max_duration_ms": 60_000,
         "upload_processing_dir": runtime_assets_dir / "tmp",
-        "model_provider": os.getenv("MODEL_PROVIDER", "CPUExecutionProvider"),
+        "model_providers": model_providers,
         "pose_window": int(os.getenv("POSE_WINDOW", "96")),
         "model_root": str(model_root),
         "text_model_dir": str(model_root / "text_emotion"),
