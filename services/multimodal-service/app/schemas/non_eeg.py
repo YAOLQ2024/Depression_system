@@ -23,5 +23,6 @@ class FrameEmotionInferRequest(BaseModel):
     image_base64: str = Field(..., description="Base64 encoded image bytes")
     image_format: str = Field(..., description="Image format, e.g. jpeg/png")
     session_id: str | None = Field(default=None)
+    turn_id: str | None = Field(default=None)
     frame_id: str | None = Field(default=None)
     timestamp: str | None = Field(default=None, description="ISO 8601 timestamp")

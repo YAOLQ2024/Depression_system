@@ -77,6 +77,10 @@ def get_settings() -> dict:
         "upload_processing_dir": runtime_assets_dir / "tmp",
         "model_providers": model_providers,
         "pose_window": int(os.getenv("POSE_WINDOW", "96")),
+        "pose_state_idle_ttl_seconds": _as_int(
+            os.getenv("POSE_STATE_IDLE_TTL_SECONDS"),
+            120,
+        ),
         "model_root": str(model_root),
         "text_model_dir": str(model_root / "text_emotion"),
         "audio_model_dir": str(model_root / "audio_emotion"),

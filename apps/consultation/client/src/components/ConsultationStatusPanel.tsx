@@ -7,6 +7,7 @@ import { cn } from "../lib/utils";
 import type {
   ConsultationMultimodalLive,
   ConsultationSession,
+  ConsultationTurnMultimodalBundle,
   FacePoseMultimodalLive,
   MultimodalRankedLabel,
   SpeechMultimodalLive,
@@ -83,6 +84,9 @@ function getPrimaryLabel(label?: string | null, status?: string) {
   if (label) {
     return label;
   }
+  if (status === "failed") {
+    return "识别失败";
+  }
   return status === "ready" ? "已采样" : "等待中";
 }
 
@@ -90,10 +94,79 @@ function getTopLabels(labels?: MultimodalRankedLabel[]) {
   return (labels || []).slice(0, 4);
 }
 
-function getFaceDetail(live: FacePoseMultimodalLive) {
+function readBundleFaceSummary(bundle?: ConsultationTurnMultimodalBundle | null) {
+  const face = (bundle?.face_features || {}) as Record<string, unknown>;
+  const labelDistributionRaw = Array.isArray(face.label_distribution) ? face.label_distribution : [];
+  const labelDistribution = labelDistributionRaw
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const label = typeof record.label === "string" ? record.label : "";
+      const ratio = typeof record.ratio === "number" ? record.ratio : 0;
+      const count = typeof record.count === "number" ? record.count : 0;
+      if (!label) {
+        return null;
+      }
+      return { label, score: ratio, count };
+    })
+    .filter((item): item is { label: string; score: number; count: number } => Boolean(item));
+  return {
+    primary_label: typeof face.primary_label === "string" ? face.primary_label : null,
+    primary_score: typeof face.primary_score === "number" ? face.primary_score : null,
+    sample_count: typeof face.sample_count === "number" ? face.sample_count : null,
+    valid_sample_count: typeof face.valid_sample_count === "number" ? face.valid_sample_count : null,
+    label_distribution: labelDistribution,
+  };
+}
+
+function readBundlePoseSummary(bundle?: ConsultationTurnMultimodalBundle | null) {
+  const pose = (bundle?.pose_features || {}) as Record<string, unknown>;
+  const labelDistributionRaw = Array.isArray(pose.label_distribution) ? pose.label_distribution : [];
+  const labelDistribution = labelDistributionRaw
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const label = typeof record.label === "string" ? record.label : "";
+      const ratio = typeof record.ratio === "number" ? record.ratio : 0;
+      const count = typeof record.count === "number" ? record.count : 0;
+      if (!label) {
+        return null;
+      }
+      return { label, score: ratio, count };
+    })
+    .filter((item): item is { label: string; score: number; count: number } => Boolean(item));
+  return {
+    primary_label: typeof pose.primary_label === "string" ? pose.primary_label : null,
+    primary_score: typeof pose.primary_score === "number" ? pose.primary_score : null,
+    sample_count: typeof pose.sample_count === "number" ? pose.sample_count : null,
+    valid_sample_count: typeof pose.valid_sample_count === "number" ? pose.valid_sample_count : null,
+    label_distribution: labelDistribution,
+  };
+}
+
+function getFaceDetail(
+  live: FacePoseMultimodalLive,
+  bundleFace?: { sample_count: number | null; valid_sample_count: number | null } | null,
+) {
   const parts: string[] = [];
-  if (typeof live.sample_count === "number" && live.sample_count > 0) {
-    parts.push(`样本 ${live.sample_count}`);
+  if (live.status === "failed" && live.error_message) {
+    return live.error_message;
+  }
+  const sampleCount = bundleFace?.sample_count ?? live.sample_count;
+  const validSampleCount = bundleFace?.valid_sample_count ?? live.valid_sample_count;
+  if (typeof sampleCount === "number" && sampleCount > 0) {
+    if (typeof validSampleCount === "number" && validSampleCount >= 0) {
+      parts.push(`样本 ${validSampleCount}/${sampleCount}`);
+    } else {
+      parts.push(`样本 ${sampleCount}`);
+    }
+  }
+  if (live.quality_flags?.no_face) {
+    parts.push("未检测到人脸");
   }
   if (live.latest_capture_at) {
     parts.push("已更新");
@@ -101,13 +174,36 @@ function getFaceDetail(live: FacePoseMultimodalLive) {
   return parts.join(" · ") || "等待采样";
 }
 
-function getPoseDetail(live: FacePoseMultimodalLive) {
+function getPoseDetail(
+  live: FacePoseMultimodalLive,
+  bundlePose?: { sample_count: number | null; valid_sample_count: number | null } | null,
+) {
+  if (live.status === "failed" && live.error_message) {
+    return live.error_message;
+  }
+  const parts: string[] = [];
+  const sampleCount = bundlePose?.sample_count ?? live.sample_count;
+  const validSampleCount = bundlePose?.valid_sample_count ?? live.valid_sample_count;
+  if (typeof sampleCount === "number" && sampleCount > 0) {
+    if (typeof validSampleCount === "number" && validSampleCount >= 0) {
+      parts.push(`样本 ${validSampleCount}/${sampleCount}`);
+    } else {
+      parts.push(`样本 ${sampleCount}`);
+    }
+  }
+  if (live.quality_flags?.no_pose) {
+    parts.push("未检测到姿态");
+  }
   const flags = live.quality_flags || {};
   const ratios = Object.entries(flags)
     .filter(([, value]) => typeof value === "number" && (value as number) > 0)
     .slice(0, 2)
     .map(([key, value]) => `${key}:${formatPercent(value as number)}`);
-  return ratios.join(" · ") || "等待采样";
+  parts.push(...ratios);
+  if (live.latest_capture_at) {
+    parts.push("已更新");
+  }
+  return parts.join(" · ") || "等待采样";
 }
 
 function getVoiceDetail(live: SpeechMultimodalLive, isRecording: boolean) {
@@ -229,9 +325,14 @@ export function ConsultationStatusPanel({
   transcriptPending?: boolean;
 }) {
   const snapshot = resolveLiveData(consultation);
+  const currentTurnFaceBundle = readBundleFaceSummary(consultation.current_turn_bundle);
+  const currentTurnPoseBundle = readBundlePoseSummary(consultation.current_turn_bundle);
   const stageOrder = consultation.current_stage?.stage_order ?? consultation.current_question_item?.stage_order ?? 1;
   const eegSeries = buildEegSeries(stageOrder);
-  const faceLabels = getTopLabels(snapshot.face.top_3_labels);
+  const faceLabels =
+    currentTurnFaceBundle.label_distribution.length > 0
+      ? currentTurnFaceBundle.label_distribution
+      : getTopLabels(snapshot.face.top_3_labels);
   const textWords = snapshot.text.negative_terms || [];
 
   return (
@@ -251,7 +352,7 @@ export function ConsultationStatusPanel({
       </div>
 
       <div className="flex-1 flex flex-col gap-[3px] p-[3px]">
-        <SectionCard title="表情检测" rightStatus={snapshot.face.status === "ready" ? "ready" : "pending"}>
+        <SectionCard title="表情检测" rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}>
           <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[180px]">
             <div className="h-full overflow-hidden rounded-[16px] border border-white/8">
               <CameraPreview
@@ -261,7 +362,7 @@ export function ConsultationStatusPanel({
                 audioActive={isRecording}
                 title={cameraStatusTitle}
                 headlineText={cameraStatusTitle}
-                detailText={getFaceDetail(snapshot.face)}
+                detailText={getFaceDetail(snapshot.face, currentTurnFaceBundle)}
                 errorText={cameraError}
                 statusTone={cameraStatusTone}
                 audioStatusText={microphoneStatusText}
@@ -274,9 +375,11 @@ export function ConsultationStatusPanel({
                 </div>
                 <div>
                   <div className="text-[19px] font-bold leading-none text-emerald-400">
-                    {getPrimaryLabel(snapshot.face.primary_label, snapshot.face.status)}
+                    {getPrimaryLabel(currentTurnFaceBundle.primary_label || snapshot.face.primary_label, snapshot.face.status)}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-slate-300">{formatPercent(snapshot.face.primary_score)} 置信度</div>
+                  <div className="mt-0.5 text-[11px] text-slate-300">
+                    {formatPercent(currentTurnFaceBundle.primary_score ?? snapshot.face.primary_score)} 置信度
+                  </div>
                 </div>
               </div>
               <div className="mt-2 space-y-1.5">
@@ -315,15 +418,19 @@ export function ConsultationStatusPanel({
         </SectionCard>
 
         <div className="grid grid-cols-2 gap-[3px]">
-          <SectionCard title="姿态情绪检测" rightStatus={snapshot.pose.status === "ready" ? "ready" : "pending"}>
+          <SectionCard title="姿态情绪检测" rightStatus={snapshot.pose.status === "failed" ? "failed" : snapshot.pose.status === "ready" ? "ready" : "pending"}>
             <div className="flex h-full items-center gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
                 <Activity className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[18px] font-semibold text-slate-100">{getPrimaryLabel(snapshot.pose.primary_label, snapshot.pose.status)}</div>
-                <div className="mt-1 text-[12px] text-emerald-300">{formatPercent(snapshot.pose.primary_score)} 置信度</div>
-                <div className="mt-1 text-[11px] text-slate-400">{getPoseDetail(snapshot.pose)}</div>
+                <div className="text-[18px] font-semibold text-slate-100">
+                  {getPrimaryLabel(currentTurnPoseBundle.primary_label || snapshot.pose.primary_label, snapshot.pose.status)}
+                </div>
+                <div className="mt-1 text-[12px] text-emerald-300">
+                  {formatPercent(currentTurnPoseBundle.primary_score ?? snapshot.pose.primary_score)} 置信度
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">{getPoseDetail(snapshot.pose, currentTurnPoseBundle)}</div>
               </div>
             </div>
           </SectionCard>

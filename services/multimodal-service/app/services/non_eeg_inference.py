@@ -204,8 +204,9 @@ def infer_pose_emotion(request: FrameEmotionInferRequest) -> dict:
     except ValueError as exc:
         return error_response(str(exc), 4002)
     try:
-        engine = runtime_store.get_pose_engine(request.session_id)
-        _, result = predict_pose_frame(engine, frame)
+        engine = runtime_store.get_pose_engine()
+        turn_state = runtime_store.get_pose_turn_state(request.session_id, request.turn_id)
+        _, result = predict_pose_frame(engine, frame, turn_state)
         if result is None:
             result = build_pose_no_person_result()
         return success_response({"result": result})

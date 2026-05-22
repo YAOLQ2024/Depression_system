@@ -16,7 +16,13 @@ class PoseRuntimeEngine:
     labels: Dict[int, str]
     mp: object
     pose: object
+    pose_window: int = 96
+
+
+@dataclass
+class PoseTurnState:
     pose_buffer: Deque[np.ndarray] = field(default_factory=lambda: deque(maxlen=96))
+    last_used_at: float = field(default_factory=time.time)
 
 
 def resolve_providers(providers: Optional[Sequence[str]] = None):
@@ -78,8 +84,12 @@ def build_runtime_engine(model_path: str = "", pose_window: int = 96, providers:
         labels=labels,
         mp=mp,
         pose=pose,
-        pose_buffer=deque(maxlen=max(8, int(pose_window))),
+        pose_window=max(8, int(pose_window)),
     )
+
+
+def build_turn_state(pose_window: int = 96) -> PoseTurnState:
+    return PoseTurnState(pose_buffer=deque(maxlen=max(8, int(pose_window))))
 
 
 def pose_result_to_array(result) -> Optional[np.ndarray]:
@@ -173,7 +183,7 @@ def predict_sequence(engine: PoseRuntimeEngine, sequence: np.ndarray) -> Dict:
     }
 
 
-def predict_frame(engine: PoseRuntimeEngine, frame: np.ndarray):
+def predict_frame(engine: PoseRuntimeEngine, frame: np.ndarray, state: Optional[PoseTurnState] = None):
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = engine.pose.process(rgb)
     out = draw_pose(engine.mp, frame, result)
@@ -181,19 +191,21 @@ def predict_frame(engine: PoseRuntimeEngine, frame: np.ndarray):
     if pose_arr is None:
         return out, None
 
-    engine.pose_buffer.append(pose_arr)
-    if len(engine.pose_buffer) < 8:
+    turn_state = state or build_turn_state(engine.pose_window)
+    turn_state.last_used_at = time.time()
+    turn_state.pose_buffer.append(pose_arr)
+    if len(turn_state.pose_buffer) < 8:
         return out, {
             "modality": "pose",
             "label": "collecting",
             "score": 0.0,
-            "extra": {"frames": len(engine.pose_buffer)},
+            "extra": {"frames": len(turn_state.pose_buffer)},
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-    pose_seq = np.stack(list(engine.pose_buffer), axis=0)
+    pose_seq = np.stack(list(turn_state.pose_buffer), axis=0)
     pred = predict_sequence(engine, pose_seq)
-    pred["extra"]["frames"] = len(engine.pose_buffer)
+    pred["extra"]["frames"] = len(turn_state.pose_buffer)
     pred["extra"]["adapter"] = "mediapipe33_to_shared21_joint_mapping"
     return out, pred
 
