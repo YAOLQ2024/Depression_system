@@ -8,3 +8,9 @@ huggingface_hub==0.35.3
 soundfile==0.12.1
 opencv-python-headless==4.10.0.84
 mediapipe==0.10.14
+
+# Stabilize transitive dependencies that otherwise trigger slow resolver backtracking.
+protobuf==4.25.9
+jax==0.4.33
+jaxlib==0.4.33
+opencv-contrib-python==4.10.0.84
