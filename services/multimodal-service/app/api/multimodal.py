@@ -15,6 +15,7 @@ from app.schemas import (
     WarmupMultimodalSessionRequest,
 )
 from app.services.multimodal_session_service import (
+    clear_pose_turn_runtime_state,
     MultimodalServiceError as SessionServiceError,
     get_multimodal_live,
     get_multimodal_session,
@@ -296,3 +297,20 @@ def get_turn_bundle(
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response(result)
+
+
+@router.post("/sessions/{session_id}/turns/{turn_id}/pose-runtime/clear")
+def post_clear_pose_turn_runtime(
+    session_id: str,
+    turn_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        result = clear_pose_turn_runtime_state(
+            session_id,
+            turn_id,
+            acting_user_id=x_mcs_user_id,
+        )
+    except (SessionServiceError, StoreServiceError) as exc:
+        raise _translate_error(exc) from exc
+    return success_response(result, message="pose turn runtime cleared")

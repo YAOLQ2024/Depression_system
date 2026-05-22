@@ -129,12 +129,15 @@ export type FacePoseQualityFlags = Record<string, number | boolean | null>;
 
 export type FacePoseMultimodalLive = {
   status: string;
+  processing_status?: string | null;
   primary_label?: string | null;
   primary_score?: number | null;
   top_3_labels?: MultimodalRankedLabel[];
   quality_flags?: FacePoseQualityFlags;
   latest_capture_at?: string | null;
   sample_count?: number | null;
+  valid_sample_count?: number | null;
+  error_message?: string | null;
 };
 
 export type ConsultationMultimodalLive = {
@@ -196,6 +199,7 @@ export type ConsultationSession = {
   multimodal_session_id?: string | null;
   multimodal_live?: ConsultationMultimodalLive;
   multimodal_live_updated_at?: string | null;
+  current_turn_bundle?: ConsultationTurnMultimodalBundle | null;
   subtitle_history?: ConsultationSubtitleHistoryEntry[];
   created_at?: string;
   updated_at?: string;

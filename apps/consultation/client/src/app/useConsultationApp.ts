@@ -26,6 +26,7 @@ import {
 } from "../services/api/consultation.api";
 import type {
   ConsultationMultimodalCapturePayload,
+  ConsultationFrameCaptureResponse,
   SubmitConsultationTurnPayload,
   UpdateUserProfilePayload,
 } from "../services/api/contracts";
@@ -97,6 +98,25 @@ export function useConsultationApp() {
   );
 
   const currentScaleMeta = assessmentCatalog.find((item) => item.slug === assessment?.current_scale_slug) || null;
+
+  function mergeConsultationWithCurrentTurnBundle(nextConsultation: ConsultationSession) {
+    const currentBundle = consultation?.current_turn_bundle || null;
+    if (
+      currentBundle &&
+      currentBundle.turn_id &&
+      nextConsultation.current_turn_id &&
+      currentBundle.turn_id === nextConsultation.current_turn_id
+    ) {
+      return {
+        ...nextConsultation,
+        current_turn_bundle: currentBundle,
+      };
+    }
+    return {
+      ...nextConsultation,
+      current_turn_bundle: null,
+    };
+  }
 
   function getSessionStorageKey(userId?: string | null) {
     return userId ? `mcs_consultation_session:${userId}` : null;
@@ -238,7 +258,7 @@ export function useConsultationApp() {
 
     if (currentUser.profile_status === "completed") {
       const existingConsultation = await fetchExistingConsultation(currentUser.id);
-      setConsultation(existingConsultation);
+      setConsultation(existingConsultation ? mergeConsultationWithCurrentTurnBundle(existingConsultation) : existingConsultation);
 
       if (existingConsultation?.status === "handoff_ready") {
         const existingAssessment = await fetchExistingAssessment(currentUser.id);
@@ -359,7 +379,7 @@ export function useConsultationApp() {
 
       const started = await startConsultationSession(created.session_id);
 
-      setConsultation(started);
+      setConsultation(mergeConsultationWithCurrentTurnBundle(started));
       setMessage("正式问诊已开始。");
       return started;
     } catch (caught) {
@@ -381,7 +401,7 @@ export function useConsultationApp() {
     try {
       const updatedConsultation = await submitConsultationTurnRequest(consultation.session_id, payload);
 
-      setConsultation(updatedConsultation);
+      setConsultation(mergeConsultationWithCurrentTurnBundle(updatedConsultation));
       if (updatedConsultation.status === "handoff_ready") {
         setMessage("规则问诊已完成，当前可以进入量表问诊。");
       } else if (updatedConsultation.status === "paused_for_human_review") {
@@ -425,7 +445,7 @@ export function useConsultationApp() {
       const refreshedConsultation = await getConsultationSession(
         consultation.session_id,
       );
-      setConsultation(refreshedConsultation);
+      setConsultation(mergeConsultationWithCurrentTurnBundle(refreshedConsultation));
       return refreshedConsultation;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "刷新失败");
@@ -463,43 +483,107 @@ export function useConsultationApp() {
     }
 
     try {
-      return await getConsultationTurnMultimodalBundle(consultation.session_id, turnId);
+      const bundle = await getConsultationTurnMultimodalBundle(consultation.session_id, turnId);
+      setConsultation((current) =>
+        current && current.current_turn_id === turnId
+          ? {
+              ...current,
+              current_turn_bundle: bundle,
+            }
+          : current,
+      );
+      return bundle;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "读取多模态汇总失败");
       return null;
     }
   }
 
-  async function submitConsultationFaceCapture(payload: ConsultationMultimodalCapturePayload) {
+  function mergeFrameCaptureResponseIntoConsultation(
+    response: ConsultationFrameCaptureResponse,
+    modality: "face" | "pose",
+  ) {
+    setConsultation((current) => {
+      if (!current) {
+        return current;
+      }
+      const nextLive = {
+        ...(current.multimodal_live || { speech: { status: "pending" }, text: { status: "pending" }, face: { status: "pending" }, pose: { status: "pending" } }),
+      } as ConsultationMultimodalLive;
+      const existing = (nextLive[modality] || { status: "pending" }) as ConsultationMultimodalLive["face"];
+      const nextStatus =
+        response.processing_status === "failed"
+          ? "failed"
+          : response.primary_label || response.processing_status === "completed"
+            ? "ready"
+            : existing.status || "pending";
+      nextLive[modality] = {
+        ...existing,
+        status: nextStatus,
+        processing_status: response.processing_status || existing.processing_status,
+        primary_label: response.primary_label ?? existing.primary_label,
+        primary_score: response.primary_score ?? existing.primary_score,
+        top_3_labels: response.top_3_labels || existing.top_3_labels || [],
+        quality_flags: response.quality_flags || existing.quality_flags || {},
+        latest_capture_at: response.sample_ended_at ?? existing.latest_capture_at ?? null,
+        sample_count: response.sample_count ?? existing.sample_count ?? null,
+        valid_sample_count: response.valid_sample_count ?? existing.valid_sample_count ?? null,
+        error_message: response.error_message ?? existing.error_message ?? null,
+      };
+      return {
+        ...current,
+        multimodal_live: nextLive,
+        multimodal_live_updated_at: new Date().toISOString(),
+        current_turn_bundle:
+          response.turn_bundle && current.current_turn_id && response.turn_bundle.turn_id === current.current_turn_id
+            ? response.turn_bundle
+            : current.current_turn_bundle,
+      };
+    });
+  }
+
+  async function submitConsultationFrameCapture(
+    modality: "face" | "pose",
+    payload: ConsultationMultimodalCapturePayload,
+    request: (
+      sessionId: string,
+      capturePayload: ConsultationMultimodalCapturePayload,
+    ) => Promise<ConsultationFrameCaptureResponse>,
+    fallbackErrorMessage: string,
+  ) {
     if (!consultation) {
       return null;
     }
 
     try {
-      return await submitConsultationFaceCaptureRequest(
+      const response = await request(
         consultation.session_id,
         payload,
       );
+      mergeFrameCaptureResponseIntoConsultation(response, modality);
+      return response;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "上传表情采样失败");
+      setError(caught instanceof Error ? caught.message : fallbackErrorMessage);
       return null;
     }
   }
 
-  async function submitConsultationPoseCapture(payload: ConsultationMultimodalCapturePayload) {
-    if (!consultation) {
-      return null;
-    }
+  async function submitConsultationFaceCapture(payload: ConsultationMultimodalCapturePayload) {
+    return submitConsultationFrameCapture(
+      "face",
+      payload,
+      submitConsultationFaceCaptureRequest,
+      "上传表情采样失败",
+    );
+  }
 
-    try {
-      return await submitConsultationPoseCaptureRequest(
-        consultation.session_id,
-        payload,
-      );
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "上传姿态采样失败");
-      return null;
-    }
+  async function submitConsultationPoseCapture(payload: ConsultationMultimodalCapturePayload) {
+    return submitConsultationFrameCapture(
+      "pose",
+      payload,
+      submitConsultationPoseCaptureRequest,
+      "上传姿态采样失败",
+    );
   }
 
   async function completeConsultationSystemQuestionItem(questionKey: string) {
@@ -512,7 +596,7 @@ export function useConsultationApp() {
 
     try {
       const updatedConsultation = await completeConsultationQuestionItem(consultation.session_id, questionKey);
-      setConsultation(updatedConsultation);
+      setConsultation(mergeConsultationWithCurrentTurnBundle(updatedConsultation));
       if (updatedConsultation.status === "waiting_user_input") {
         setMessage("系统问候已播放完成，已进入当前题目的回答窗口。");
       } else if (updatedConsultation.status === "handoff_ready") {

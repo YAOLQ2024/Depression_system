@@ -145,6 +145,25 @@ docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
 
 预期会看到 `requirements-heavy.txt` 和 `requirements-app.txt` 对应层命中 `CACHED`。
 
+### 7. face 模态最小回归
+
+如果要快速复验 `face` 模态当前是否仍保持“基本走通”，可以从仓库根目录执行：
+
+```powershell
+.\scripts\run_face_modality_checks.ps1 -PythonExe "C:\path\to\python.exe"
+```
+
+这会顺序运行：
+
+- `multimodal-service` 路由 smoke test
+- `multimodal-service` face 服务层回归
+- `consultation-service` face bundle 缓存回归
+
+注意：
+
+- 需要 `Python 3.11+`
+- 这是分服务的最小回归包，不等于真实 DB / MinIO / 模型资源都在线时的全链路联调
+
 ## 主要文档
 
 - [mcs_system_blueprint_v1.md](./docs/mcs_system_blueprint_v1.md)

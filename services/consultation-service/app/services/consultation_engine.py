@@ -3,11 +3,12 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
 from app.clients.multimodal_client import (
+    clear_pose_turn_runtime as clear_upstream_pose_turn_runtime,
     create_multimodal_session as create_upstream_multimodal_session,
     get_multimodal_live as fetch_upstream_multimodal_live,
     get_multimodal_turn_bundle as fetch_upstream_multimodal_turn_bundle,
@@ -274,6 +275,24 @@ def _extract_optional_upstream_data(
     if int(upstream["status"]) in allowed_statuses:
         return None
     return _extract_upstream_data(upstream, error_code=error_code)
+
+
+def _clear_pose_turn_runtime_best_effort(
+    *,
+    multimodal_session_id: str | None,
+    turn_id: str | None,
+    acting_user_id: str,
+) -> None:
+    if not multimodal_session_id or not turn_id:
+        return
+    try:
+        clear_upstream_pose_turn_runtime(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=turn_id,
+            acting_user_id=acting_user_id,
+        )
+    except Exception:
+        return
 
 
 def _default_engine_state() -> dict[str, Any]:
@@ -1435,8 +1454,10 @@ def submit_consultation_turn(
             source=transcript_source,
         )
 
-        multimodal_session_id: str | None = None
-        if payload.input_type == "speech":
+        multimodal_session_id = (
+            str(session_record.multimodal_session_id or "").strip() or None
+        )
+        if payload.input_type == "speech" and not multimodal_session_id:
             multimodal_session_id = _ensure_multimodal_session_binding(
                 session_record,
                 acting_user_id=acting_user_id,
@@ -1457,6 +1478,11 @@ def submit_consultation_turn(
                 allowed_statuses={404},
             )
             consultation_turn.turn_summary_payload = turn_bundle_payload
+            _clear_pose_turn_runtime_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                turn_id=turn_id,
+                acting_user_id=acting_user_id,
+            )
 
         _clear_active_turn(session_record)
         session_record.status = "running"
@@ -1542,41 +1568,20 @@ def submit_consultation_face_capture(
     file_bytes: bytes,
     acting_user_id: str | None,
 ) -> dict[str, Any]:
-    acting_user_id = _require_acting_user_id(acting_user_id)
-    with get_db_session() as db_session:
-        session_record = _get_session_or_raise(db_session, session_id)
-        if session_record.user_id != acting_user_id:
-            raise ConsultationServiceError(
-                "consultation session forbidden", code=4032, status_code=403
-            )
-        multimodal_session_id = _ensure_multimodal_session_binding(
-            session_record,
-            acting_user_id=acting_user_id,
-        )
-        capture_data = _extract_upstream_data(
-            submit_upstream_face_capture(
-                multimodal_session_id=multimodal_session_id,
-                flow_run_id=session_record.id,
-                question_key=question_key,
-                stage_id=session_record.current_stage_id,
-                turn_id=turn_id,
-                sample_started_at=sample_started_at,
-                sample_ended_at=sample_ended_at,
-                sample_index=sample_index,
-                mime_type=mime_type,
-                file_bytes=file_bytes,
-                filename=filename,
-                acting_user_id=acting_user_id,
-            ),
-            error_code=5026,
-        )
-        if turn_id:
-            consultation_turn = db_session.get(ConsultationTurn, turn_id)
-            if consultation_turn and consultation_turn.session_id == session_record.id:
-                consultation_turn.turn_summary_payload = capture_data.get("turn_bundle")
-                db_session.add(consultation_turn)
-        db_session.flush()
-        return capture_data
+    return _submit_consultation_frame_capture(
+        session_id,
+        question_key=question_key,
+        turn_id=turn_id,
+        sample_started_at=sample_started_at,
+        sample_ended_at=sample_ended_at,
+        sample_index=sample_index,
+        mime_type=mime_type,
+        filename=filename,
+        file_bytes=file_bytes,
+        acting_user_id=acting_user_id,
+        submit_upstream_capture=submit_upstream_face_capture,
+        error_code=5026,
+    )
 
 
 def submit_consultation_pose_capture(
@@ -1592,6 +1597,37 @@ def submit_consultation_pose_capture(
     file_bytes: bytes,
     acting_user_id: str | None,
 ) -> dict[str, Any]:
+    return _submit_consultation_frame_capture(
+        session_id,
+        question_key=question_key,
+        turn_id=turn_id,
+        sample_started_at=sample_started_at,
+        sample_ended_at=sample_ended_at,
+        sample_index=sample_index,
+        mime_type=mime_type,
+        filename=filename,
+        file_bytes=file_bytes,
+        acting_user_id=acting_user_id,
+        submit_upstream_capture=submit_upstream_pose_capture,
+        error_code=5027,
+    )
+
+
+def _submit_consultation_frame_capture(
+    session_id: str,
+    *,
+    question_key: str,
+    turn_id: str | None,
+    sample_started_at: str,
+    sample_ended_at: str,
+    sample_index: int,
+    mime_type: str,
+    filename: str,
+    file_bytes: bytes,
+    acting_user_id: str | None,
+    submit_upstream_capture: Callable[..., dict[str, Any]],
+    error_code: int,
+) -> dict[str, Any]:
     acting_user_id = _require_acting_user_id(acting_user_id)
     with get_db_session() as db_session:
         session_record = _get_session_or_raise(db_session, session_id)
@@ -1604,7 +1640,7 @@ def submit_consultation_pose_capture(
             acting_user_id=acting_user_id,
         )
         capture_data = _extract_upstream_data(
-            submit_upstream_pose_capture(
+            submit_upstream_capture(
                 multimodal_session_id=multimodal_session_id,
                 flow_run_id=session_record.id,
                 question_key=question_key,
@@ -1618,7 +1654,7 @@ def submit_consultation_pose_capture(
                 filename=filename,
                 acting_user_id=acting_user_id,
             ),
-            error_code=5027,
+            error_code=error_code,
         )
         if turn_id:
             consultation_turn = db_session.get(ConsultationTurn, turn_id)

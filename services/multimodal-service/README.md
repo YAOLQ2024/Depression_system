@@ -73,6 +73,26 @@
 - `captures/face` / `captures/pose` 的连续采样接入
 - `/live` 的前端看板稳定结构
 - `/turns/{turn_id}/bundle` 的 turn 级聚合输出
+- `face` 的显式 `failed` 结果、轻量质量标记、`storage_uri` 回填
+
+## Face 回归检查
+
+当前仓库已经补了 `face` 模态的最小回归测试，覆盖：
+
+- 路由 smoke test
+- face 服务层标准化 / 质量标记 / `live` 刷新
+- `submit_face_capture -> live -> bundle` 联动
+
+如果你本机已有可用的 `Python 3.11+` 环境，可以从仓库根目录执行：
+
+```powershell
+.\scripts\run_face_modality_checks.ps1 -PythonExe "C:\path\to\python.exe"
+```
+
+说明：
+
+- 该脚本会分开设置 `PYTHONPATH`，避免 `consultation-service` 和 `multimodal-service` 的 `app` 包名冲突
+- 当前检查更偏“最小回归包”，不等于真实数据库、对象存储、模型资源都在线时的全链路联调
 
 ## 下一步尚未完成
 

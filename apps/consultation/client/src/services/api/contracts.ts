@@ -76,6 +76,25 @@ export type ConsultationMultimodalCapturePayload = {
   image_file: File;
 };
 
+export type ConsultationFrameCaptureResponse = {
+  capture_id?: string | null;
+  session_id?: string | null;
+  question_key?: string | null;
+  modality?: string | null;
+  processing_status?: string | null;
+  primary_label?: string | null;
+  primary_score?: number | null;
+  top_3_labels?: { label: string; score: number }[];
+  quality_flags?: Record<string, number | boolean | null>;
+  sample_started_at?: string | null;
+  sample_ended_at?: string | null;
+  sample_count?: number | null;
+  valid_sample_count?: number | null;
+  storage_uri?: string | null;
+  error_message?: string | null;
+  turn_bundle?: ConsultationTurnMultimodalBundle | null;
+};
+
 export type ConsultationMultimodalLiveResponse = ConsultationMultimodalLive;
 
 export type ConsultationTurnMultimodalBundleResponse = ConsultationTurnMultimodalBundle;
