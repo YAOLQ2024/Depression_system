@@ -22,11 +22,19 @@ def _table_names(inspector: sa.Inspector) -> set[str]:
     return set(inspector.get_table_names())
 
 
+def _column_names(inspector: sa.Inspector, table_name: str) -> set[str]:
+    return {column["name"] for column in inspector.get_columns(table_name)}
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     existing_tables = _table_names(inspector)
     if "assessment_sessions" not in existing_tables:
+        return
+
+    session_columns = _column_names(inspector, "assessment_sessions")
+    if "source_consultation_flow_run_id" not in session_columns:
         return
 
     op.execute(
@@ -41,6 +49,16 @@ def upgrade() -> None:
     )
 
     if "consultation_sessions" in existing_tables:
+        consultation_columns = _column_names(inspector, "consultation_sessions")
+        required_columns = {
+            "encounter_session_id",
+            "consultation_session_id",
+        }
+        if not required_columns.issubset(session_columns) or (
+            "encounter_session_id" not in consultation_columns
+        ):
+            return
+
         op.execute(
             sa.text(
                 """

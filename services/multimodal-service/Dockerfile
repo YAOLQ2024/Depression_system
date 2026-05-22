@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim@sha256:67e6a6053f28db54c173ad84a4bf88fdd4e338793dc09672e87ee38e3b1b378c
 
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
@@ -31,9 +32,12 @@ RUN set -eux; \
         sleep 5; \
     done; \
     rm -rf /var/lib/apt/lists/*
-COPY requirements-heavy.txt requirements-app.txt requirements.txt ./
-RUN pip install --no-cache-dir -r requirements-heavy.txt
-RUN pip install --no-cache-dir -r requirements-app.txt
+COPY requirements-heavy.txt ./
+RUN --mount=type=cache,id=multimodal-pip-heavy,target=/root/.cache/pip \
+    pip install -r requirements-heavy.txt
+COPY requirements-app.txt requirements.txt ./
+RUN --mount=type=cache,id=multimodal-pip-app,target=/root/.cache/pip \
+    pip install -r requirements-app.txt
 COPY alembic ./alembic
 COPY app ./app
 COPY runtime-assets ./runtime-assets
