@@ -17,19 +17,49 @@ branch_labels = None
 depends_on = None
 
 
+def _table_names(inspector: sa.Inspector) -> set[str]:
+    return set(inspector.get_table_names())
+
+
+def _column_map(
+    inspector: sa.Inspector,
+    table_name: str,
+) -> dict[str, dict[str, object]]:
+    return {
+        column["name"]: column
+        for column in inspector.get_columns(table_name)
+    }
+
+
 def upgrade() -> None:
-    op.alter_column(
-        "multimodal_turn_bundles",
-        "consultation_turn_id",
-        existing_type=sa.String(length=36),
-        nullable=True,
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = _table_names(inspector)
+    if "multimodal_turn_bundles" not in existing_tables:
+        return
+
+    bundle_columns = _column_map(inspector, "multimodal_turn_bundles")
+    if "consultation_turn_id" in bundle_columns:
+        op.alter_column(
+            "multimodal_turn_bundles",
+            "consultation_turn_id",
+            existing_type=bundle_columns["consultation_turn_id"]["type"],
+            nullable=True,
+        )
 
 
 def downgrade() -> None:
-    op.alter_column(
-        "multimodal_turn_bundles",
-        "consultation_turn_id",
-        existing_type=sa.String(length=36),
-        nullable=False,
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = _table_names(inspector)
+    if "multimodal_turn_bundles" not in existing_tables:
+        return
+
+    bundle_columns = _column_map(inspector, "multimodal_turn_bundles")
+    if "consultation_turn_id" in bundle_columns:
+        op.alter_column(
+            "multimodal_turn_bundles",
+            "consultation_turn_id",
+            existing_type=bundle_columns["consultation_turn_id"]["type"],
+            nullable=False,
+        )
