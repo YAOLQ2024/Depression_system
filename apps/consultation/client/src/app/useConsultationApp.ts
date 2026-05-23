@@ -118,6 +118,18 @@ export function useConsultationApp() {
     };
   }
 
+  function isMissingConsultationTurnBundleError(error: unknown) {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("consultation turn not found") ||
+      message.includes("multimodal turn bundle not found")
+    );
+  }
+
   function getSessionStorageKey(userId?: string | null) {
     return userId ? `mcs_consultation_session:${userId}` : null;
   }
@@ -494,6 +506,9 @@ export function useConsultationApp() {
       );
       return bundle;
     } catch (caught) {
+      if (isMissingConsultationTurnBundleError(caught)) {
+        return null;
+      }
       setError(caught instanceof Error ? caught.message : "读取多模态汇总失败");
       return null;
     }
