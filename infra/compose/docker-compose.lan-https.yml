@@ -1,0 +1,14 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    depends_on:
+      consultation:
+        condition: service_started
+      gateway-service:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../certs:/certs:ro

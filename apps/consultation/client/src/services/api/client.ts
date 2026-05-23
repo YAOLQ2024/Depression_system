@@ -18,6 +18,14 @@ function isLoopbackHost(hostname: string) {
   return LOOPBACK_HOSTS.has(hostname);
 }
 
+function getDefaultApiBase() {
+  if (window.location.protocol === "https:") {
+    return `${window.location.origin}/api/v1`;
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:18080/api/v1`;
+}
+
 function normalizeApiBase(url: string) {
   try {
     const parsed = new URL(url, window.location.origin);
@@ -29,7 +37,7 @@ function normalizeApiBase(url: string) {
 
     return parsed.toString().replace(/\/$/, "");
   } catch {
-    return `${window.location.protocol}//${window.location.hostname}:18080/api/v1`;
+    return getDefaultApiBase();
   }
 }
 
@@ -49,9 +57,7 @@ function getStoredPersistenceMode(): SessionPersistenceMode {
   return window.localStorage.getItem(SESSION_PERSISTENCE_STORAGE_KEY) === "session" ? "session" : "local";
 }
 
-const API_BASE = normalizeApiBase(
-  window.__MCS_API_BASE__ || `${window.location.protocol}//${window.location.hostname}:18080/api/v1`,
-);
+const API_BASE = normalizeApiBase(window.__MCS_API_BASE__ || getDefaultApiBase());
 
 export function getSessionToken() {
   return (
