@@ -618,10 +618,7 @@ export default function ConsultationPage() {
         image_file: imageFile,
       };
 
-      await Promise.all([
-        actions.submitConsultationFaceCapture(payload),
-        actions.submitConsultationPoseCapture(payload),
-      ]);
+      await actions.submitConsultationVisualCapture(payload);
     } finally {
       captureInFlightRef.current = false;
     }

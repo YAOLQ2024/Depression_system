@@ -168,6 +168,56 @@ def test_pose_capture_accepts_step4d_form(monkeypatch) -> None:
     assert req.image_format == "jpeg"
 
 
+def test_visual_capture_accepts_shared_frame_form(monkeypatch) -> None:
+    from app.api import multimodal as api
+
+    observed: dict[str, object] = {}
+
+    def fake_submit_visual_capture(session_id, payload, acting_user_id=None):
+        observed["session_id"] = session_id
+        observed["payload"] = payload
+        observed["acting_user_id"] = acting_user_id
+        return {
+            "visual_frame": {
+                "visual_frame_id": "vf-001",
+                "session_id": session_id,
+                "storage_uri": "s3://mcs-multimodal/captures/visual/mm-session-1/turn-1/sample-9.jpg",
+            },
+            "face_result": {"capture_id": "face-cap-visual-001"},
+            "pose_result": {"capture_id": "pose-cap-visual-001"},
+            "turn_bundle": {"turn_id": "turn-1"},
+            "multimodal_session": {"id": session_id},
+        }
+
+    monkeypatch.setattr(api, "submit_visual_capture", fake_submit_visual_capture)
+
+    with build_test_client(monkeypatch) as client:
+        response = client.post(
+            "/api/v1/multimodal/sessions/mm-session-1/captures/visual",
+            data={
+                "flow_run_id": "consult-1",
+                "question_key": "chief-complaint-001",
+                "turn_id": "turn-1",
+                "sample_started_at": "2026-05-17T10:01:11Z",
+                "sample_ended_at": "2026-05-17T10:01:11Z",
+                "sample_index": "9",
+                "mime_type": "image/jpeg",
+            },
+            files={"image_file": ("frame.jpg", b"jpeg-bytes", "image/jpeg")},
+            headers={"x-mcs-user-id": "user-1"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["code"] == 0
+    assert payload["data"]["visual_frame"]["visual_frame_id"] == "vf-001"
+    assert payload["data"]["face_result"]["capture_id"] == "face-cap-visual-001"
+    assert payload["data"]["pose_result"]["capture_id"] == "pose-cap-visual-001"
+    req = observed["payload"]
+    assert req.sample_index == 9
+    assert req.image_format == "jpeg"
+
+
 def test_bundle_route_returns_direct_bundle(monkeypatch) -> None:
     from app.api import multimodal as api
 

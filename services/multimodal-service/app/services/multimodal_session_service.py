@@ -17,6 +17,7 @@ from app.models import (
     MultimodalInferenceResult,
     MultimodalSession,
     MultimodalTurnBundle,
+    MultimodalVisualFrame,
 )
 from app.schemas import (
     AudioEmotionInferRequest,
@@ -423,6 +424,286 @@ def _build_frame_storage_uri(
         )
     except Exception:
         return None
+
+
+def _build_visual_frame_storage_uri(
+    *,
+    session_id: str,
+    turn_id: str | None,
+    sample_index: int | None,
+    image_format: str,
+    image_bytes: bytes,
+) -> str | None:
+    return _build_frame_storage_uri(
+        modality="visual",
+        session_id=session_id,
+        turn_id=turn_id,
+        sample_index=sample_index,
+        image_format=image_format,
+        image_bytes=image_bytes,
+    )
+
+
+def _record_visual_frame(
+    db_session,
+    *,
+    session_id: str,
+    turn_id: str | None,
+    flow_run_id: str | None,
+    stage_id: str | None,
+    question_key: str | None,
+    sample_index: int | None,
+    sample_started_at: datetime | None,
+    sample_ended_at: datetime | None,
+    mime_type: str | None,
+    capture_payload: dict[str, Any],
+    captured_at: datetime | None,
+    storage_uri: str | None,
+) -> MultimodalVisualFrame:
+    row = MultimodalVisualFrame(
+        session_id=session_id,
+        turn_id=turn_id,
+        flow_run_id=flow_run_id,
+        stage_id=stage_id,
+        question_key=question_key,
+        sample_index=sample_index,
+        sample_started_at=sample_started_at,
+        sample_ended_at=sample_ended_at,
+        mime_type=mime_type,
+        storage_uri=storage_uri,
+        capture_payload=capture_payload,
+        captured_at=captured_at,
+        created_at=_utcnow(),
+    )
+    db_session.add(row)
+    db_session.flush()
+    return row
+
+
+def _build_frame_capture_payload(payload: SubmitFrameCaptureRequest) -> dict[str, Any]:
+    return {
+        "flow_run_id": payload.flow_run_id,
+        "question_key": payload.question_key,
+        "mime_type": payload.mime_type,
+        "image_format": payload.image_format,
+        "image_base64_length": len(payload.image_base64),
+        "sample_started_at": _isoformat(payload.sample_started_at),
+        "sample_ended_at": _isoformat(payload.sample_ended_at),
+        "sample_index": payload.sample_index,
+    }
+
+
+def _submit_face_capture_with_session(
+    db_session,
+    session: MultimodalSession,
+    payload: SubmitFrameCaptureRequest,
+    *,
+    storage_uri: str | None,
+    source_ref_id: str,
+    sample_id: str | None = None,
+) -> dict[str, Any]:
+    capture_row = _record_capture(
+        db_session,
+        session_id=session.id,
+        turn_id=payload.turn_id,
+        flow_run_id=payload.flow_run_id,
+        stage_id=payload.stage_id,
+        question_key=payload.question_key,
+        modality="face",
+        capture_kind="frame",
+        source_ref_id=source_ref_id,
+        sample_index=payload.sample_index,
+        sample_started_at=payload.sample_started_at,
+        sample_ended_at=payload.sample_ended_at,
+        capture_payload={
+            **_build_frame_capture_payload(payload),
+            **({"visual_frame_id": sample_id} if sample_id else {}),
+        },
+        captured_at=payload.sample_ended_at,
+    )
+    capture_row.storage_uri = storage_uri
+    db_session.add(capture_row)
+
+    try:
+        raw_result = _extract_result_or_raise(
+            infer_face_emotion(
+                FrameEmotionInferRequest(
+                    image_base64=payload.image_base64,
+                    image_format=payload.image_format,
+                    session_id=session.id,
+                    frame_id=payload.frame_id or f"face-{payload.sample_index}",
+                    timestamp=_isoformat(payload.sample_ended_at),
+                )
+            )
+        )
+        raw_result["quality_flags"] = {
+            **_compute_face_quality_flags(payload.image_base64),
+            **dict(raw_result.get("quality_flags") or {}),
+        }
+        face_result = _normalize_face_result(raw_result, payload)
+    except MultimodalServiceError as exc:
+        face_result = _build_failed_face_result(payload, error_message=exc.message)
+    _record_inference_result(
+        db_session,
+        session_id=session.id,
+        turn_id=payload.turn_id,
+        flow_run_id=payload.flow_run_id,
+        stage_id=payload.stage_id,
+        question_key=payload.question_key,
+        modality="face",
+        source_kind="frame",
+        source_ref_id=source_ref_id,
+        sample_id=capture_row.id,
+        inference_payload=face_result,
+        captured_at=payload.sample_ended_at,
+    )
+
+    turn_bundle = None
+    if payload.turn_id:
+        db_session.flush()
+        turn_bundle = _upsert_turn_bundle(
+            db_session,
+            session.id,
+            payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
+        )
+        face_features = dict((turn_bundle or {}).get("face_features") or {})
+        if face_features:
+            face_result["sample_count"] = face_features.get("sample_count")
+            face_result["valid_sample_count"] = face_features.get("valid_sample_count")
+    if "sample_count" not in face_result:
+        face_result["sample_count"] = payload.sample_index
+    if "valid_sample_count" not in face_result:
+        face_result["valid_sample_count"] = None
+    _refresh_live_payload(session, face_result)
+    db_session.add(session)
+    db_session.flush()
+    return {
+        "capture_id": capture_row.id,
+        "session_id": session.id,
+        "question_key": payload.question_key,
+        "modality": "face",
+        "processing_status": face_result["processing_status"],
+        "primary_label": face_result["primary_label"],
+        "primary_score": face_result["primary_score"],
+        "top_3_labels": face_result["top_3_labels"],
+        "quality_flags": face_result["quality_flags"],
+        "sample_started_at": face_result["sample_started_at"],
+        "sample_ended_at": face_result["sample_ended_at"],
+        "sample_count": face_result.get("sample_count"),
+        "valid_sample_count": face_result.get("valid_sample_count"),
+        "storage_uri": storage_uri,
+        "error_message": face_result.get("error_message"),
+        "created_at": _isoformat(capture_row.created_at),
+        "turn_bundle": turn_bundle,
+    }
+
+
+def _submit_pose_capture_with_session(
+    db_session,
+    session: MultimodalSession,
+    payload: SubmitFrameCaptureRequest,
+    *,
+    storage_uri: str | None,
+    source_ref_id: str,
+    sample_id: str | None = None,
+) -> dict[str, Any]:
+    capture_row = _record_capture(
+        db_session,
+        session_id=session.id,
+        turn_id=payload.turn_id,
+        flow_run_id=payload.flow_run_id,
+        stage_id=payload.stage_id,
+        question_key=payload.question_key,
+        modality="pose",
+        capture_kind="frame",
+        source_ref_id=source_ref_id,
+        sample_index=payload.sample_index,
+        sample_started_at=payload.sample_started_at,
+        sample_ended_at=payload.sample_ended_at,
+        capture_payload={
+            **_build_frame_capture_payload(payload),
+            **({"visual_frame_id": sample_id} if sample_id else {}),
+        },
+        captured_at=payload.sample_ended_at,
+    )
+    capture_row.storage_uri = storage_uri
+    db_session.add(capture_row)
+
+    try:
+        raw_result = _extract_result_or_raise(
+            infer_pose_emotion(
+                FrameEmotionInferRequest(
+                    image_base64=payload.image_base64,
+                    image_format=payload.image_format,
+                    session_id=session.id,
+                    turn_id=payload.turn_id,
+                    frame_id=payload.frame_id or f"pose-{payload.sample_index}",
+                    timestamp=_isoformat(payload.sample_ended_at),
+                )
+            )
+        )
+        pose_result = _normalize_pose_result(raw_result, payload)
+    except MultimodalServiceError as exc:
+        pose_result = _build_failed_pose_result(payload, error_message=exc.message)
+    _record_inference_result(
+        db_session,
+        session_id=session.id,
+        turn_id=payload.turn_id,
+        flow_run_id=payload.flow_run_id,
+        stage_id=payload.stage_id,
+        question_key=payload.question_key,
+        modality="pose",
+        source_kind="frame",
+        source_ref_id=source_ref_id,
+        sample_id=capture_row.id,
+        inference_payload=pose_result,
+        captured_at=payload.sample_ended_at,
+    )
+
+    turn_bundle = None
+    if payload.turn_id:
+        db_session.flush()
+        turn_bundle = _upsert_turn_bundle(
+            db_session,
+            session.id,
+            payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
+        )
+        pose_features = dict((turn_bundle or {}).get("pose_features") or {})
+        if pose_features:
+            pose_result["sample_count"] = pose_features.get("sample_count")
+            pose_result["valid_sample_count"] = pose_features.get("valid_sample_count")
+    if "sample_count" not in pose_result:
+        pose_result["sample_count"] = payload.sample_index
+    if "valid_sample_count" not in pose_result:
+        pose_result["valid_sample_count"] = None
+    _refresh_live_payload(session, pose_result)
+    db_session.add(session)
+    db_session.flush()
+    return {
+        "capture_id": capture_row.id,
+        "session_id": session.id,
+        "question_key": payload.question_key,
+        "modality": "pose",
+        "processing_status": pose_result["processing_status"],
+        "primary_label": pose_result["primary_label"],
+        "primary_score": pose_result["primary_score"],
+        "top_3_labels": pose_result["top_3_labels"],
+        "quality_flags": pose_result["quality_flags"],
+        "sample_started_at": pose_result["sample_started_at"],
+        "sample_ended_at": pose_result["sample_ended_at"],
+        "sample_count": pose_result.get("sample_count"),
+        "valid_sample_count": pose_result.get("valid_sample_count"),
+        "storage_uri": storage_uri,
+        "error_message": pose_result.get("error_message"),
+        "created_at": _isoformat(capture_row.created_at),
+        "turn_bundle": turn_bundle,
+    }
 
 
 def _normalize_pose_result(raw_result: dict[str, Any], payload: SubmitFrameCaptureRequest) -> dict[str, Any]:
@@ -1290,110 +1571,13 @@ def submit_face_capture(
             image_format=payload.image_format,
             image_bytes=image_bytes,
         )
-
-        capture_row = _record_capture(
+        return _submit_face_capture_with_session(
             db_session,
-            session_id=session.id,
-            turn_id=payload.turn_id,
-            flow_run_id=payload.flow_run_id,
-            stage_id=payload.stage_id,
-            question_key=payload.question_key,
-            modality="face",
-            capture_kind="frame",
+            session,
+            payload,
+            storage_uri=storage_uri,
             source_ref_id=str(payload.sample_index),
-            sample_index=payload.sample_index,
-            sample_started_at=payload.sample_started_at,
-            sample_ended_at=payload.sample_ended_at,
-            capture_payload={
-                "flow_run_id": payload.flow_run_id,
-                "question_key": payload.question_key,
-                "mime_type": payload.mime_type,
-                "image_format": payload.image_format,
-                "image_base64_length": len(payload.image_base64),
-                "sample_started_at": _isoformat(payload.sample_started_at),
-                "sample_ended_at": _isoformat(payload.sample_ended_at),
-                "sample_index": payload.sample_index,
-            },
-            captured_at=payload.sample_ended_at,
         )
-        capture_row.storage_uri = storage_uri
-        db_session.add(capture_row)
-
-        try:
-            raw_result = _extract_result_or_raise(
-                infer_face_emotion(
-                    FrameEmotionInferRequest(
-                        image_base64=payload.image_base64,
-                        image_format=payload.image_format,
-                        session_id=session.id,
-                        frame_id=payload.frame_id or f"face-{payload.sample_index}",
-                        timestamp=_isoformat(payload.sample_ended_at),
-                    )
-                )
-            )
-            raw_result["quality_flags"] = {
-                **_compute_face_quality_flags(payload.image_base64),
-                **dict(raw_result.get("quality_flags") or {}),
-            }
-            face_result = _normalize_face_result(raw_result, payload)
-        except MultimodalServiceError as exc:
-            face_result = _build_failed_face_result(payload, error_message=exc.message)
-        _record_inference_result(
-            db_session,
-            session_id=session.id,
-            turn_id=payload.turn_id,
-            flow_run_id=payload.flow_run_id,
-            stage_id=payload.stage_id,
-            question_key=payload.question_key,
-            modality="face",
-            source_kind="frame",
-            source_ref_id=str(payload.sample_index),
-            sample_id=capture_row.id,
-            inference_payload=face_result,
-            captured_at=payload.sample_ended_at,
-        )
-
-        turn_bundle = None
-        if payload.turn_id:
-            db_session.flush()
-            turn_bundle = _upsert_turn_bundle(
-                db_session,
-                session.id,
-                payload.turn_id,
-                flow_run_id=payload.flow_run_id,
-                stage_id=payload.stage_id,
-                question_key=payload.question_key,
-            )
-            face_features = dict((turn_bundle or {}).get("face_features") or {})
-            if face_features:
-                face_result["sample_count"] = face_features.get("sample_count")
-                face_result["valid_sample_count"] = face_features.get("valid_sample_count")
-        if "sample_count" not in face_result:
-            face_result["sample_count"] = payload.sample_index
-        if "valid_sample_count" not in face_result:
-            face_result["valid_sample_count"] = None
-        _refresh_live_payload(session, face_result)
-        db_session.add(session)
-        db_session.flush()
-        return {
-            "capture_id": capture_row.id,
-            "session_id": session.id,
-            "question_key": payload.question_key,
-            "modality": "face",
-            "processing_status": face_result["processing_status"],
-            "primary_label": face_result["primary_label"],
-            "primary_score": face_result["primary_score"],
-            "top_3_labels": face_result["top_3_labels"],
-            "quality_flags": face_result["quality_flags"],
-            "sample_started_at": face_result["sample_started_at"],
-            "sample_ended_at": face_result["sample_ended_at"],
-            "sample_count": face_result.get("sample_count"),
-            "valid_sample_count": face_result.get("valid_sample_count"),
-            "storage_uri": storage_uri,
-            "error_message": face_result.get("error_message"),
-            "created_at": _isoformat(capture_row.created_at),
-            "turn_bundle": turn_bundle,
-        }
 
 
 def submit_pose_capture(
@@ -1415,106 +1599,92 @@ def submit_pose_capture(
             image_format=payload.image_format,
             image_bytes=image_bytes,
         )
+        return _submit_pose_capture_with_session(
+            db_session,
+            session,
+            payload,
+            storage_uri=storage_uri,
+            source_ref_id=str(payload.sample_index),
+        )
 
-        capture_row = _record_capture(
+
+def submit_visual_capture(
+    session_id: str,
+    payload: SubmitFrameCaptureRequest,
+    acting_user_id: str | None = None,
+) -> dict[str, Any]:
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
+
+        image_bytes = base64.b64decode(payload.image_base64)
+        visual_storage_uri = _build_visual_frame_storage_uri(
+            session_id=session.id,
+            turn_id=payload.turn_id,
+            sample_index=payload.sample_index,
+            image_format=payload.image_format,
+            image_bytes=image_bytes,
+        )
+        visual_frame = _record_visual_frame(
             db_session,
             session_id=session.id,
             turn_id=payload.turn_id,
             flow_run_id=payload.flow_run_id,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
-            modality="pose",
-            capture_kind="frame",
-            source_ref_id=str(payload.sample_index),
             sample_index=payload.sample_index,
             sample_started_at=payload.sample_started_at,
             sample_ended_at=payload.sample_ended_at,
-            capture_payload={
-                "flow_run_id": payload.flow_run_id,
+            mime_type=payload.mime_type,
+            capture_payload=_build_frame_capture_payload(payload),
+            captured_at=payload.sample_ended_at,
+            storage_uri=visual_storage_uri,
+        )
+        visual_frame_id = visual_frame.id
+
+        face_payload = payload.model_copy(
+            update={"frame_id": payload.frame_id or f"face-{payload.sample_index}"}
+        )
+        face_response = _submit_face_capture_with_session(
+            db_session,
+            session,
+            face_payload,
+            storage_uri=visual_storage_uri,
+            source_ref_id=visual_frame_id,
+            sample_id=visual_frame_id,
+        )
+        pose_payload = payload.model_copy(
+            update={"frame_id": payload.frame_id or f"pose-{payload.sample_index}"}
+        )
+        pose_response = _submit_pose_capture_with_session(
+            db_session,
+            session,
+            pose_payload,
+            storage_uri=visual_storage_uri,
+            source_ref_id=visual_frame_id,
+            sample_id=visual_frame_id,
+        )
+
+        turn_bundle = pose_response.get("turn_bundle") or face_response.get("turn_bundle")
+        db_session.refresh(session)
+        return {
+            "visual_frame": {
+                "visual_frame_id": visual_frame.id,
+                "session_id": session.id,
+                "turn_id": payload.turn_id,
                 "question_key": payload.question_key,
-                "mime_type": payload.mime_type,
-                "image_format": payload.image_format,
-                "image_base64_length": len(payload.image_base64),
+                "sample_index": payload.sample_index,
                 "sample_started_at": _isoformat(payload.sample_started_at),
                 "sample_ended_at": _isoformat(payload.sample_ended_at),
-                "sample_index": payload.sample_index,
+                "storage_uri": visual_storage_uri,
+                "created_at": _isoformat(visual_frame.created_at),
             },
-            captured_at=payload.sample_ended_at,
-        )
-        capture_row.storage_uri = storage_uri
-        db_session.add(capture_row)
-
-        try:
-            raw_result = _extract_result_or_raise(
-                infer_pose_emotion(
-                    FrameEmotionInferRequest(
-                        image_base64=payload.image_base64,
-                        image_format=payload.image_format,
-                        session_id=session.id,
-                        turn_id=payload.turn_id,
-                        frame_id=payload.frame_id or f"pose-{payload.sample_index}",
-                        timestamp=_isoformat(payload.sample_ended_at),
-                    )
-                )
-            )
-            pose_result = _normalize_pose_result(raw_result, payload)
-        except MultimodalServiceError as exc:
-            pose_result = _build_failed_pose_result(payload, error_message=exc.message)
-        _record_inference_result(
-            db_session,
-            session_id=session.id,
-            turn_id=payload.turn_id,
-            flow_run_id=payload.flow_run_id,
-            stage_id=payload.stage_id,
-            question_key=payload.question_key,
-            modality="pose",
-            source_kind="frame",
-            source_ref_id=str(payload.sample_index),
-            sample_id=capture_row.id,
-            inference_payload=pose_result,
-            captured_at=payload.sample_ended_at,
-        )
-
-        turn_bundle = None
-        if payload.turn_id:
-            db_session.flush()
-            turn_bundle = _upsert_turn_bundle(
-                db_session,
-                session.id,
-                payload.turn_id,
-                flow_run_id=payload.flow_run_id,
-                stage_id=payload.stage_id,
-                question_key=payload.question_key,
-            )
-            pose_features = dict((turn_bundle or {}).get("pose_features") or {})
-            if pose_features:
-                pose_result["sample_count"] = pose_features.get("sample_count")
-                pose_result["valid_sample_count"] = pose_features.get("valid_sample_count")
-        if "sample_count" not in pose_result:
-            pose_result["sample_count"] = payload.sample_index
-        if "valid_sample_count" not in pose_result:
-            pose_result["valid_sample_count"] = None
-        _refresh_live_payload(session, pose_result)
-        db_session.add(session)
-        db_session.flush()
-        return {
-            "capture_id": capture_row.id,
-            "session_id": session.id,
-            "question_key": payload.question_key,
-            "modality": "pose",
-            "processing_status": pose_result["processing_status"],
-            "primary_label": pose_result["primary_label"],
-            "primary_score": pose_result["primary_score"],
-            "top_3_labels": pose_result["top_3_labels"],
-            "quality_flags": pose_result["quality_flags"],
-            "sample_started_at": pose_result["sample_started_at"],
-            "sample_ended_at": pose_result["sample_ended_at"],
-            "sample_count": pose_result.get("sample_count"),
-            "valid_sample_count": pose_result.get("valid_sample_count"),
-            "storage_uri": storage_uri,
-            "error_message": pose_result.get("error_message"),
-            "created_at": _isoformat(capture_row.created_at),
+            "face_result": face_response,
+            "pose_result": pose_response,
             "turn_bundle": turn_bundle,
+            "multimodal_session": _snapshot(session),
         }
 
 

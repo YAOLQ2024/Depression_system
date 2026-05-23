@@ -239,3 +239,37 @@ def submit_pose_capture(
         file_bytes=file_bytes,
         acting_user_id=acting_user_id,
     )
+
+
+def submit_visual_capture(
+    *,
+    multimodal_session_id: str,
+    flow_run_id: str,
+    question_key: str,
+    stage_id: str | None,
+    turn_id: str | None,
+    sample_started_at: str,
+    sample_ended_at: str,
+    sample_index: int,
+    mime_type: str,
+    file_bytes: bytes,
+    filename: str,
+    acting_user_id: str,
+) -> dict:
+    return _forward_multimodal_multipart_request(
+        f"/api/v1/multimodal/sessions/{multimodal_session_id}/captures/visual",
+        fields={
+            "flow_run_id": flow_run_id,
+            "question_key": question_key,
+            **({"stage_id": stage_id} if stage_id else {}),
+            "sample_started_at": sample_started_at,
+            "sample_ended_at": sample_ended_at,
+            "sample_index": str(sample_index),
+            "mime_type": mime_type,
+            **({"turn_id": turn_id} if turn_id else {}),
+        },
+        filename=filename,
+        content_type=mime_type,
+        file_bytes=file_bytes,
+        acting_user_id=acting_user_id,
+    )

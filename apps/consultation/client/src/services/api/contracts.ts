@@ -95,6 +95,24 @@ export type ConsultationFrameCaptureResponse = {
   turn_bundle?: ConsultationTurnMultimodalBundle | null;
 };
 
+export type ConsultationVisualCaptureResponse = {
+  visual_frame?: {
+    visual_frame_id?: string | null;
+    session_id?: string | null;
+    turn_id?: string | null;
+    question_key?: string | null;
+    sample_index?: number | null;
+    sample_started_at?: string | null;
+    sample_ended_at?: string | null;
+    storage_uri?: string | null;
+    created_at?: string | null;
+  } | null;
+  face_result?: ConsultationFrameCaptureResponse | null;
+  pose_result?: ConsultationFrameCaptureResponse | null;
+  turn_bundle?: ConsultationTurnMultimodalBundle | null;
+  multimodal_session?: Record<string, unknown> | null;
+};
+
 export type ConsultationMultimodalLiveResponse = ConsultationMultimodalLive;
 
 export type ConsultationTurnMultimodalBundleResponse = ConsultationTurnMultimodalBundle;
