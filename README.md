@@ -79,7 +79,31 @@
 
 最常用的是下面这几条。
 
-### 1. 默认启动
+### 1. Compose 文件关系
+
+当前仓库里，日常开发只需要理解这两个 compose 文件：
+
+- `infra/compose/docker-compose.dev.yml`
+  - 基础开发环境
+  - 定义了前端、网关、业务服务、数据库、对象存储等完整本地运行骨架
+  - 日常启动时必须带上它
+- `infra/compose/docker-compose.gpu.yml`
+  - GPU 覆盖层
+  - 只覆盖 `multimodal-service` 的运行方式，例如 `runtime: nvidia`、`gpus: all`、`ASR_DEVICE=cuda`
+  - 不能单独使用，必须叠加在 `docker-compose.dev.yml` 之后
+
+它们不会冲突，原因是：
+
+- `docker-compose.dev.yml` 提供完整服务定义
+- `docker-compose.gpu.yml` 只补充或覆盖 `multimodal-service` 的少数字段
+- 正确写法是“基础 compose 在前，覆盖 compose 在后”
+
+也就是说：
+
+- CPU 开发环境：只用 `docker-compose.dev.yml`
+- GPU 开发环境：`docker-compose.dev.yml + docker-compose.gpu.yml`
+
+### 2. 默认启动
 
 整套开发环境重建并启动：
 
@@ -87,19 +111,27 @@
 docker compose -f infra/compose/docker-compose.dev.yml up -d --build
 ```
 
-### 2. 只让 multimodal-service 用 GPU
+### 3. GPU 模式启动
+
+如果当前机器有可用 NVIDIA GPU，并且只想让 `multimodal-service` 走 GPU，正确命令是：
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build multimodal-service
 ```
 
-如果镜像已经 build 过，只重启 GPU 版：
+如果你同时改了多模态后端、问诊后端和前端页面，推荐直接重建这 3 个服务：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build multimodal-service consultation-service consultation
+```
+
+如果镜像已经 build 过，只需要用 GPU 配置重启 `multimodal-service`：
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d multimodal-service
 ```
 
-### 3. 只重建某个服务
+### 4. 只重建某个服务
 
 重建前端：
 
@@ -113,7 +145,39 @@ docker compose -f infra/compose/docker-compose.dev.yml up -d --build consultatio
 docker compose -f infra/compose/docker-compose.dev.yml up -d --build multimodal-service
 ```
 
-### 4. 看状态和日志
+重建问诊链路里最常动的 3 个服务：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml up -d --build consultation consultation-service gateway-service
+```
+
+说明：
+
+- 普通代码改动通常不需要全量重建 `postgres`、`redis`、`minio`
+- 只重建你实际改到的服务即可
+- 如果 `multimodal-service` 需要 GPU，就在同一条命令里继续叠加 `-f infra/compose/docker-compose.gpu.yml`
+
+### 5. 局域网 HTTPS 启动
+
+如果当前机器需要通过 HTTPS 给本机或同一局域网内其它设备测试摄像头、麦克风、语音和视觉模态，使用：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml up -d --build consultation gateway-service caddy
+```
+
+如果当前机器还要让 `multimodal-service` 走 GPU，可继续叠加 GPU override：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build multimodal-service consultation-service consultation gateway-service caddy
+```
+
+说明：
+
+- `docker-compose.lan-https.yml` 不是独立环境，它是 HTTPS 覆盖层
+- 使用时必须和 `docker-compose.dev.yml` 一起叠加
+- 证书生成方式见 [docs/architecture/lan-https-testing-plan.md](./docs/architecture/lan-https-testing-plan.md)
+
+### 6. 看状态和日志
 
 查看容器状态：
 
@@ -129,13 +193,39 @@ docker compose -f infra/compose/docker-compose.dev.yml logs -f gateway-service
 docker compose -f infra/compose/docker-compose.dev.yml logs -f multimodal-service
 ```
 
-### 5. 停止环境
+如果当前是 GPU 模式，查看 `multimodal-service` 状态或日志时，也建议继续带上 GPU override：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml ps
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml logs -f multimodal-service
+```
+
+如果当前是 LAN HTTPS 模式，也可以带上 HTTPS override 查看：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml ps
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml logs -f caddy
+```
+
+### 7. 停止环境
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml down
 ```
 
-### 6. multimodal-service 构建说明
+如果当前是 GPU 模式，停止时也建议沿用相同的 compose 组合：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml down
+```
+
+如果当前是 LAN HTTPS 模式，停止时建议沿用相同的 compose 组合：
+
+```bash
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml down
+```
+
+### 8. multimodal-service 构建说明
 
 `multimodal-service` 已拆成分层依赖，第一次 build 仍然会慢；后续如果只改 `app/` 代码，再执行：
 
@@ -145,7 +235,15 @@ docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
 
 预期会看到 `requirements-heavy.txt` 和 `requirements-app.txt` 对应层命中 `CACHED`。
 
-### 7. face 模态最小回归
+如果当前机器是 GPU 环境，正常情况下也不需要专门“重建到 heavy 依赖层”；只要：
+
+- 没改 `Dockerfile`
+- 没改 `requirements-heavy.txt`
+- 没改 CUDA / ONNX / MediaPipe 底层依赖
+
+那么直接执行前面的 `up -d --build ...` 即可，Docker 会自动复用缓存层。
+
+### 9. face 模态最小回归
 
 如果要快速复验 `face` 模态当前是否仍保持“基本走通”，可以从仓库根目录执行：
 
