@@ -1,10 +1,10 @@
 workflow_id: consultation-v1
 manifest_contract: digital-human-playlist/v1
-playlist_version: draft-pending-assets
-manifest_status: placeholder
+playlist_version: v1-8-questions
+manifest_status: draft
 delivery_mode: fixed-video-playlist
 notes:
-  - "TODO: waiting for final video list and subtitle text from product/teacher review."
+  - "8 question videos + 1 greeting video for consultation-v1"
   - "Each question item maps to one fixed video file."
   - "question_text is the authoritative text stored with each consultation turn."
   - "subtitle_text is an optional UI/display override; if omitted, UI can fall back to question_text."
@@ -30,23 +30,55 @@ stages:
     question_items:
       - question_key: chief-complaint-001
         order: 1
-        node_id: ask-chief-complaint
-        video_asset_id: TBD
-        video_uri: TBD
-        question_text: TBD
+        node_id: ask-chief-complaint-001
+        video_asset_id: chief-complaint-001
+        video_uri: /digital-human/consultation-v1/chief-complaint-001.webm
+        question_text: 您今天主要是因为什么问题来就诊？
+        subtitle_text: null
+        response_required: true
+      - question_key: chief-complaint-002
+        order: 2
+        node_id: ask-chief-complaint-002
+        video_asset_id: chief-complaint-002
+        video_uri: /digital-human/consultation-v1/chief-complaint-002.webm
+        question_text: 这个问题大概是从什么时候开始的，持续多久了？
+        subtitle_text: null
+        response_required: true
+      - question_key: chief-complaint-003
+        order: 3
+        node_id: ask-chief-complaint-003
+        video_asset_id: chief-complaint-003
+        video_uri: /digital-human/consultation-v1/chief-complaint-003.webm
+        question_text: 目前最影响您生活、学习或工作的症状是什么？这些症状是第一次出现，还是以前也出现过类似症状？
         subtitle_text: null
         response_required: true
 
   - stage_id: stage-03-current-history-followup
-    stage_label: 现病史
+    stage_label: 症状筛查
     stage_order: 3
     question_items:
       - question_key: current-history-001
         order: 1
-        node_id: general-track-open
-        video_asset_id: TBD
-        video_uri: TBD
-        question_text: TBD
+        node_id: ask-current-history-001
+        video_asset_id: current-history-001
+        video_uri: /digital-human/consultation-v1/current-history-001.webm
+        question_text: 最近有没有发生让您压力明显增加的事情？
+        subtitle_text: null
+        response_required: true
+      - question_key: current-history-002
+        order: 2
+        node_id: ask-current-history-002
+        video_asset_id: current-history-002
+        video_uri: /digital-human/consultation-v1/current-history-002.webm
+        question_text: 最近有没有反复想一件事停不下来，或者反复检查、确认、撕嘴皮、扣痘痘、抓头发、囤东西等控制不住的行为？
+        subtitle_text: null
+        response_required: true
+      - question_key: current-history-003
+        order: 3
+        node_id: ask-current-history-003
+        video_asset_id: current-history-003
+        video_uri: /digital-human/consultation-v1/current-history-003.webm
+        question_text: 最近有没有一段时间情绪异常高涨、精力特别旺盛、话变多、特别想社交，甚至睡得很少也不觉得累？
         subtitle_text: null
         response_required: true
 
@@ -57,8 +89,16 @@ stages:
       - question_key: risk-screening-001
         order: 1
         node_id: ask-suicidal-ideation
-        video_asset_id: TBD
-        video_uri: TBD
-        question_text: TBD
+        video_asset_id: risk-screening-001
+        video_uri: /digital-human/consultation-v1/risk-screening-001.webm
+        question_text: 最近有没有伤害自己或轻生的想法、行为，或者具体计划？
+        subtitle_text: null
+        response_required: true
+      - question_key: risk-screening-002
+        order: 2
+        node_id: ask-primary-concern
+        video_asset_id: risk-screening-002
+        video_uri: /digital-human/consultation-v1/risk-screening-002.webm
+        question_text: 这次就诊您最希望医生帮您解决什么问题？
         subtitle_text: null
         response_required: true
