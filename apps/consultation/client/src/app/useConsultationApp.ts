@@ -20,13 +20,13 @@ import {
   getConsultationSession,
   getConsultationTurnMultimodalBundle,
   startConsultationSession,
-  submitConsultationFaceCapture as submitConsultationFaceCaptureRequest,
-  submitConsultationPoseCapture as submitConsultationPoseCaptureRequest,
+  submitConsultationVisualCapture as submitConsultationVisualCaptureRequest,
   submitConsultationTurn as submitConsultationTurnRequest,
 } from "../services/api/consultation.api";
 import type {
   ConsultationMultimodalCapturePayload,
   ConsultationFrameCaptureResponse,
+  ConsultationVisualCaptureResponse,
   SubmitConsultationTurnPayload,
   UpdateUserProfilePayload,
 } from "../services/api/contracts";
@@ -515,90 +515,86 @@ export function useConsultationApp() {
   }
 
   function mergeFrameCaptureResponseIntoConsultation(
+    current: ConsultationSession,
     response: ConsultationFrameCaptureResponse,
     modality: "face" | "pose",
   ) {
+    const nextLive = {
+      ...(current.multimodal_live || { speech: { status: "pending" }, text: { status: "pending" }, face: { status: "pending" }, pose: { status: "pending" } }),
+    } as ConsultationMultimodalLive;
+    const existing = (nextLive[modality] || { status: "pending" }) as ConsultationMultimodalLive["face"];
+    const nextStatus =
+      response.processing_status === "failed"
+        ? "failed"
+        : response.primary_label || response.processing_status === "completed"
+          ? "ready"
+          : existing.status || "pending";
+    nextLive[modality] = {
+      ...existing,
+      status: nextStatus,
+      processing_status: response.processing_status || existing.processing_status,
+      primary_label: response.primary_label ?? existing.primary_label,
+      primary_score: response.primary_score ?? existing.primary_score,
+      top_3_labels: response.top_3_labels || existing.top_3_labels || [],
+      quality_flags: response.quality_flags || existing.quality_flags || {},
+      latest_capture_at: response.sample_ended_at ?? existing.latest_capture_at ?? null,
+      sample_count: response.sample_count ?? existing.sample_count ?? null,
+      valid_sample_count: response.valid_sample_count ?? existing.valid_sample_count ?? null,
+      error_message: response.error_message ?? existing.error_message ?? null,
+    };
+    return {
+      ...current,
+      multimodal_live: nextLive,
+      multimodal_live_updated_at: new Date().toISOString(),
+      current_turn_bundle:
+        response.turn_bundle && current.current_turn_id && response.turn_bundle.turn_id === current.current_turn_id
+          ? response.turn_bundle
+          : current.current_turn_bundle,
+    };
+  }
+
+  function mergeVisualCaptureResponseIntoConsultation(response: ConsultationVisualCaptureResponse) {
     setConsultation((current) => {
       if (!current) {
         return current;
       }
-      const nextLive = {
-        ...(current.multimodal_live || { speech: { status: "pending" }, text: { status: "pending" }, face: { status: "pending" }, pose: { status: "pending" } }),
-      } as ConsultationMultimodalLive;
-      const existing = (nextLive[modality] || { status: "pending" }) as ConsultationMultimodalLive["face"];
-      const nextStatus =
-        response.processing_status === "failed"
-          ? "failed"
-          : response.primary_label || response.processing_status === "completed"
-            ? "ready"
-            : existing.status || "pending";
-      nextLive[modality] = {
-        ...existing,
-        status: nextStatus,
-        processing_status: response.processing_status || existing.processing_status,
-        primary_label: response.primary_label ?? existing.primary_label,
-        primary_score: response.primary_score ?? existing.primary_score,
-        top_3_labels: response.top_3_labels || existing.top_3_labels || [],
-        quality_flags: response.quality_flags || existing.quality_flags || {},
-        latest_capture_at: response.sample_ended_at ?? existing.latest_capture_at ?? null,
-        sample_count: response.sample_count ?? existing.sample_count ?? null,
-        valid_sample_count: response.valid_sample_count ?? existing.valid_sample_count ?? null,
-        error_message: response.error_message ?? existing.error_message ?? null,
-      };
-      return {
-        ...current,
-        multimodal_live: nextLive,
-        multimodal_live_updated_at: new Date().toISOString(),
-        current_turn_bundle:
-          response.turn_bundle && current.current_turn_id && response.turn_bundle.turn_id === current.current_turn_id
-            ? response.turn_bundle
-            : current.current_turn_bundle,
-      };
+      let next = current;
+      if (response.face_result) {
+        next = mergeFrameCaptureResponseIntoConsultation(next, response.face_result, "face");
+      }
+      if (response.pose_result) {
+        next = mergeFrameCaptureResponseIntoConsultation(next, response.pose_result, "pose");
+      }
+      if (
+        response.turn_bundle &&
+        next.current_turn_id &&
+        response.turn_bundle.turn_id === next.current_turn_id
+      ) {
+        next = {
+          ...next,
+          current_turn_bundle: response.turn_bundle,
+        };
+      }
+      return next;
     });
   }
 
-  async function submitConsultationFrameCapture(
-    modality: "face" | "pose",
-    payload: ConsultationMultimodalCapturePayload,
-    request: (
-      sessionId: string,
-      capturePayload: ConsultationMultimodalCapturePayload,
-    ) => Promise<ConsultationFrameCaptureResponse>,
-    fallbackErrorMessage: string,
-  ) {
+  async function submitConsultationVisualCapture(payload: ConsultationMultimodalCapturePayload) {
     if (!consultation) {
       return null;
     }
 
     try {
-      const response = await request(
+      const response = await submitConsultationVisualCaptureRequest(
         consultation.session_id,
         payload,
       );
-      mergeFrameCaptureResponseIntoConsultation(response, modality);
+      mergeVisualCaptureResponseIntoConsultation(response);
       return response;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : fallbackErrorMessage);
+      setError(caught instanceof Error ? caught.message : "上传视觉采样失败");
       return null;
     }
-  }
-
-  async function submitConsultationFaceCapture(payload: ConsultationMultimodalCapturePayload) {
-    return submitConsultationFrameCapture(
-      "face",
-      payload,
-      submitConsultationFaceCaptureRequest,
-      "上传表情采样失败",
-    );
-  }
-
-  async function submitConsultationPoseCapture(payload: ConsultationMultimodalCapturePayload) {
-    return submitConsultationFrameCapture(
-      "pose",
-      payload,
-      submitConsultationPoseCaptureRequest,
-      "上传姿态采样失败",
-    );
   }
 
   async function completeConsultationSystemQuestionItem(questionKey: string) {
@@ -760,8 +756,7 @@ export function useConsultationApp() {
       refreshConsultation,
       refreshConsultationMultimodalLive,
       getConsultationTurnBundle,
-      submitConsultationFaceCapture,
-      submitConsultationPoseCapture,
+      submitConsultationVisualCapture,
       completeConsultationSystemQuestionItem,
       handleStartAssessment,
       handleSubmitAssessment,

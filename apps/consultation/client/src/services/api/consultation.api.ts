@@ -5,6 +5,7 @@ import type {
   ConsultationMultimodalLiveResponse,
   ConsultationResponse,
   ConsultationTurnMultimodalBundleResponse,
+  ConsultationVisualCaptureResponse,
   SubmitConsultationTurnPayload,
 } from "./contracts";
 
@@ -79,21 +80,9 @@ function buildCaptureFormData(payload: ConsultationMultimodalCapturePayload) {
   return formData;
 }
 
-function submitConsultationFrameCapture(
-  sessionId: string,
-  modality: "face" | "pose",
-  payload: ConsultationMultimodalCapturePayload,
-) {
-  return apiRequest<ConsultationFrameCaptureResponse>(`/consultations/${sessionId}/multimodal/captures/${modality}`, {
+export async function submitConsultationVisualCapture(sessionId: string, payload: ConsultationMultimodalCapturePayload) {
+  return apiRequest<ConsultationVisualCaptureResponse>(`/consultations/${sessionId}/multimodal/captures/visual`, {
     method: "POST",
     body: buildCaptureFormData(payload),
   });
-}
-
-export async function submitConsultationFaceCapture(sessionId: string, payload: ConsultationMultimodalCapturePayload) {
-  return submitConsultationFrameCapture(sessionId, "face", payload);
-}
-
-export async function submitConsultationPoseCapture(sessionId: string, payload: ConsultationMultimodalCapturePayload) {
-  return submitConsultationFrameCapture(sessionId, "pose", payload);
 }

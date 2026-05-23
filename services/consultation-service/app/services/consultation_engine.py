@@ -13,6 +13,7 @@ from app.clients.multimodal_client import (
     get_multimodal_live as fetch_upstream_multimodal_live,
     get_multimodal_turn_bundle as fetch_upstream_multimodal_turn_bundle,
     submit_face_capture as submit_upstream_face_capture,
+    submit_visual_capture as submit_upstream_visual_capture,
     submit_pose_capture as submit_upstream_pose_capture,
 )
 from app.database import get_db_session
@@ -1610,6 +1611,35 @@ def submit_consultation_pose_capture(
         acting_user_id=acting_user_id,
         submit_upstream_capture=submit_upstream_pose_capture,
         error_code=5027,
+    )
+
+
+def submit_consultation_visual_capture(
+    session_id: str,
+    *,
+    question_key: str,
+    turn_id: str | None,
+    sample_started_at: str,
+    sample_ended_at: str,
+    sample_index: int,
+    mime_type: str,
+    filename: str,
+    file_bytes: bytes,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    return _submit_consultation_frame_capture(
+        session_id,
+        question_key=question_key,
+        turn_id=turn_id,
+        sample_started_at=sample_started_at,
+        sample_ended_at=sample_ended_at,
+        sample_index=sample_index,
+        mime_type=mime_type,
+        filename=filename,
+        file_bytes=file_bytes,
+        acting_user_id=acting_user_id,
+        submit_upstream_capture=submit_upstream_visual_capture,
+        error_code=5028,
     )
 
 

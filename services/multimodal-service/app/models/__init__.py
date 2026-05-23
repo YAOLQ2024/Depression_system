@@ -4,6 +4,7 @@ from app.models.multimodal_capture import MultimodalCapture
 from app.models.multimodal_inference_result import MultimodalInferenceResult
 from app.models.multimodal_session import MultimodalSession
 from app.models.multimodal_turn_bundle import MultimodalTurnBundle
+from app.models.multimodal_visual_frame import MultimodalVisualFrame
 
 __all__ = [
     "Base",
@@ -12,4 +13,5 @@ __all__ = [
     "MultimodalInferenceResult",
     "MultimodalSession",
     "MultimodalTurnBundle",
+    "MultimodalVisualFrame",
 ]
