@@ -14,8 +14,6 @@ from app.services.consultation_engine import (
     get_consultation_session,
     get_consultation_turn_multimodal_bundle,
     start_consultation_session,
-    submit_consultation_face_capture,
-    submit_consultation_pose_capture,
     submit_consultation_visual_capture,
     submit_consultation_turn,
 )
@@ -145,67 +143,7 @@ def get_consultation_turn_bundle(
     return success_response(bundle_payload)
 
 
-@router.post("/consultations/{session_id}/multimodal/captures/face")
-async def post_consultation_face_capture(
-    session_id: str,
-    question_key: str = Form(...),
-    turn_id: str | None = Form(default=None),
-    sample_started_at: str = Form(...),
-    sample_ended_at: str = Form(...),
-    sample_index: int = Form(...),
-    mime_type: str = Form(...),
-    image_file: UploadFile = File(...),
-    x_mcs_user_id: str | None = Header(default=None),
-):
-    try:
-        payload = submit_consultation_face_capture(
-            session_id,
-            question_key=question_key,
-            turn_id=turn_id,
-            sample_started_at=sample_started_at,
-            sample_ended_at=sample_ended_at,
-            sample_index=sample_index,
-            mime_type=mime_type,
-            filename=image_file.filename or f"face-{sample_index}.bin",
-            file_bytes=await image_file.read(),
-            acting_user_id=x_mcs_user_id,
-        )
-    except ConsultationServiceError as exc:
-        raise _translate_error(exc) from exc
-    return success_response(payload, message="consultation face capture accepted")
-
-
-@router.post("/consultations/{session_id}/multimodal/captures/pose")
-async def post_consultation_pose_capture(
-    session_id: str,
-    question_key: str = Form(...),
-    turn_id: str | None = Form(default=None),
-    sample_started_at: str = Form(...),
-    sample_ended_at: str = Form(...),
-    sample_index: int = Form(...),
-    mime_type: str = Form(...),
-    image_file: UploadFile = File(...),
-    x_mcs_user_id: str | None = Header(default=None),
-):
-    try:
-        payload = submit_consultation_pose_capture(
-            session_id,
-            question_key=question_key,
-            turn_id=turn_id,
-            sample_started_at=sample_started_at,
-            sample_ended_at=sample_ended_at,
-            sample_index=sample_index,
-            mime_type=mime_type,
-            filename=image_file.filename or f"pose-{sample_index}.bin",
-            file_bytes=await image_file.read(),
-            acting_user_id=x_mcs_user_id,
-        )
-    except ConsultationServiceError as exc:
-        raise _translate_error(exc) from exc
-    return success_response(payload, message="consultation pose capture accepted")
-
-
-@router.post("/consultations/{session_id}/multimodal/captures/visual")
+@router.post("/consultations/{session_id}/multimodal/visual-captures")
 async def post_consultation_visual_capture(
     session_id: str,
     question_key: str = Form(...),

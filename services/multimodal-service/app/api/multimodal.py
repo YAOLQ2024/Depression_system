@@ -21,9 +21,7 @@ from app.services.multimodal_session_service import (
     get_multimodal_session,
     get_multimodal_turn_bundle,
     submit_audio_turn,
-    submit_face_capture,
     submit_visual_capture,
-    submit_pose_capture,
     warmup_multimodal_session,
 )
 from app.services.multimodal_store import (
@@ -206,75 +204,7 @@ def get_audio_turn_status(session_id: str, audio_turn_id: str):
     )
 
 
-@router.post("/sessions/{session_id}/captures/face")
-async def post_face_capture(
-    session_id: str,
-    flow_run_id: str = Form(...),
-    question_key: str = Form(...),
-    stage_id: str | None = Form(default=None),
-    turn_id: str | None = Form(default=None),
-    sample_started_at: str = Form(...),
-    sample_ended_at: str = Form(...),
-    sample_index: int = Form(...),
-    mime_type: str = Form(...),
-    image_file: UploadFile = File(...),
-    x_mcs_user_id: str | None = Header(default=None),
-):
-    payload = SubmitFrameCaptureRequest(
-        flow_run_id=flow_run_id,
-        question_key=question_key,
-        stage_id=stage_id,
-        turn_id=turn_id,
-        sample_started_at=sample_started_at,
-        sample_ended_at=sample_ended_at,
-        sample_index=sample_index,
-        mime_type=mime_type,
-        image_format=_detect_image_format(mime_type, image_file.filename),
-        image_base64=await _to_base64(image_file),
-        frame_id=f"face-{sample_index}",
-    )
-    try:
-        result = submit_face_capture(session_id, payload, acting_user_id=x_mcs_user_id)
-    except (SessionServiceError, StoreServiceError) as exc:
-        raise _translate_error(exc) from exc
-    return success_response(result, message="face capture accepted")
-
-
-@router.post("/sessions/{session_id}/captures/pose")
-async def post_pose_capture(
-    session_id: str,
-    flow_run_id: str = Form(...),
-    question_key: str = Form(...),
-    stage_id: str | None = Form(default=None),
-    turn_id: str | None = Form(default=None),
-    sample_started_at: str = Form(...),
-    sample_ended_at: str = Form(...),
-    sample_index: int = Form(...),
-    mime_type: str = Form(...),
-    image_file: UploadFile = File(...),
-    x_mcs_user_id: str | None = Header(default=None),
-):
-    payload = SubmitFrameCaptureRequest(
-        flow_run_id=flow_run_id,
-        question_key=question_key,
-        stage_id=stage_id,
-        turn_id=turn_id,
-        sample_started_at=sample_started_at,
-        sample_ended_at=sample_ended_at,
-        sample_index=sample_index,
-        mime_type=mime_type,
-        image_format=_detect_image_format(mime_type, image_file.filename),
-        image_base64=await _to_base64(image_file),
-        frame_id=f"pose-{sample_index}",
-    )
-    try:
-        result = submit_pose_capture(session_id, payload, acting_user_id=x_mcs_user_id)
-    except (SessionServiceError, StoreServiceError) as exc:
-        raise _translate_error(exc) from exc
-    return success_response(result, message="pose capture accepted")
-
-
-@router.post("/sessions/{session_id}/captures/visual")
+@router.post("/sessions/{session_id}/visual-captures")
 async def post_visual_capture(
     session_id: str,
     flow_run_id: str = Form(...),
