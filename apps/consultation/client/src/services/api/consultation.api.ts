@@ -81,7 +81,7 @@ function buildCaptureFormData(payload: ConsultationMultimodalCapturePayload) {
 }
 
 export async function submitConsultationVisualCapture(sessionId: string, payload: ConsultationMultimodalCapturePayload) {
-  return apiRequest<ConsultationVisualCaptureResponse>(`/consultations/${sessionId}/multimodal/captures/visual`, {
+  return apiRequest<ConsultationVisualCaptureResponse>(`/consultations/${sessionId}/multimodal/visual-captures`, {
     method: "POST",
     body: buildCaptureFormData(payload),
   });

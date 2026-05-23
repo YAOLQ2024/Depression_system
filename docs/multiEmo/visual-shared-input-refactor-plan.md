@@ -159,7 +159,7 @@
 
 应该先新增：
 
-- `/captures/visual`
+- `/visual-captures`
 
 等新链路稳定后，再考虑旧接口降级或退役。
 
@@ -199,7 +199,7 @@
 
 1. 前端截图一次
 2. 发起：
-   - `POST /captures/visual`
+   - `POST /visual-captures`
 3. 后端保存一条共享视觉帧记录
 4. 后端内部派生：
    - `face inference`
@@ -264,7 +264,7 @@
 
 建议新增：
 
-- `POST /consultations/{session_id}/multimodal/captures/visual`
+- `POST /consultations/{session_id}/multimodal/visual-captures`
 
 请求包含：
 
@@ -280,7 +280,7 @@
 
 建议新增：
 
-- `POST /api/v1/multimodal/sessions/{session_id}/captures/visual`
+- `POST /api/v1/multimodal/sessions/{session_id}/visual-captures`
 
 作用：
 
@@ -381,10 +381,10 @@
 当前明确纳入本轮实施范围的内容：
 
 - 新增共享视觉输入实体
-- 新增 `/captures/visual` 前后端接口
+- 新增 `/visual-captures` 前后端接口
 - 后端内部 `face + pose` fan-out
 - 前端由双请求切到单请求
-- 旧接口过渡期兼容
+- 旧接口后续清理
 
 当前明确不纳入本轮实施范围的内容：
 
@@ -468,8 +468,8 @@
 但仍然**没有**改变以下行为：
 
 - 前端仍然是 `face + pose` 双请求
-- consultation-service 仍然没有 `/captures/visual`
-- multimodal-service 仍然没有 `/captures/visual`
+- consultation-service 仍然没有 `/visual-captures`
+- multimodal-service 仍然没有 `/visual-captures`
 - 现有 `face/pose` capture 链路保持不变
 
 这符合 Phase B 的边界：先把共享输入数据层打底，不提前改接口行为。
@@ -484,10 +484,9 @@
 
 实施内容：
 
-1. `consultation-service` 新增 `/captures/visual`
-2. `multimodal-service` 新增 `/captures/visual`
-3. `gateway-service` 新增 `/captures/visual` 转发入口
-4. 内部 fan-out 到 `face + pose`
+1. `consultation-service` 新增 `/visual-captures`
+2. `multimodal-service` 新增 `/visual-captures`
+3. 内部 fan-out 到 `face + pose`
 
 验收：
 
@@ -499,15 +498,12 @@
 本阶段已完成以下接口层改造：
 
 1. `multimodal-service` 新增：
-   - `POST /api/v1/multimodal/sessions/{session_id}/captures/visual`
+   - `POST /api/v1/multimodal/sessions/{session_id}/visual-captures`
 2. `consultation-service` 新增：
-   - `POST /api/v1/consultations/{session_id}/multimodal/captures/visual`
-3. `gateway-service` 新增：
-   - `POST /api/v1/consultations/{session_id}/multimodal/captures/visual`
-   - 用于把浏览器请求继续转发到 `consultation-service`
-4. `consultation-service` 上游 client 新增 `submit_visual_capture(...)`
-5. `multimodal-service` 内部新增 `submit_visual_capture(...)`
-6. 单次 visual capture 已可返回：
+   - `POST /api/v1/consultations/{session_id}/multimodal/visual-captures`
+3. `consultation-service` 上游 client 新增 `submit_visual_capture(...)`
+4. `multimodal-service` 内部新增 `submit_visual_capture(...)`
+5. 单次 visual capture 已可返回：
    - `visual_frame`
    - `face_result`
    - `pose_result`
@@ -519,7 +515,6 @@
 到本阶段结束时，系统已经具备：
 
 - 后端单次视觉上传入口
-- `gateway-service -> consultation-service -> multimodal-service` 的完整转发链路
 - 后端内部 `face + pose` fan-out 处理能力
 - consultation-service 到 multimodal-service 的转发链路
 
@@ -547,31 +542,6 @@
 - 默认系统 Python 环境缺少部分依赖，无法直接跑完整测试
 - 本次路由与服务层测试使用项目现有临时测试环境完成
 
-#### Phase C 真实联调补充
-
-在 HTTPS 浏览器联调阶段，曾实际暴露出一处容易忽略的问题：
-
-- 前端与 `consultation-service`、`multimodal-service` 的 `/captures/visual` 已经加好
-- 但 `gateway-service` 最初没有同步新增：
-  - `POST /api/v1/consultations/{session_id}/multimodal/captures/visual`
-- 结果表现为浏览器请求：
-  - `/api/v1/consultations/{session_id}/multimodal/captures/visual`
-  - 返回 `404 Not Found`
-
-已修正结论：
-
-- 新增视觉主链时，不能只改 consultation 与 multimodal 两层
-- 网关层必须同步补齐同名转发路由
-
-部署提醒：
-
-- 如果后续再次新增类似的 consultation 路由，至少要同步重建：
-  - `gateway-service`
-- 若前端也刚切换到新接口，建议一起重建：
-  - `consultation`
-  - `consultation-service`
-  - `gateway-service`
-
 ### Phase D：前端切换到单次 visual capture
 
 当前状态：**已完成（2026-05-23）**
@@ -596,7 +566,7 @@
 本阶段已完成以下前端改造：
 
 1. 前端新增 `submitConsultationVisualCapture(...)`
-2. `consultation.api.ts` 已新增 `/multimodal/captures/visual` 请求封装
+2. `consultation.api.ts` 已新增 `/multimodal/visual-captures` 请求封装
 3. `useConsultationApp.ts` 已新增 visual capture 状态合并逻辑
 4. `ConsultationPage.tsx` 已从：
    - `submitConsultationFaceCapture(payload)`
@@ -634,7 +604,7 @@
 
 ### Phase E：旧接口降级与清理
 
-当前状态：**已完成第一阶段清理（2026-05-23）**
+当前状态：**已完成（2026-05-23）**
 
 目标：
 
@@ -642,42 +612,56 @@
 
 实施内容：
 
-1. 保留旧接口一段观察期
-2. 确认无调用方后再退役
-3. 清理相关重复逻辑
+1. 删除旧 `face/pose` 外部上传路由
+2. 删除旧 `/captures/visual` 兼容别名
+3. 清理相关重复逻辑与无效测试
 
 验收：
 
 - 前端已完全不依赖旧双接口
-- 旧接口可以降为兼容层或删除
+- 后端只保留 `visual-captures` 主链
 
 #### Phase E 已完成内容
 
-本阶段当前已完成的第一阶段清理包括：
+本阶段已完成以下清理：
 
 1. 前端主链已不再依赖旧的：
    - `submitConsultationFaceCapture(...)`
    - `submitConsultationPoseCapture(...)`
 2. 前端 API 层已移除旧双上传封装
 3. 前端状态管理层已移除旧双上传 action
-4. 当前视觉主链只保留：
-   - `submitConsultationVisualCapture(...)`
+4. `gateway-service` 已删除旧：
+   - `/consultations/{session_id}/multimodal/captures/face`
+   - `/consultations/{session_id}/multimodal/captures/pose`
+   - `/consultations/{session_id}/multimodal/captures/visual`
+5. `consultation-service` 已删除旧：
+   - `/consultations/{session_id}/multimodal/captures/face`
+   - `/consultations/{session_id}/multimodal/captures/pose`
+   - `/consultations/{session_id}/multimodal/captures/visual`
+6. `multimodal-service` 已删除旧：
+   - `/api/v1/multimodal/sessions/{session_id}/captures/face`
+   - `/api/v1/multimodal/sessions/{session_id}/captures/pose`
+   - `/api/v1/multimodal/sessions/{session_id}/captures/visual`
+7. 与旧 consultation 外部上传路由绑定的测试已删除
 
 #### Phase E 当前结论
 
 到当前阶段结束时：
 
 - 前端已经完全切到新 visual capture 主链
-- 旧 `face/pose` 上传接口仍保留在后端，作为兼容层存在
-- 这意味着系统已经进入“前端完成切换、后端保留观察期兼容”的状态
+- 后端只保留：
+  - `/multimodal/visual-captures`
+  - `/api/v1/multimodal/sessions/{session_id}/visual-captures`
+- 旧 `face/pose` 外部上传接口和旧 `/captures/visual` 兼容别名已删除
+- 这意味着视觉共享输入主链已经完成从旧路径到新路径的正式切换
 
 #### Phase E 下一步建议
 
-后续如果继续做第二阶段清理，可按下面顺序推进：
+后续如果继续做命名和结构收敛，可按下面顺序推进：
 
-1. 在 README / 服务文档中明确标记旧 `face/pose` capture 为兼容入口
-2. 观察一段时间确认无调用方
-3. 再删除 consultation-service 与 multimodal-service 的旧双接口及对应测试
+1. 继续清理仓库内仍残留旧接口描述的历史文档
+2. 视需要收敛 `submit_face_capture(...)` / `submit_pose_capture(...)` 这类仅内部复用的命名
+3. 再统一 README 与服务文档中的视觉接口说明
 
 ---
 
