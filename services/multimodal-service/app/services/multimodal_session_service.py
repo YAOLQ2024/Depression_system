@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -65,6 +66,8 @@ _AUDIO_TURN_EXECUTOR = ThreadPoolExecutor(
     max_workers=2,
     thread_name_prefix="multimodal-audio-turn",
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -644,6 +647,16 @@ def _submit_pose_capture_with_session(
                     timestamp=_isoformat(payload.sample_ended_at),
                 )
             )
+        )
+        logger.info(
+            "pose raw result session_id=%s turn_id=%s sample_index=%s label=%s score=%s frames=%s confidences=%s",
+            session.id,
+            payload.turn_id,
+            payload.sample_index,
+            raw_result.get("label"),
+            raw_result.get("score"),
+            ((raw_result.get("extra") or {}).get("frames")),
+            ((raw_result.get("extra") or {}).get("confidences")),
         )
         pose_result = _normalize_pose_result(raw_result, payload)
     except MultimodalServiceError as exc:
