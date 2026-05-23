@@ -206,6 +206,14 @@ function getPoseDetail(
   return parts.join(" · ") || "等待采样";
 }
 
+function getPoseSourceSummary(
+  label: string | null | undefined,
+  score: number | null | undefined,
+  status?: string | null,
+) {
+  return `${getPrimaryLabel(label, status || undefined)} · ${formatPercent(score)} `;
+}
+
 function getVoiceDetail(live: SpeechMultimodalLive, isRecording: boolean) {
   if (isRecording) {
     return "录音与识别进行中";
@@ -419,11 +427,11 @@ export function ConsultationStatusPanel({
 
         <div className="grid grid-cols-2 gap-[3px]">
           <SectionCard title="姿态情绪检测" rightStatus={snapshot.pose.status === "failed" ? "failed" : snapshot.pose.status === "ready" ? "ready" : "pending"}>
-            <div className="flex h-full items-center gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
+            <div className="flex h-full gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
                 <Activity className="h-5 w-5" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="text-[18px] font-semibold text-slate-100">
                   {getPrimaryLabel(currentTurnPoseBundle.primary_label || snapshot.pose.primary_label, snapshot.pose.status)}
                 </div>
@@ -431,6 +439,22 @@ export function ConsultationStatusPanel({
                   {formatPercent(currentTurnPoseBundle.primary_score ?? snapshot.pose.primary_score)} 置信度
                 </div>
                 <div className="mt-1 text-[11px] text-slate-400">{getPoseDetail(snapshot.pose, currentTurnPoseBundle)}</div>
+                <div className="mt-2 space-y-1.5">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Live Result</div>
+                    <div className="mt-1 text-[12px] font-medium text-slate-200">
+                      {getPoseSourceSummary(snapshot.pose.primary_label, snapshot.pose.primary_score, snapshot.pose.status)}
+                    </div>
+                  </div>
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Current Turn Bundle Result</div>
+                    <div className="mt-1 text-[12px] font-medium text-slate-200">
+                      {currentTurnPoseBundle.primary_label || typeof currentTurnPoseBundle.primary_score === "number"
+                        ? getPoseSourceSummary(currentTurnPoseBundle.primary_label, currentTurnPoseBundle.primary_score, snapshot.pose.status)
+                        : "当前轮尚未形成 pose bundle 聚合结果"}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </SectionCard>

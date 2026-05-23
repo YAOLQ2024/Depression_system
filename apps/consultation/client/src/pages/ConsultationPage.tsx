@@ -31,7 +31,8 @@ import type { ConsultationSession, ConsultationSubtitleHistoryEntry } from "../t
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
 const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
-const CAMERA_CAPTURE_INTERVAL_MS = 2500;
+const LIVE_REFRESH_INTERVAL_MS = 5000;
+const VISUAL_CAPTURE_INTERVAL_MS = 1500;
 
 declare global {
   interface Window {
@@ -384,7 +385,7 @@ export default function ConsultationPage() {
     void refreshLiveSnapshot();
     const timer = window.setInterval(() => {
       void refreshLiveSnapshot();
-    }, 2000);
+    }, LIVE_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
   }, [consultation?.session_id]);
@@ -400,7 +401,7 @@ export default function ConsultationPage() {
     void submitCameraCaptures();
     const timer = window.setInterval(() => {
       void submitCameraCaptures();
-    }, CAMERA_CAPTURE_INTERVAL_MS);
+    }, VISUAL_CAPTURE_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
   }, [cameraReady, consultation?.status, currentQuestionKey]);
