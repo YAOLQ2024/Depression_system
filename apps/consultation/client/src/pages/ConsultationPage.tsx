@@ -390,14 +390,6 @@ export default function ConsultationPage() {
   }, [consultation?.session_id]);
 
   useEffect(() => {
-    if (!consultation?.current_turn_id) {
-      return;
-    }
-
-    void actions.getConsultationTurnBundle(consultation.current_turn_id);
-  }, [actions, consultation?.current_turn_id]);
-
-  useEffect(() => {
     if (!consultation || !currentQuestionKey || !cameraReady) {
       return;
     }
