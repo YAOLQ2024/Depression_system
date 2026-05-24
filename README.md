@@ -1,8 +1,10 @@
-# MCS
+# MCS — Multimodal Consultation System（多模态问诊系统）
 
-`MCS` 是 `Multimodal Consultation System` 的全新研发仓库。
+MCS 是一个面向抑郁症筛查与干预的**多模态问诊系统**，核心流程为：
 
-当前仓库目标不是“先把所有业务做完”，而是先提供一套适合多人协作的统一工程骨架：
+> 患者登录 → 问诊准备 → 数字人交互问诊（语音 / 视觉 / EEG 多模态采集）→ 量表评估 → 临床决策 → 个性化调节干预 → 回顾与再评估闭环
+
+当前仓库目标不是”先把所有业务做完”，而是先提供一套适合多人协作的统一工程骨架：
 
 - 2 个前端应用
 - 8 个核心服务
@@ -10,6 +12,17 @@
 - 统一的 Postgres + Alembic + SQLAlchemy 规范
 - 统一的 Docker Compose 本地开发入口
 - 统一的文档驱动开发方式
+
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 前端 | React + TypeScript + TailwindCSS + Vite |
+| 后端 | Python 3.11+ / FastAPI |
+| 数据库 | PostgreSQL + Alembic（迁移）+ SQLAlchemy（ORM） |
+| 缓存 / 对象存储 | Redis / MinIO |
+| 反向代理 | Caddy（LAN HTTPS）/ Nginx |
+| 基础设施 | Docker Compose v2 |
 
 ## 当前状态
 
@@ -77,61 +90,139 @@
 
 以下命令默认都在仓库根目录 `depression-system/` 下执行。
 
-最常用的是下面这几条。
+### 0. 前置条件
+
+- **Docker 24+** 与 **Docker Compose v2**
+- （可选）**NVIDIA Container Toolkit** — 如需 GPU 模式运行 `multimodal-service`
+- （可选）**mkcert** — 如需 LAN HTTPS 模式，每台机器必须先安装 mkcert 并生成本地证书（[步骤](#https-证书一次性配置)）
+- （可选）**Python 3.11+** — 仅 `face` 模态最小回归脚本需要
 
 ### 1. Compose 文件关系
 
-当前仓库里，日常开发只需要理解这两个 compose 文件：
+当前仓库里，日常开发需要理解这三个 compose 文件：
 
-- `infra/compose/docker-compose.dev.yml`
-  - 基础开发环境
+- `infra/compose/docker-compose.dev.yml`（基础环境，必须）
   - 定义了前端、网关、业务服务、数据库、对象存储等完整本地运行骨架
-  - 日常启动时必须带上它
-- `infra/compose/docker-compose.gpu.yml`
-  - GPU 覆盖层
+  - 始终作为第一个 compose 文件加载
+- `infra/compose/docker-compose.gpu.yml`（GPU 覆盖层，可选）
   - 只覆盖 `multimodal-service` 的运行方式，例如 `runtime: nvidia`、`gpus: all`、`ASR_DEVICE=cuda`
   - 不能单独使用，必须叠加在 `docker-compose.dev.yml` 之后
+- `infra/compose/docker-compose.lan-https.yml`（LAN HTTPS 覆盖层，可选）
+  - 通过 Caddy 提供局域网 HTTPS 访问，用于测试摄像头、麦克风等需要安全上下文的浏览器 API
+  - 不能单独使用，必须叠加在 `docker-compose.dev.yml` 之后
+  - 证书生成方式见 [docs/architecture/lan-https-testing-plan.md](./docs/architecture/lan-https-testing-plan.md)
 
-它们不会冲突，原因是：
+两个 override 文件可以单独或同时叠加在 `docker-compose.dev.yml` 之上，不会冲突：
 
 - `docker-compose.dev.yml` 提供完整服务定义
-- `docker-compose.gpu.yml` 只补充或覆盖 `multimodal-service` 的少数字段
-- 正确写法是“基础 compose 在前，覆盖 compose 在后”
+- override 文件只补充或覆盖各自关心的少数字段
+- 正确写法是”基础 compose 在前，覆盖 compose 在后”
 
-也就是说：
+常用组合：
 
 - CPU 开发环境：只用 `docker-compose.dev.yml`
 - GPU 开发环境：`docker-compose.dev.yml + docker-compose.gpu.yml`
+- LAN HTTPS 环境：`docker-compose.dev.yml + docker-compose.lan-https.yml`
+- GPU + LAN HTTPS：三个文件同时叠加
 
-### 2. 默认启动
+### 2. HTTPS 证书一次性配置
 
-整套开发环境重建并启动：
+证书文件（`infra/certs/lan-cert.pem`、`infra/certs/lan-key.pem`）已加入 `.gitignore`，不会提交到仓库。**每台机器首次使用 HTTPS 模式前，必须自行生成**，否则 Caddy 容器会因缺少证书文件启动失败。
+
+步骤（每台机器只需做一次）：
+
+```powershell
+# 1. 安装 mkcert（Windows）
+winget install FiloSottile.mkcert
+
+# 2. 安装本地 CA（需管理员权限）
+mkcert -install
+
+# 3. 生成本机证书（把 <你的局域网IP> 替换为实际地址，如 10.101.10.121）
+mkcert -cert-file infra/certs/lan-cert.pem -key-file infra/certs/lan-key.pem localhost 127.0.0.1 ::1 <你的局域网IP>
+```
+
+验证证书是否生成成功：
+
+```powershell
+ls infra/certs/lan-cert.pem
+ls infra/certs/lan-key.pem
+```
+
+> 如果另一台设备（如手机、平板）要通过浏览器访问当前机器的 HTTPS 页面，还需要在那台设备上信任当前机器的本地 CA。详见 [LAN HTTPS 测试方案](./docs/architecture/lan-https-testing-plan.md)。
+
+### 3. 启动命令速查
+
+日常开发按是否使用 GPU、是否需要 HTTPS，共 4 种组合：
+
+| 场景 | 命令 |
+|---|---|
+| CPU + HTTP（默认） | `docker compose -f infra/compose/docker-compose.dev.yml up -d --build` |
+| GPU + HTTP | `docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build` |
+| CPU + HTTPS | `docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml up -d --build` |
+| GPU + HTTPS | `docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build` |
+
+> 以上 4 条命令都会重建有变更的镜像并启动全部服务。如果只想启动或重建特定服务，在末尾追加服务名即可，见 [第 5 节](#5-只重建某个服务)。
+
+### 4. 各场景完整命令
+
+#### 4.1 默认（CPU + HTTP）
 
 ```bash
+# 首次或全量重建
 docker compose -f infra/compose/docker-compose.dev.yml up -d --build
+
+# 如果镜像已 build 过，无需重建
+docker compose -f infra/compose/docker-compose.dev.yml up -d
 ```
 
-### 3. GPU 模式启动
-
-如果当前机器有可用 NVIDIA GPU，并且只想让 `multimodal-service` 走 GPU，正确命令是：
+启动后验证：
 
 ```bash
-docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build multimodal-service
+docker compose -f infra/compose/docker-compose.dev.yml ps
+curl http://localhost:8080/health/live
+curl http://localhost:8000/health/live
 ```
 
-如果你同时改了多模态后端、问诊后端和前端页面，推荐直接重建这 3 个服务：
+#### 4.2 GPU + HTTP
+
+```bash
+# 全量重建（首次推荐）
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build
+
+# 镜像已 build 过，只需重启
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d
+```
+
+如果只改了三层链路（多模态 + 问诊后端 + 前端），推荐只重建这 3 个服务：
 
 ```bash
 docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build multimodal-service consultation-service consultation
 ```
 
-如果镜像已经 build 过，只需要用 GPU 配置重启 `multimodal-service`：
+#### 4.3 CPU + HTTPS
+
+适用于同一局域网内其它设备测试摄像头、麦克风、语音和视觉模态（需要安全上下文）：
 
 ```bash
-docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d multimodal-service
+# 全量重建
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml up -d --build
+
+# 只重建 HTTPS 链路（consultation + gateway + caddy）
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml up -d --build consultation gateway-service caddy
 ```
 
-### 4. 只重建某个服务
+#### 4.4 GPU + HTTPS
+
+```bash
+# 全量重建
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build
+
+# 只重建三层链路 + HTTPS
+docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build multimodal-service consultation-service consultation gateway-service caddy
+```
+
+### 5. 只重建某个服务
 
 重建前端：
 
@@ -156,26 +247,7 @@ docker compose -f infra/compose/docker-compose.dev.yml up -d --build consultatio
 - 普通代码改动通常不需要全量重建 `postgres`、`redis`、`minio`
 - 只重建你实际改到的服务即可
 - 如果 `multimodal-service` 需要 GPU，就在同一条命令里继续叠加 `-f infra/compose/docker-compose.gpu.yml`
-
-### 5. 局域网 HTTPS 启动
-
-如果当前机器需要通过 HTTPS 给本机或同一局域网内其它设备测试摄像头、麦克风、语音和视觉模态，使用：
-
-```bash
-docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml up -d --build consultation gateway-service caddy
-```
-
-如果当前机器还要让 `multimodal-service` 走 GPU，可继续叠加 GPU override：
-
-```bash
-docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build multimodal-service consultation-service consultation gateway-service caddy
-```
-
-说明：
-
-- `docker-compose.lan-https.yml` 不是独立环境，它是 HTTPS 覆盖层
-- 使用时必须和 `docker-compose.dev.yml` 一起叠加
-- 证书生成方式见 [docs/architecture/lan-https-testing-plan.md](./docs/architecture/lan-https-testing-plan.md)
+- 如果需要 HTTPS，继续叠加 `-f infra/compose/docker-compose.lan-https.yml`
 
 ### 6. 看状态和日志
 
@@ -235,7 +307,7 @@ docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
 
 预期会看到 `requirements-heavy.txt` 和 `requirements-app.txt` 对应层命中 `CACHED`。
 
-如果当前机器是 GPU 环境，正常情况下也不需要专门“重建到 heavy 依赖层”；只要：
+如果当前机器是 GPU 环境，正常情况下也不需要专门”重建到 heavy 依赖层”；只要：
 
 - 没改 `Dockerfile`
 - 没改 `requirements-heavy.txt`
@@ -245,10 +317,10 @@ docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
 
 ### 9. face 模态最小回归
 
-如果要快速复验 `face` 模态当前是否仍保持“基本走通”，可以从仓库根目录执行：
+如果要快速复验 `face` 模态当前是否仍保持”基本走通”，可以从仓库根目录执行：
 
 ```powershell
-.\scripts\run_face_modality_checks.ps1 -PythonExe "C:\path\to\python.exe"
+.\scripts\run_face_modality_checks.ps1 -PythonExe “C:\path\to\python.exe”
 ```
 
 这会顺序运行：
@@ -264,6 +336,20 @@ docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
 
 ## 主要文档
 
-- [mcs_system_blueprint_v1.md](./docs/mcs_system_blueprint_v1.md)
-- [docs/services/README.md](./docs/services/README.md)
-- [docs/apps/README.md](./docs/apps/README.md)
+**新人必读：**
+
+- [系统蓝图 V1](./docs/mcs_system_blueprint_v1.md) — 产品流程与架构决策
+
+**服务开发者：**
+
+- [服务文档总览](./docs/services/README.md) — 各服务的 overview / api-and-data / flow / tasks
+- [协作开发约定](./CONTRIBUTING.md) — 开发顺序、服务约定、提交自检
+
+**前端开发者：**
+
+- [应用文档总览](./docs/apps/README.md) — 各应用的 overview / api-and-data / flow / tasks
+
+**运维 & 环境：**
+
+- [Phase B 运维手册](./docs/operations/phase-b-runbook.md)
+- [LAN HTTPS 测试方案](./docs/architecture/lan-https-testing-plan.md)
