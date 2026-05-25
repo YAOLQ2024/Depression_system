@@ -1,3 +1,3 @@
-from app.services.consultation_engine import ConsultationServiceError
+from app.services.consultation import ConsultationServiceError
 
 __all__ = ["ConsultationServiceError"]
