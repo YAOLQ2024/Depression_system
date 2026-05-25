@@ -6,11 +6,6 @@ revision: teacher-confirmed-flow-2026-04
 entry_node: handoff-open
 nodes:
   - id: handoff-open
-    type: speak
-    prompt: 语音问诊这一部分先到这里。接下来我们将进入量表问诊阶段，系统会根据规则为您安排必做量表，并展示可选量表。
-    next: handoff-instructions
-
-  - id: handoff-instructions
-    type: speak
-    prompt: 题目会逐条展示，您只需要根据最近一段时间的真实感受作答即可。每完成一个量表，系统都会自动保存，但会在全部量表结束后再统一展示结果。准备好了的话，我们开始第一份量表。
+    type: speak_then_complete
+    prompt: 语音问诊这一部分先到这里。接下来我们将进入量表问诊阶段，系统会根据规则为您安排必做量表，并展示可选量表。题目会逐条展示，您只需要根据最近一段时间的真实感受作答即可。每完成一个量表，系统都会自动保存，但会在全部量表结束后再统一展示结果。准备好了的话，我们现在开始。
     next: stage-complete

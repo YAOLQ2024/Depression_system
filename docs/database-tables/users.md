@@ -35,7 +35,7 @@
 | `marital_status` | Marital Status | 婚姻状况 | `Text`，可空 | 保存当前婚姻状态。 | 婚姻与亲密关系支持情况常与心理状态相关，问诊前保留有助于减少重复提问。 | 问诊准备、问诊上下文快照 |
 | `parents_marital_status` | Parents' Marital Status | 父母婚姻状况 | `Text`，可空 | 保存父母婚姻关系状态。 | 家庭结构是规则式精神心理问诊的重要背景信息。 | 问诊准备、问诊上下文快照 |
 | `parents_occupation` | Parents' Occupation | 父母职业情况 | `Text`，可空 | 保存父母职业信息。 | 家庭社会支持与成长环境分析常需要该背景项。 | 问诊准备、问诊上下文快照 |
-| `prior_psychiatric_visit` | Prior Psychiatric Visit | 既往精神科就诊史 | `Text`，可空 | 保存是否曾接受过精神科或心理相关就诊。 | 这是后续现病史判断的重要先验信息，提前采集可以减少问诊时重复输入。 | 问诊准备、问诊上下文快照、现病史解释 |
+| `prior_psychiatric_visit` | Prior Psychiatric Visit | 既往精神科就诊史 | `Text`，可空 | 保存是否曾接受过精神科或心理相关就诊。 | 这是后续症状筛查判断的重要先验信息，提前采集可以减少问诊时重复输入。 | 问诊准备、问诊上下文快照、症状筛查解释 |
 | `created_at` | Created Time | 创建时间 | `DateTime(timezone=True)`，非空 | 记录用户创建时间。 | 需要审计账号何时建立，也便于后续统计和排障。 | 注册后审计、后台统计 |
 | `updated_at` | Updated Time | 更新时间 | `DateTime(timezone=True)`，非空 | 记录用户资料最近一次更新时间。 | 需要判断资料是否刚更新过，并支持审计和缓存失效策略。 | 问诊准备更新、用户资料展示 |
 
