@@ -192,8 +192,13 @@ export type ConsultationSession = {
   participant_profile_snapshot?: Record<string, unknown>;
   slot_values?: Record<string, unknown>;
   chief_complaint_summary?: string | null;
+  chief_complaint_structured_result?: Record<string, unknown>;
+  chief_complaint_stage_summary?: string | null;
   current_history_structured_result?: Record<string, unknown>;
+  symptom_screening_stage_summary?: string | null;
   high_risk_screening_result?: Record<string, unknown>;
+  high_risk_screening_stage_summary?: string | null;
+  digital_human_consultation_summary?: string | null;
   scale_handoff_payload?: Record<string, unknown>;
   required_scales?: string[];
   multimodal_session_id?: string | null;

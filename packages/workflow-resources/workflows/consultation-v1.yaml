@@ -47,7 +47,7 @@ stages:
     substeps:
       - stage-01-greeting-and-briefing
       - stage-02-chief-complaint
-      - stage-03-current-history-followup
+      - stage-03-symptom-screening
       - stage-04-high-risk-screening
       - handoff-to-scale-assessment
     inputs:
@@ -57,8 +57,12 @@ stages:
     outputs:
       - chief_complaint_raw_text
       - chief_complaint_summary
+      - chief_complaint_structured_result
       - current_history_structured_result
+      - symptom_screening_stage_summary
       - high_risk_screening_result
+      - high_risk_screening_stage_summary
+      - digital_human_consultation_summary
       - consultation_record_bundle
       - scale_handoff_payload
     completion_criteria:
@@ -97,6 +101,7 @@ stages:
     inputs:
       - chief_complaint_summary
       - current_history_structured_result
+      - digital_human_consultation_summary
       - scale_handoff_payload
     outputs:
       - selected_scales

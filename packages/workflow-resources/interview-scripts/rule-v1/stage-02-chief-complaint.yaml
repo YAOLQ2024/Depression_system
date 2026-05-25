@@ -3,48 +3,55 @@ stage_id: stage-02-chief-complaint
 title: 主诉采集
 source_document: /home/ZR/data2/MCS/docs/交互剧本.txt
 revision: teacher-confirmed-flow-2026-04
-entry_node: ask-chief-complaint
+entry_node: ask-chief-complaint-001
 slots:
   - chief_complaint_text
-  - chief_complaint_keywords
-  - chief_complaint_summary
+  - chief_complaint_structured_result
+  - chief_complaint_stage_summary
+  - symptom_duration
+  - symptom_first_occurrence
 nodes:
-  - id: ask-chief-complaint
+  - id: ask-chief-complaint-001
     type: speak_then_wait
-    prompt: 现在请您放轻松，先和我说说，您今天最想咨询或最想解决的问题是什么？最近让您最难受、最困扰的表现是什么？
+    prompt: 您今天主要是因为什么问题来就诊？
     extraction:
       strategy: free_text
       target_slot: chief_complaint_text
-      derived_slots:
-        - chief_complaint_keywords
-        - chief_complaint_summary
     branches:
       normal:
-        next: confirm-chief-complaint
+        next: ask-chief-complaint-002
       silence:
         after_seconds: 8
-        next: reframe-chief-complaint
+        next: ask-chief-complaint-002
       recognition_failure:
-        next: reframe-chief-complaint
+        next: ask-chief-complaint-002
 
-  - id: reframe-chief-complaint
+  - id: ask-chief-complaint-002
     type: speak_then_wait
-    prompt: 不用着急，您可以慢慢组织语言。您也可以从一个最明显的不舒服开始说起，比如睡眠、情绪、紧张害怕、食欲或者上学上班状态。
+    prompt: 这个问题大概是从什么时候开始的，持续多久了？
+    extraction:
+      strategy: free_text
+      target_slot: symptom_duration
     branches:
       normal:
-        next: confirm-chief-complaint
+        next: ask-chief-complaint-003
       silence:
         after_seconds: 8
-        next: mark-chief-complaint-unclear
+        next: ask-chief-complaint-003
       recognition_failure:
-        next: mark-chief-complaint-unclear
+        next: ask-chief-complaint-003
 
-  - id: confirm-chief-complaint
-    type: speak
-    template_prompt: 好的，我先为您记录为：{{ chief_complaint_summary }}。接下来我会继续了解它出现了多久、变化成什么样、以及对您生活造成了哪些影响。
-    next: stage-complete
-
-  - id: mark-chief-complaint-unclear
-    type: speak
-    prompt: 没关系，我先把主诉记录为暂未明确。接下来我会通过几个更具体的问题帮助我们一起把情况梳理清楚。
-    next: stage-complete
+  - id: ask-chief-complaint-003
+    type: speak_then_wait
+    prompt: 目前最影响您生活、学习或工作的症状是什么？这些症状是第一次出现，还是以前也出现过类似症状？
+    extraction:
+      strategy: free_text
+      target_slot: symptom_first_occurrence
+    branches:
+      normal:
+        next: stage-complete
+      silence:
+        after_seconds: 8
+        next: stage-complete
+      recognition_failure:
+        next: stage-complete

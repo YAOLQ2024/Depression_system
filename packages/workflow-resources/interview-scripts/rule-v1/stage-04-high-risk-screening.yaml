@@ -3,26 +3,23 @@ stage_id: stage-04-high-risk-screening
 title: 高风险问题排查
 source_document: /home/ZR/data2/MCS/docs/交互剧本.txt
 revision: teacher-confirmed-flow-2026-04
-entry_node: screening-open
+entry_node: ask-suicidal-ideation
 slots:
   - suicidal_ideation
   - self_harm_behavior
   - suicide_plan
   - acute_support_state
+  - primary_concern
   - high_risk_flag
   - high_risk_reason
+  - high_risk_screening_stage_summary
 completion_outcomes:
   - safe_to_continue
   - human_intervention_required
 nodes:
-  - id: screening-open
-    type: speak
-    prompt: 接下来我需要例行确认几个安全相关的问题。这些问题很重要，目的是确保您现在是安全的。
-    next: ask-suicidal-ideation
-
   - id: ask-suicidal-ideation
     type: speak_then_wait
-    prompt: 最近这段时间，您有没有出现过想伤害自己，或者觉得不如结束生命的念头？
+    prompt: 最近有没有伤害自己或轻生的想法？
     extraction:
       strategy: risk_enum_parse
       target_slot: suicidal_ideation
@@ -41,7 +38,7 @@ nodes:
 
   - id: ask-plan-or-action
     type: speak_then_wait
-    prompt: 如果出现过类似念头，您是否已经想过要怎么做，或者最近有过差一点真的去做的情况？
+    prompt: 有没有具体计划、差点实施，或者已经做过？
     extraction:
       strategy: risk_enum_parse
       target_slots:
@@ -62,7 +59,7 @@ nodes:
 
   - id: ask-support-state
     type: speak_then_wait
-    prompt: 如果您现在状态很差，您身边有没有家人、朋友、老师或同事可以及时联系和陪伴？
+    prompt: 现在身边有没有家人、朋友、老师或同事可以及时联系和陪伴？
     extraction:
       strategy: risk_enum_parse
       target_slot: acute_support_state
@@ -71,6 +68,21 @@ nodes:
         - limited
         - none
         - unclear
+    branches:
+      normal:
+        next: ask-primary-concern
+      silence:
+        after_seconds: 6
+        next: ask-primary-concern
+      recognition_failure:
+        next: ask-primary-concern
+
+  - id: ask-primary-concern
+    type: speak_then_wait
+    prompt: 这次就诊您最希望医生帮您解决什么问题？
+    extraction:
+      strategy: free_text
+      target_slot: primary_concern
     branches:
       normal:
         next: evaluate-high-risk
@@ -91,15 +103,10 @@ nodes:
       safe_to_continue:
         default: true
     branches:
-      human_intervention_required: high-risk-alert
-      safe_to_continue: safe-return
+      human_intervention_required: risk-screening-005
+      safe_to_continue: stage-complete
 
-  - id: safe-return
-    type: speak
-    prompt: 感谢您的配合。语音问诊部分先到这里，接下来我们进入量表问诊阶段。
-    next: stage-complete
-
-  - id: high-risk-alert
-    type: speak
+  - id: risk-screening-005
+    type: speak_then_complete
     prompt: 系统识别到您当前可能存在需要立即关注的安全风险。接下来我会暂停标准流程，并协助转入人工支持或进一步安全处理。
     next: stage-complete

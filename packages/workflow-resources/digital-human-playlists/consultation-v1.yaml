@@ -1,10 +1,10 @@
 workflow_id: consultation-v1
 manifest_contract: digital-human-playlist/v1
-playlist_version: v1-8-questions
+playlist_version: v2-10-questions-plus-system-prompts
 manifest_status: draft
 delivery_mode: fixed-video-playlist
 notes:
-  - "8 question videos + 1 greeting video for consultation-v1"
+  - "10 response videos plus greeting, high-risk alert, and handoff videos for consultation-v1"
   - "Each question item maps to one fixed video file."
   - "question_text is the authoritative text stored with each consultation turn."
   - "subtitle_text is an optional UI/display override; if omitted, UI can fall back to question_text."
@@ -53,31 +53,31 @@ stages:
         subtitle_text: null
         response_required: true
 
-  - stage_id: stage-03-current-history-followup
+  - stage_id: stage-03-symptom-screening
     stage_label: 症状筛查
     stage_order: 3
     question_items:
-      - question_key: current-history-001
+      - question_key: symptom-screening-001
         order: 1
-        node_id: ask-current-history-001
-        video_asset_id: current-history-001
-        video_uri: /digital-human/consultation-v1/current-history-001.webm
+        node_id: ask-symptom-screening-001
+        video_asset_id: symptom-screening-001
+        video_uri: /digital-human/consultation-v1/symptom-screening-001.webm
         question_text: 最近有没有发生让您压力明显增加的事情？
         subtitle_text: null
         response_required: true
-      - question_key: current-history-002
+      - question_key: symptom-screening-002
         order: 2
-        node_id: ask-current-history-002
-        video_asset_id: current-history-002
-        video_uri: /digital-human/consultation-v1/current-history-002.webm
+        node_id: ask-symptom-screening-002
+        video_asset_id: symptom-screening-002
+        video_uri: /digital-human/consultation-v1/symptom-screening-002.webm
         question_text: 最近有没有反复想一件事停不下来，或者反复检查、确认、撕嘴皮、扣痘痘、抓头发、囤东西等控制不住的行为？
         subtitle_text: null
         response_required: true
-      - question_key: current-history-003
+      - question_key: symptom-screening-003
         order: 3
-        node_id: ask-current-history-003
-        video_asset_id: current-history-003
-        video_uri: /digital-human/consultation-v1/current-history-003.webm
+        node_id: ask-symptom-screening-003
+        video_asset_id: symptom-screening-003
+        video_uri: /digital-human/consultation-v1/symptom-screening-003.webm
         question_text: 最近有没有一段时间情绪异常高涨、精力特别旺盛、话变多、特别想社交，甚至睡得很少也不觉得累？
         subtitle_text: null
         response_required: true
@@ -91,14 +91,51 @@ stages:
         node_id: ask-suicidal-ideation
         video_asset_id: risk-screening-001
         video_uri: /digital-human/consultation-v1/risk-screening-001.webm
-        question_text: 最近有没有伤害自己或轻生的想法、行为，或者具体计划？
+        question_text: 最近有没有伤害自己或轻生的想法？
         subtitle_text: null
         response_required: true
       - question_key: risk-screening-002
         order: 2
-        node_id: ask-primary-concern
+        node_id: ask-plan-or-action
         video_asset_id: risk-screening-002
         video_uri: /digital-human/consultation-v1/risk-screening-002.webm
+        question_text: 有没有具体计划、差点实施，或者已经做过？
+        subtitle_text: null
+        response_required: true
+      - question_key: risk-screening-003
+        order: 3
+        node_id: ask-support-state
+        video_asset_id: risk-screening-003
+        video_uri: /digital-human/consultation-v1/risk-screening-003.webm
+        question_text: 现在身边有没有家人、朋友、老师或同事可以及时联系和陪伴？
+        subtitle_text: null
+        response_required: true
+      - question_key: risk-screening-004
+        order: 4
+        node_id: ask-primary-concern
+        video_asset_id: risk-screening-004
+        video_uri: /digital-human/consultation-v1/risk-screening-004.webm
         question_text: 这次就诊您最希望医生帮您解决什么问题？
         subtitle_text: null
         response_required: true
+      - question_key: risk-screening-005
+        order: 5
+        node_id: risk-screening-005
+        video_asset_id: risk-screening-005
+        video_uri: /digital-human/consultation-v1/risk-screening-005.webm
+        question_text: 系统识别到您当前可能存在需要立即关注的安全风险。接下来我会暂停标准流程，并协助转入人工支持或进一步安全处理。
+        subtitle_text: null
+        response_required: false
+
+  - stage_id: handoff-to-scale-assessment
+    stage_label: 量表说明
+    stage_order: 5
+    question_items:
+      - question_key: handoff-001
+        order: 1
+        node_id: handoff-open
+        video_asset_id: handoff-001
+        video_uri: /digital-human/consultation-v1/handoff-001.webm
+        question_text: 语音问诊这一部分先到这里。接下来我们将进入量表问诊阶段，系统会根据规则为您安排必做量表，并展示可选量表。题目会逐条展示，您只需要根据最近一段时间的真实感受作答即可。每完成一个量表，系统都会自动保存，但会在全部量表结束后再统一展示结果。准备好了的话，我们现在开始。
+        subtitle_text: null
+        response_required: false

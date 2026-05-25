@@ -1,0 +1,57 @@
+version: 1
+stage_id: stage-03-symptom-screening
+title: 症状筛查
+source_document: /home/ZR/data2/MCS/docs/交互剧本.txt
+revision: teacher-confirmed-flow-2026-04
+entry_node: ask-symptom-screening-001
+slots:
+  - recent_stressor
+  - compulsive_behavior
+  - manic_episode_indicator
+  - symptom_screening_structured_result
+  - symptom_screening_stage_summary
+nodes:
+  - id: ask-symptom-screening-001
+    type: speak_then_wait
+    prompt: 最近有没有发生让您压力明显增加的事情？
+    extraction:
+      strategy: free_text
+      target_slot: recent_stressor
+    branches:
+      normal:
+        next: ask-symptom-screening-002
+      silence:
+        after_seconds: 6
+        next: ask-symptom-screening-002
+      recognition_failure:
+        next: ask-symptom-screening-002
+
+  - id: ask-symptom-screening-002
+    type: speak_then_wait
+    prompt: 最近有没有反复想一件事停不下来，或者反复检查、确认、撕嘴皮、扣痘痘、抓头发、囤东西等控制不住的行为？
+    extraction:
+      strategy: free_text
+      target_slot: compulsive_behavior
+    branches:
+      normal:
+        next: ask-symptom-screening-003
+      silence:
+        after_seconds: 6
+        next: ask-symptom-screening-003
+      recognition_failure:
+        next: ask-symptom-screening-003
+
+  - id: ask-symptom-screening-003
+    type: speak_then_wait
+    prompt: 最近有没有一段时间情绪异常高涨、精力特别旺盛、话变多、特别想社交，甚至睡得很少也不觉得累？
+    extraction:
+      strategy: free_text
+      target_slot: manic_episode_indicator
+    branches:
+      normal:
+        next: stage-complete
+      silence:
+        after_seconds: 6
+        next: stage-complete
+      recognition_failure:
+        next: stage-complete

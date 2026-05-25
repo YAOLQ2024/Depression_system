@@ -29,7 +29,7 @@ import {
 } from "../services/api/multimodal.api";
 import type { ConsultationSession, ConsultationSubtitleHistoryEntry } from "../types";
 
-const STAGE_LABELS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
+const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
 const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 const LIVE_REFRESH_INTERVAL_MS = 5000;
 const VISUAL_CAPTURE_INTERVAL_MS = 1500;

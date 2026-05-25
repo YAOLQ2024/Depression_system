@@ -494,40 +494,42 @@ def _resolve_response_window(
     return started_at, completed_at
 
 
-def _extract_chief_complaint_keywords(text: str) -> list[str]:
-    normalized = text.lower()
-    keywords: list[str] = []
-    if any(
-        token in normalized for token in ["睡", "失眠", "早醒", "入睡", "夜醒"]
-    ):
-        keywords.append("sleep")
-    if any(
-        token in normalized
-        for token in [
-            "情绪",
-            "低落",
-            "难过",
-            "抑郁",
-            "没兴趣",
-            "提不起劲",
-            "累",
-            "空",
-        ]
-    ):
-        keywords.append("mood")
-    if any(
-        token in normalized
-        for token in ["紧张", "焦虑", "害怕", "心慌", "担心", "放松不下来"]
-    ):
-        keywords.append("anxiety")
-    return keywords or ["general"]
-
-
 def _build_summary(text: str) -> str:
     compact = re.sub(r"\s+", " ", text).strip()
     if len(compact) <= 80:
         return compact
     return f"{compact[:77]}..."
+
+
+def _normalize_slot_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    compact = re.sub(r"\s+", " ", str(value)).strip()
+    return compact or None
+
+
+def _join_summary_lines(lines: list[str]) -> str:
+    normalized = [
+        _normalize_slot_text(line)
+        for line in lines
+        if _normalize_slot_text(line)
+    ]
+    return "；".join(normalized) if normalized else "暂未明确"
+
+
+def _describe_risk_value(value: Any) -> str:
+    mapping = {
+        "positive": "有",
+        "negative": "无",
+        "unclear": "未明确",
+        "available": "有稳定支持",
+        "limited": "支持有限",
+        "none": "暂无支持",
+    }
+    normalized = _normalize_slot_text(value)
+    if not normalized:
+        return "未明确"
+    return mapping.get(normalized, normalized)
 
 
 def _parse_positive_negative(text: str) -> str:
@@ -604,18 +606,8 @@ def _apply_extraction(
             extracted[slot_name] = text
             _set_slot(session_record, slot_name, text)
 
-        derived_slots = extraction.get("derived_slots", [])
         if target_slot == "chief_complaint_text":
             session_record.chief_complaint_raw_text = text or None
-            keywords = _extract_chief_complaint_keywords(text)
-            summary = _build_summary(text) if text else "暂未明确"
-            if "chief_complaint_keywords" in derived_slots:
-                extracted["chief_complaint_keywords"] = keywords
-                _set_slot(session_record, "chief_complaint_keywords", keywords)
-            if "chief_complaint_summary" in derived_slots:
-                extracted["chief_complaint_summary"] = summary
-                _set_slot(session_record, "chief_complaint_summary", summary)
-                session_record.chief_complaint_summary = summary
 
     elif strategy == "risk_enum_parse":
         target_slot = extraction.get("target_slot")
@@ -686,57 +678,197 @@ def _evaluate_decision(
 
 def _build_current_history_result(session_record: ConsultationSession) -> None:
     slot_values = _ensure_json_dict(session_record.slot_values)
-    keys = [
-        "dominant_followup_track",
-        "symptom_duration",
-        "symptom_frequency",
-        "symptom_intensity",
-        "functional_impact",
-        "recent_stressor",
-        "prior_psychiatric_visit",
-        "family_history",
-    ]
-    session_record.current_history_structured_result = {
-        key: slot_values.get(key)
-        for key in keys
-        if slot_values.get(key) not in (None, "")
+    recent_stressor = _normalize_slot_text(slot_values.get("recent_stressor"))
+    compulsive_behavior = _normalize_slot_text(
+        slot_values.get("compulsive_behavior")
+    )
+    manic_episode_indicator = _normalize_slot_text(
+        slot_values.get("manic_episode_indicator")
+    )
+    structured_result = {
+        key: value
+        for key, value in {
+            "recent_stressor": recent_stressor,
+            "compulsive_behavior": compulsive_behavior,
+            "manic_episode_indicator": manic_episode_indicator,
+        }.items()
+        if value
     }
+    session_record.current_history_structured_result = structured_result
+    _set_slot(
+        session_record,
+        "symptom_screening_structured_result",
+        structured_result,
+    )
+    _set_slot(
+        session_record,
+        "symptom_screening_stage_summary",
+        _join_summary_lines(
+            [
+                (
+                    f"近期压力事件：{recent_stressor}"
+                    if recent_stressor
+                    else ""
+                ),
+                (
+                    f"反复思维或控制不住的行为：{compulsive_behavior}"
+                    if compulsive_behavior
+                    else ""
+                ),
+                (
+                    f"情绪高涨与精力异常表现：{manic_episode_indicator}"
+                    if manic_episode_indicator
+                    else ""
+                ),
+            ]
+        ),
+    )
+
+
+def _build_chief_complaint_result(
+    session_record: ConsultationSession,
+) -> None:
+    slot_values = _ensure_json_dict(session_record.slot_values)
+    chief_complaint_text = _normalize_slot_text(
+        slot_values.get("chief_complaint_text")
+    )
+    symptom_duration = _normalize_slot_text(
+        slot_values.get("symptom_duration")
+    )
+    symptom_first_occurrence = _normalize_slot_text(
+        slot_values.get("symptom_first_occurrence")
+    )
+    structured_result = {
+        key: value
+        for key, value in {
+            "chief_complaint_text": chief_complaint_text,
+            "symptom_duration": symptom_duration,
+            "symptom_first_occurrence": symptom_first_occurrence,
+        }.items()
+        if value not in (None, "", [])
+    }
+    summary = _join_summary_lines(
+        [
+            f"主要困扰：{chief_complaint_text}" if chief_complaint_text else "",
+            f"起病与持续时间：{symptom_duration}" if symptom_duration else "",
+            (
+                f"当前核心症状与既往情况：{symptom_first_occurrence}"
+                if symptom_first_occurrence
+                else ""
+            ),
+        ]
+    )
+    _set_slot(
+        session_record,
+        "chief_complaint_structured_result",
+        structured_result,
+    )
+    _set_slot(session_record, "chief_complaint_stage_summary", summary)
+    _set_slot(session_record, "chief_complaint_summary", summary)
+    session_record.chief_complaint_summary = summary
 
 
 def _build_high_risk_result(
     session_record: ConsultationSession, branch_name: str
 ) -> None:
     slot_values = _ensure_json_dict(session_record.slot_values)
+    suicidal_ideation = slot_values.get("suicidal_ideation", "unclear")
+    self_harm_behavior = slot_values.get("self_harm_behavior", "unclear")
+    suicide_plan = slot_values.get("suicide_plan", "unclear")
+    acute_support_state = slot_values.get("acute_support_state", "unclear")
+    primary_concern = _normalize_slot_text(slot_values.get("primary_concern"))
     alert_level = (
         "high" if branch_name == "human_intervention_required" else "low"
     )
     session_record.high_risk_screening_result = {
-        "suicidal_ideation": slot_values.get("suicidal_ideation", "unclear"),
-        "self_harm_behavior": slot_values.get("self_harm_behavior", "unclear"),
-        "suicide_plan": slot_values.get("suicide_plan", "unclear"),
-        "acute_support_state": slot_values.get(
-            "acute_support_state", "unclear"
-        ),
+        "suicidal_ideation": suicidal_ideation,
+        "self_harm_behavior": self_harm_behavior,
+        "suicide_plan": suicide_plan,
+        "acute_support_state": acute_support_state,
+        "primary_concern": primary_concern,
         "alert_level": alert_level,
         "outcome": branch_name,
     }
+    _set_slot(
+        session_record,
+        "high_risk_screening_stage_summary",
+        _join_summary_lines(
+            [
+                f"自伤或轻生想法：{_describe_risk_value(suicidal_ideation)}",
+                (
+                    f"具体计划或实际行为："
+                    f"{_describe_risk_value(suicide_plan)}/"
+                    f"{_describe_risk_value(self_harm_behavior)}"
+                ),
+                (
+                    f"当前支持系统："
+                    f"{_describe_risk_value(acute_support_state)}"
+                ),
+                f"本次主要诉求：{primary_concern}" if primary_concern else "",
+                f"风险判定：{alert_level}",
+            ]
+        ),
+    )
     session_record.requires_human_review = (
         branch_name == "human_intervention_required"
     )
 
 
+def _build_digital_human_consultation_summary(
+    session_record: ConsultationSession,
+) -> str:
+    slot_values = _ensure_json_dict(session_record.slot_values)
+    summary = _join_summary_lines(
+        [
+            _normalize_slot_text(slot_values.get("chief_complaint_stage_summary"))
+            or _normalize_slot_text(session_record.chief_complaint_summary),
+            _normalize_slot_text(
+                slot_values.get("symptom_screening_stage_summary")
+            ),
+            _normalize_slot_text(
+                slot_values.get("high_risk_screening_stage_summary")
+            ),
+        ]
+    )
+    _set_slot(session_record, "digital_human_consultation_summary", summary)
+    return summary
+
+
 def _build_scale_handoff_payload(
     session_record: ConsultationSession, bundle: WorkflowBundle
 ) -> dict[str, Any]:
+    slot_values = _ensure_json_dict(session_record.slot_values)
+    digital_human_consultation_summary = (
+        _normalize_slot_text(
+            slot_values.get("digital_human_consultation_summary")
+        )
+        or _build_digital_human_consultation_summary(session_record)
+    )
     return {
         "workflow_id": bundle.workflow_id,
         "session_id": session_record.id,
         "chief_complaint_summary": session_record.chief_complaint_summary,
+        "chief_complaint_structured_result": (
+            slot_values.get("chief_complaint_structured_result") or {}
+        ),
+        "chief_complaint_stage_summary": (
+            slot_values.get("chief_complaint_stage_summary")
+            or session_record.chief_complaint_summary
+        ),
         "current_history_structured_result": (
             session_record.current_history_structured_result or {}
         ),
+        "symptom_screening_stage_summary": (
+            slot_values.get("symptom_screening_stage_summary") or ""
+        ),
         "high_risk_screening_result": (
             session_record.high_risk_screening_result or {}
+        ),
+        "high_risk_screening_stage_summary": (
+            slot_values.get("high_risk_screening_stage_summary") or ""
+        ),
+        "digital_human_consultation_summary": (
+            digital_human_consultation_summary
         ),
         "required_scales": bundle.required_scales,
     }
@@ -828,8 +960,28 @@ def _advance_stage(
     _mark_stage_completed(session_record, completed_stage_id)
     _set_current_prompt(session_record, None, None)
 
-    if completed_stage_id == "stage-03-current-history-followup":
+    if completed_stage_id == "stage-02-chief-complaint":
+        _build_chief_complaint_result(session_record)
+    if completed_stage_id == "stage-03-symptom-screening":
         _build_current_history_result(session_record)
+    if completed_stage_id == "stage-04-high-risk-screening":
+        _build_digital_human_consultation_summary(session_record)
+
+    encounter_session = session_record.encounter_session
+    if (
+        completed_stage_id == "stage-04-high-risk-screening"
+        and session_record.requires_human_review
+    ):
+        session_record.workflow_stage_id = "clinical-decision"
+        session_record.status = "paused_for_human_review"
+        if encounter_session is not None:
+            encounter_session.current_flow_type = "consultation"
+            encounter_session.status = "paused"
+            encounter_session.updated_at = _now()
+        session_record.current_stage_id = None
+        session_record.current_node_id = None
+        session_record.completed_at = _now()
+        return
 
     current_index = bundle.substeps.index(completed_stage_id)
     if current_index < len(bundle.substeps) - 1:
@@ -839,8 +991,6 @@ def _advance_stage(
         session_record.current_node_id = next_stage.entry_node
         session_record.status = "running"
         return
-
-    encounter_session = session_record.encounter_session
 
     if session_record.requires_human_review:
         session_record.workflow_stage_id = "clinical-decision"
@@ -955,6 +1105,7 @@ def _serialize_session(
     session_record: ConsultationSession, bundle: WorkflowBundle
 ) -> dict[str, Any]:
     engine_state = _ensure_json_dict(session_record.engine_state)
+    slot_values = _ensure_json_dict(session_record.slot_values)
     current_prompt = engine_state.get("current_prompt")
     current_question_item = _resolve_current_question_item(
         session_record, bundle
@@ -1001,13 +1152,29 @@ def _serialize_session(
         "participant_profile_snapshot": _ensure_json_dict(
             session_record.participant_profile_snapshot
         ),
-        "slot_values": _ensure_json_dict(session_record.slot_values),
+        "slot_values": slot_values,
         "chief_complaint_summary": session_record.chief_complaint_summary,
+        "chief_complaint_structured_result": (
+            slot_values.get("chief_complaint_structured_result") or {}
+        ),
+        "chief_complaint_stage_summary": (
+            slot_values.get("chief_complaint_stage_summary")
+            or session_record.chief_complaint_summary
+        ),
         "current_history_structured_result": (
             session_record.current_history_structured_result or {}
         ),
+        "symptom_screening_stage_summary": (
+            slot_values.get("symptom_screening_stage_summary") or ""
+        ),
         "high_risk_screening_result": (
             session_record.high_risk_screening_result or {}
+        ),
+        "high_risk_screening_stage_summary": (
+            slot_values.get("high_risk_screening_stage_summary") or ""
+        ),
+        "digital_human_consultation_summary": (
+            slot_values.get("digital_human_consultation_summary") or ""
         ),
         "multimodal_session_id": session_record.multimodal_session_id,
         "multimodal_live": session_record.multimodal_live_payload or {},

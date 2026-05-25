@@ -12,7 +12,7 @@
 2. 问诊启动：`POST /api/v1/consultations/{session_id}/start` 时更新 `started_at`、推进到首个等待节点。
 3. 问候与流程说明阶段：依赖 `context_snapshot`、`current_stage_id`、`current_node_id`、当前播放问题项字段推进流程。
 4. 主诉采集阶段：保存 `chief_complaint_raw_text`、`chief_complaint_summary`，并把抽取结果写入 `slot_values`。
-5. 现病史追问阶段：把逐轮抽取出的槽位累计到 `slot_values`，并生成 `current_history_structured_result`。
+5. 症状筛查追问阶段：把逐轮抽取出的槽位累计到 `slot_values`，并生成 `current_history_structured_result`。
 6. 高风险筛查阶段：生成 `high_risk_screening_result`，必要时把 `requires_human_review` 置为 `true`。
 7. 问诊结束与量表移交：生成 `scale_handoff_payload`，把 `workflow_stage_id` 切到量表或人工决策阶段，并写入 `completed_at`。
 
@@ -26,7 +26,7 @@
 | `script_bundle` | Script Bundle | 剧本包标识 | `String(128)`，非空 | 标识当前绑定的剧本资源集合。 | 工作流骨架与具体剧本资源可能演进不同步，需要单独记录。 | 会话创建、回放、资源定位 |
 | `playlist_version` | Playlist Version | 数字人播放清单版本 | `String(128)`，可空 | 记录当前数字人视频问题清单版本。 | 同一个工作流在不同版本下可能对应不同素材，必须保留版本信息保证可追溯。 | 会话创建、当前问题展示、回放 |
 | `workflow_stage_id` | Workflow Stage ID | 工作流阶段ID | `String(128)`，非空 | 记录当前问诊处于更高层级的业务阶段，如问诊主链、人工决策、量表阶段。 | 需要把“问诊内部子阶段”和“跨服务业务阶段”区分开，便于网关与下游服务衔接。 | 问诊中、高风险分流、量表移交 |
-| `current_stage_id` | Current Stage ID | 当前子阶段ID | `String(128)`，可空 | 记录当前正处于哪个固定问诊子阶段。 | 没有它就无法从中断点继续推进四个固定子模块。 | 问候阶段、主诉阶段、现病史阶段、高风险阶段 |
+| `current_stage_id` | Current Stage ID | 当前子阶段ID | `String(128)`，可空 | 记录当前正处于哪个固定问诊子阶段。 | 没有它就无法从中断点继续推进四个固定子模块。 | 问候阶段、主诉阶段、症状筛查阶段、高风险阶段 |
 | `current_node_id` | Current Node ID | 当前节点ID | `String(128)`，可空 | 记录当前脚本节点位置。 | 同一阶段里包含多个节点，恢复执行时必须知道精确停在哪个节点。 | 问诊进行中、恢复执行 |
 | `current_question_key` | Current Question Key | 当前问题键 | `String(128)`，可空 | 缓存当前数字人问题项的键值。 | 前端播放结束上报 `question_key` 时，需要与数据库中的当前问题键做一致性校验。 | 问题展示、系统视频完成上报 |
 | `current_question_order` | Current Question Order | 当前问题顺序号 | `Integer`，可空 | 记录当前问题在播放清单中的顺序。 | 前端进度条和回放顺序需要稳定顺序号，而不能只依赖文本。 | 问题展示、进度计算 |
@@ -41,11 +41,11 @@
 | `requires_human_review` | Requires Human Review | 是否需要人工复核 | `Boolean`，非空 | 标记是否触发了高风险人工介入。 | 高风险不能直接继续标准量表主链，需要一个明确开关阻断自动流转。 | 高风险筛查、人工分流 |
 | `participant_profile_snapshot` | Participant Profile Snapshot | 受试者资料快照 | `JSON`，非空 | 保存问诊开始时收到的用户基础资料快照。 | 如果用户之后修改了资料，历史问诊仍应保留当时的真实上下文。 | 会话创建、问候阶段、问诊回放 |
 | `context_snapshot` | Context Snapshot | 上下文快照 | `JSON`，非空 | 保存音频通道、同意状态、设备状态、准备状态等上下文。 | `system_gate` 节点需要检查这些前置条件，且后续排障要知道当时环境是否就绪。 | 会话创建、问候阶段、系统前置检查 |
-| `slot_values` | Slot Values | 槽位值集合 | `JSON`，非空 | 保存各轮问答抽取出的结构化槽位。 | 规则路由、模板提问、阶段摘要都依赖累计槽位，不能只看最后一轮输入。 | 主诉采集、现病史追问、高风险判断 |
+| `slot_values` | Slot Values | 槽位值集合 | `JSON`，非空 | 保存各轮问答抽取出的结构化槽位。 | 规则路由、模板提问、阶段摘要都依赖累计槽位，不能只看最后一轮输入。 | 主诉采集、症状筛查追问、高风险判断 |
 | `engine_state` | Engine State | 引擎状态快照 | `JSON`，非空 | 保存当前提示词、等待节点类型、已完成阶段、上一次分支结果等内部状态。 | 规则引擎需要能够恢复执行，而不是每次重新从头推导整条链路。 | 问诊启动、每轮推进、异常恢复 |
 | `chief_complaint_raw_text` | Chief Complaint Raw Text | 主诉原始文本 | `Text`，可空 | 保存患者主诉的原始表达。 | 原始主诉是后续摘要、审计和人工复核的重要依据，不能只保留摘要。 | 主诉采集 |
 | `chief_complaint_summary` | Chief Complaint Summary | 主诉摘要 | `Text`，可空 | 保存从主诉中提炼出的简短摘要。 | 下游量表、风险和展示层更适合消费摘要，而不是每次处理整段原文。 | 主诉采集、问诊状态展示、量表移交 |
-| `current_history_structured_result` | Current History Structured Result | 现病史结构化结果 | `JSON`，可空 | 保存现病史阶段汇总后的结构化字段结果。 | 后续判断和移交需要阶段级结果，不能靠逐轮 turn 现场拼装。 | 现病史阶段结束、量表移交 |
+| `current_history_structured_result` | Current History Structured Result | 症状筛查结构化结果 | `JSON`，可空 | 保存症状筛查阶段汇总后的结构化字段结果。 | 后续判断和移交需要阶段级结果，不能靠逐轮 turn 现场拼装。 | 症状筛查阶段结束、量表移交 |
 | `high_risk_screening_result` | High Risk Screening Result | 高风险筛查结果 | `JSON`，可空 | 保存自杀意念、自伤行为、计划、支持状态和风险级别等结果。 | 安全门决策必须有明确可审计的结构化输出。 | 高风险筛查、人工复核、量表是否放行 |
 | `scale_handoff_payload` | Scale Handoff Payload | 量表移交载荷 | `JSON`，可空 | 保存问诊结束后传给 `assessment-service` 的汇总数据。 | 跨服务不能依赖重新回算问诊结果，需要一次性产出稳定移交对象。 | 问诊结束、量表会话创建 |
 | `started_at` | Started Time | 开始时间 | `DateTime(timezone=True)`，可空 | 记录问诊正式开始时间。 | 需要区分“已创建草稿”与“用户真的开始问诊”的时间。 | 问诊启动、时长统计 |

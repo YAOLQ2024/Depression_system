@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { cn } from "../lib/utils";
 
-const DEFAULT_STEPS = ["问候说明", "主诉采集", "现病史", "风险筛查"];
+const DEFAULT_STEPS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
 
 type ConsultationProgressProps = {
   currentStep?: number;
