@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 
 class MultimodalStageContext(BaseModel):
@@ -49,7 +50,8 @@ class SubmitFrameCaptureRequest(BaseModel):
     flow_run_id: str = Field(min_length=1)
     question_key: str = Field(min_length=1)
     stage_id: str | None = None
-    image_base64: str = Field(min_length=1)
+    image_bytes: bytes | None = Field(default=None, min_length=1)
+    image_base64: str | None = None
     image_format: str = Field(min_length=1)
     mime_type: str = Field(min_length=1)
     turn_id: str | None = None
@@ -57,6 +59,41 @@ class SubmitFrameCaptureRequest(BaseModel):
     sample_ended_at: datetime
     sample_index: int = Field(ge=0)
     frame_id: str | None = None
+
+    _image_bytes_cache: bytes | None = PrivateAttr(default=None)
+    _image_base64_cache: str | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _ensure_image_source(self) -> "SubmitFrameCaptureRequest":
+        normalized_base64 = str(self.image_base64 or "").strip()
+        if self.image_bytes is None and not normalized_base64:
+            raise ValueError("either image_bytes or image_base64 is required")
+        if self.image_base64 is not None and not normalized_base64:
+            self.image_base64 = None
+        return self
+
+    def require_image_bytes(self) -> bytes:
+        if self.image_bytes is not None:
+            return self.image_bytes
+        if self._image_bytes_cache is None:
+            self._image_bytes_cache = base64.b64decode(
+                self.require_image_base64(),
+                validate=True,
+            )
+        return self._image_bytes_cache
+
+    def require_image_base64(self) -> str:
+        normalized = str(self.image_base64 or "").strip()
+        if normalized:
+            return normalized
+        if self._image_base64_cache is None:
+            self._image_base64_cache = base64.b64encode(
+                self.require_image_bytes()
+            ).decode("ascii")
+        return self._image_base64_cache
+
+    def image_bytes_length(self) -> int:
+        return len(self.require_image_bytes())
 
 
 class MultimodalSessionSnapshot(BaseModel):

@@ -7,9 +7,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
+import time
+from types import SimpleNamespace
 from typing import Any, Iterable, Sequence
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.database import get_db_session
@@ -31,7 +33,6 @@ from app.schemas import (
 )
 from app.services.asr_runtime import DolphinAsrError, get_asr_runtime
 from app.services.non_eeg_inference import (
-    decode_base64_image,
     infer_audio_emotion,
     infer_audio_emotion_from_wav_path,
     infer_face_emotion,
@@ -47,6 +48,21 @@ from app.services.audio_processing import (
     write_source_audio_file,
 )
 from app.services.object_storage import download_object_bytes, parse_s3_uri, upload_object_to_bucket
+from app.services.visual_key_frame_selector import (
+    VisualKeyFrameSelectorInput,
+    select_visual_key_frames,
+)
+from app.services.visual_turn_state_store import (
+    finalize_visual_turn_hot_state,
+    mark_visual_turn_coarse_checkpoint,
+    recover_visual_turn_hot_state_from_bundle,
+    read_visual_live_payload,
+    read_visual_turn_candidate_payloads,
+    read_visual_turn_aggregate_payload,
+    read_visual_turn_frame_payloads,
+    read_visual_turn_state_payload,
+    write_visual_frame_state,
+)
 
 
 NEGATIVE_TERM_CANDIDATES = [
@@ -66,6 +82,10 @@ _AUDIO_TURN_EXECUTOR = ThreadPoolExecutor(
     max_workers=2,
     thread_name_prefix="multimodal-audio-turn",
 )
+_VISUAL_STORAGE_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="multimodal-visual-storage",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +100,63 @@ def _isoformat(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _elapsed_ms(start: float, end: float | None = None) -> int:
+    completed = time.perf_counter() if end is None else end
+    return max(0, int(round((completed - start) * 1000)))
+
+
+def _merge_live_payload(
+    live_payload: dict[str, Any] | None,
+    *results: dict[str, Any],
+) -> dict[str, Any]:
+    merged_live_payload = dict(live_payload or {})
+    for result in results:
+        modality = str(result.get("modality") or "").strip().lower()
+        if not modality:
+            continue
+        if modality in {"face", "pose"}:
+            merged_live_payload[modality] = {
+                "status": result.get("status", "pending"),
+                "processing_status": result.get("processing_status", "pending"),
+                "primary_label": result.get("primary_label"),
+                "primary_score": result.get("primary_score"),
+                "top_3_labels": _copy_labels(result.get("top_3_labels")),
+                "quality_flags": dict(result.get("quality_flags") or {}),
+                "latest_capture_at": result.get("sample_ended_at"),
+                "sample_count": result.get("sample_count"),
+                "valid_sample_count": result.get("valid_sample_count"),
+                "error_message": result.get("error_message"),
+            }
+        else:
+            merged_live_payload[modality] = {
+                "status": result.get("status", "pending"),
+                "primary_label": result.get("primary_label"),
+                "primary_score": result.get("primary_score"),
+                "top_3_labels": _copy_labels(result.get("top_3_labels")),
+            }
+            if modality == "speech":
+                merged_live_payload[modality]["audio_uri"] = result.get("audio_uri")
+                merged_live_payload[modality]["captured_at"] = result.get("captured_at")
+            if modality == "text":
+                merged_live_payload[modality]["negative_terms"] = list(result.get("negative_terms") or [])
+                merged_live_payload[modality]["transcript_text"] = result.get("transcript_text")
+                merged_live_payload[modality]["captured_at"] = result.get("captured_at")
+    return merged_live_payload
+
+
+def _overlay_visual_live_payload(
+    base_live_payload: dict[str, Any] | None,
+    visual_live_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged_payload = dict(base_live_payload or {})
+    visual_payload = dict(visual_live_payload or {})
+    for modality in ("face", "pose"):
+        modality_payload = visual_payload.get(modality)
+        if isinstance(modality_payload, dict):
+            merged_payload[modality] = dict(modality_payload)
+    return merged_payload
 
 
 def _copy_labels(labels: Sequence[dict[str, Any]] | None, *, limit: int = 3) -> list[dict[str, Any]]:
@@ -374,16 +451,15 @@ def _build_failed_face_result(
     }
 
 
-def _compute_face_quality_flags(image_base64: str) -> dict[str, bool]:
-    try:
-        frame = decode_base64_image(image_base64)
-    except ValueError:
-        return {"blur": False, "low_light": False}
-
+def _compute_face_quality_flags(image_bytes: bytes) -> dict[str, bool]:
     try:
         import cv2  # type: ignore
         import numpy as np  # type: ignore
 
+        buffer = np.frombuffer(image_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+        if frame is None:
+            return {"blur": False, "low_light": False}
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
         brightness = float(np.mean(gray))
@@ -489,11 +565,582 @@ def _build_frame_capture_payload(payload: SubmitFrameCaptureRequest) -> dict[str
         "question_key": payload.question_key,
         "mime_type": payload.mime_type,
         "image_format": payload.image_format,
-        "image_base64_length": len(payload.image_base64),
+        "image_bytes_length": payload.image_bytes_length(),
         "sample_started_at": _isoformat(payload.sample_started_at),
         "sample_ended_at": _isoformat(payload.sample_ended_at),
         "sample_index": payload.sample_index,
     }
+
+
+def _build_frame_capture_response(
+    *,
+    capture_row: MultimodalCapture,
+    session_id: str,
+    question_key: str,
+    modality: str,
+    result_payload: dict[str, Any],
+    storage_uri: str | None,
+    turn_bundle: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "capture_id": capture_row.id,
+        "session_id": session_id,
+        "question_key": question_key,
+        "modality": modality,
+        "processing_status": result_payload["processing_status"],
+        "primary_label": result_payload["primary_label"],
+        "primary_score": result_payload["primary_score"],
+        "top_3_labels": result_payload["top_3_labels"],
+        "quality_flags": result_payload["quality_flags"],
+        "sample_started_at": result_payload["sample_started_at"],
+        "sample_ended_at": result_payload["sample_ended_at"],
+        "sample_count": result_payload.get("sample_count"),
+        "valid_sample_count": result_payload.get("valid_sample_count"),
+        "storage_uri": storage_uri,
+        "error_message": result_payload.get("error_message"),
+        "created_at": _isoformat(capture_row.created_at),
+        "turn_bundle": turn_bundle,
+    }
+
+
+def _build_visual_frame_response(
+    *,
+    visual_frame: MultimodalVisualFrame,
+    session_id: str,
+    turn_id: str | None,
+    question_key: str,
+    sample_index: int,
+    sample_started_at: datetime,
+    sample_ended_at: datetime,
+    storage_uri: str | None,
+) -> dict[str, Any]:
+    return {
+        "visual_frame_id": visual_frame.id,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "question_key": question_key,
+        "sample_index": sample_index,
+        "sample_started_at": _isoformat(sample_started_at),
+        "sample_ended_at": _isoformat(sample_ended_at),
+        "storage_uri": storage_uri,
+        "created_at": _isoformat(visual_frame.created_at),
+    }
+
+
+def _build_visual_capture_response(
+    *,
+    visual_frame: MultimodalVisualFrame,
+    session: MultimodalSession,
+    payload: SubmitFrameCaptureRequest,
+    storage_uri: str | None,
+    face_response: dict[str, Any],
+    pose_response: dict[str, Any],
+    turn_bundle: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "visual_frame": _build_visual_frame_response(
+            visual_frame=visual_frame,
+            session_id=session.id,
+            turn_id=payload.turn_id,
+            question_key=payload.question_key,
+            sample_index=payload.sample_index,
+            sample_started_at=payload.sample_started_at,
+            sample_ended_at=payload.sample_ended_at,
+            storage_uri=storage_uri,
+        ),
+        "face_result": face_response,
+        "pose_result": pose_response,
+        "turn_bundle": turn_bundle,
+        "multimodal_session": _snapshot(session),
+    }
+
+
+def _load_latest_inference_payload_by_sample_id(
+    db_session,
+    *,
+    sample_id: str,
+    modality: str,
+) -> dict[str, Any] | None:
+    row = db_session.execute(
+        select(MultimodalInferenceResult).where(
+            MultimodalInferenceResult.sample_id == sample_id,
+            MultimodalInferenceResult.modality == modality,
+        ).order_by(MultimodalInferenceResult.created_at.desc())
+    ).scalars().first()
+    if row is None:
+        return None
+    return dict(row.inference_payload or {})
+
+
+def _find_existing_visual_capture_response(
+    db_session,
+    *,
+    session: MultimodalSession,
+    payload: SubmitFrameCaptureRequest,
+) -> dict[str, Any] | None:
+    visual_frame = db_session.execute(
+        select(MultimodalVisualFrame).where(
+            MultimodalVisualFrame.session_id == session.id,
+            MultimodalVisualFrame.turn_id == payload.turn_id,
+            MultimodalVisualFrame.question_key == payload.question_key,
+            MultimodalVisualFrame.sample_index == payload.sample_index,
+        ).order_by(MultimodalVisualFrame.created_at.desc())
+    ).scalars().first()
+    if visual_frame is None:
+        return None
+
+    face_capture = db_session.execute(
+        select(MultimodalCapture).where(
+            MultimodalCapture.session_id == session.id,
+            MultimodalCapture.turn_id == payload.turn_id,
+            MultimodalCapture.question_key == payload.question_key,
+            MultimodalCapture.sample_index == payload.sample_index,
+            MultimodalCapture.modality == "face",
+            MultimodalCapture.source_ref_id == visual_frame.id,
+        ).order_by(MultimodalCapture.created_at.desc())
+    ).scalars().first()
+    pose_capture = db_session.execute(
+        select(MultimodalCapture).where(
+            MultimodalCapture.session_id == session.id,
+            MultimodalCapture.turn_id == payload.turn_id,
+            MultimodalCapture.question_key == payload.question_key,
+            MultimodalCapture.sample_index == payload.sample_index,
+            MultimodalCapture.modality == "pose",
+            MultimodalCapture.source_ref_id == visual_frame.id,
+        ).order_by(MultimodalCapture.created_at.desc())
+    ).scalars().first()
+    if face_capture is None or pose_capture is None:
+        return None
+
+    face_result = _load_latest_inference_payload_by_sample_id(
+        db_session,
+        sample_id=face_capture.id,
+        modality="face",
+    )
+    pose_result = _load_latest_inference_payload_by_sample_id(
+        db_session,
+        sample_id=pose_capture.id,
+        modality="pose",
+    )
+    if face_result is None or pose_result is None:
+        return None
+
+    turn_bundle = None
+    if payload.turn_id:
+        bundle_row = db_session.execute(
+            select(MultimodalTurnBundle).where(
+                MultimodalTurnBundle.session_id == session.id,
+                MultimodalTurnBundle.turn_id == payload.turn_id,
+            )
+        ).scalar_one_or_none()
+        if bundle_row is not None:
+            turn_bundle = dict(bundle_row.bundle_payload or {})
+
+    _apply_frame_summary_counts(
+        face_result,
+        modality="face",
+        turn_bundle=turn_bundle,
+        sample_index=payload.sample_index,
+    )
+    _apply_frame_summary_counts(
+        pose_result,
+        modality="pose",
+        turn_bundle=turn_bundle,
+        sample_index=payload.sample_index,
+    )
+    return _build_visual_capture_response(
+        visual_frame=visual_frame,
+        session=session,
+        payload=payload,
+        storage_uri=visual_frame.storage_uri,
+        face_response=_build_frame_capture_response(
+            capture_row=face_capture,
+            session_id=session.id,
+            question_key=payload.question_key,
+            modality="face",
+            result_payload=face_result,
+            storage_uri=face_capture.storage_uri,
+            turn_bundle=turn_bundle,
+        ),
+        pose_response=_build_frame_capture_response(
+            capture_row=pose_capture,
+            session_id=session.id,
+            question_key=payload.question_key,
+            modality="pose",
+            result_payload=pose_result,
+            storage_uri=pose_capture.storage_uri,
+            turn_bundle=turn_bundle,
+        ),
+        turn_bundle=turn_bundle,
+    )
+
+
+def _build_current_turn_bundle_from_redis(
+    db_session,
+    *,
+    session_id: str,
+    turn_id: str | None,
+    flow_run_id: str,
+    stage_id: str | None,
+    question_key: str,
+    redis_turn_aggregate: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not turn_id or redis_turn_aggregate is None:
+        return None
+    return _build_turn_bundle_payload(
+        db_session,
+        session_id,
+        turn_id,
+        flow_run_id=flow_run_id,
+        stage_id=stage_id,
+        question_key=question_key,
+        face_summary=(redis_turn_aggregate or {}).get("face_features"),
+        pose_summary=(redis_turn_aggregate or {}).get("pose_features"),
+    )
+
+
+def _apply_visual_coarse_checkpoint(
+    db_session,
+    *,
+    session: MultimodalSession,
+    payload: SubmitFrameCaptureRequest,
+    face_result: dict[str, Any],
+    pose_result: dict[str, Any],
+    redis_turn_aggregate: dict[str, Any] | None,
+    redis_turn_state: dict[str, Any] | None,
+) -> bool:
+    if redis_turn_aggregate is None:
+        return False
+
+    checkpoint_at = _utcnow()
+    retained_frame_payloads = read_visual_turn_frame_payloads(
+        session.id,
+        payload.turn_id,
+        sample_indexes=(redis_turn_state or {}).get("all_frame_sample_indexes"),
+    )
+    retained_candidate_payloads = read_visual_turn_candidate_payloads(
+        session.id,
+        payload.turn_id,
+        sample_indexes=(redis_turn_state or {}).get("candidate_sample_indexes"),
+    )
+    checkpoint_selection = select_visual_key_frames(
+        VisualKeyFrameSelectorInput(
+            frame_payloads=retained_frame_payloads,
+            candidate_payloads=retained_candidate_payloads,
+            turn_state_payload=redis_turn_state,
+            turn_aggregate_payload=redis_turn_aggregate,
+        )
+    ).to_payload()
+    checkpoint_key_frame_indexes = sorted(
+        {
+            int(value)
+            for value in list((redis_turn_state or {}).get("checkpoint_key_frame_sample_indexes") or [])
+            + [
+                int(item.get("sample_index") or 0)
+                for item in list(checkpoint_selection.get("selected_frames") or [])
+            ]
+            if int(value) > 0
+        }
+    )
+    retained_candidate_indexes = sorted(
+        {
+            int(value)
+            for value in list((redis_turn_state or {}).get("candidate_sample_indexes") or [])
+            if int(value) > 0
+        }
+    )
+    retained_frame_indexes = sorted(
+        {
+            int(value)
+            for value in list((redis_turn_state or {}).get("recent_frame_sample_indexes") or [])
+            + checkpoint_key_frame_indexes
+            + retained_candidate_indexes
+            if int(value) > 0
+        }
+    )
+
+    _refresh_live_payload(session, face_result, pose_result)
+    db_session.add(session)
+    if payload.turn_id:
+        _upsert_turn_bundle(
+            db_session,
+            session.id,
+            payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
+            face_summary=(redis_turn_aggregate or {}).get("face_features"),
+            pose_summary=(redis_turn_aggregate or {}).get("pose_features"),
+            visual_key_frames=[],
+            visual_selection={
+                "checkpoint": True,
+                "checkpoint_at": _isoformat(checkpoint_at),
+                "frame_count": int((redis_turn_state or {}).get("frame_count") or 0),
+                "retained_frame_count": len(retained_frame_indexes),
+                "checkpoint_key_frame_count": len(checkpoint_key_frame_indexes),
+                "candidate_count": len(
+                    list((redis_turn_state or {}).get("candidate_sample_indexes") or [])
+                ),
+                "source": "coarse_checkpoint",
+            },
+        )
+    db_session.flush()
+    if payload.turn_id:
+        mark_visual_turn_coarse_checkpoint(
+            session.id,
+            payload.turn_id,
+            checkpointed_at=checkpoint_at,
+            checkpoint_frame_count=int((redis_turn_state or {}).get("frame_count") or 0),
+            retained_frame_sample_indexes=retained_frame_indexes,
+            checkpoint_key_frame_sample_indexes=checkpoint_key_frame_indexes,
+            retained_candidate_sample_indexes=retained_candidate_indexes,
+        )
+    logger.info(
+        "visual turn coarse checkpoint applied session_id=%s turn_id=%s sample_index=%s frame_count=%s retained_frames=%s checkpoint_key_frames=%s",
+        session.id,
+        payload.turn_id,
+        payload.sample_index,
+        (redis_turn_state or {}).get("frame_count"),
+        len(retained_frame_indexes),
+        len(checkpoint_key_frame_indexes),
+    )
+    return True
+
+
+def _build_hot_path_visual_capture_response(
+    *,
+    session: MultimodalSession,
+    payload: SubmitFrameCaptureRequest,
+    storage_uri: str | None,
+    face_result: dict[str, Any],
+    pose_result: dict[str, Any],
+    turn_bundle: dict[str, Any] | None,
+) -> dict[str, Any]:
+    visual_frame_ref = SimpleNamespace(
+        id=f"redis-vf-{session.id}-{payload.turn_id or 'unbound'}-{payload.sample_index}",
+        created_at=payload.sample_ended_at,
+    )
+    face_capture_ref = SimpleNamespace(
+        id=f"redis-face-{session.id}-{payload.turn_id or 'unbound'}-{payload.sample_index}",
+        created_at=payload.sample_ended_at,
+    )
+    pose_capture_ref = SimpleNamespace(
+        id=f"redis-pose-{session.id}-{payload.turn_id or 'unbound'}-{payload.sample_index}",
+        created_at=payload.sample_ended_at,
+    )
+    session_snapshot = _snapshot(session)
+    session_snapshot["status"] = "active" if session_snapshot.get("status") == "created" else session_snapshot.get("status")
+    session_snapshot["updated_at"] = payload.sample_ended_at
+    session_snapshot["live_state_payload"] = _merge_live_payload(
+        dict(session.live_state_payload or {}),
+        face_result,
+        pose_result,
+    )
+    return {
+        "visual_frame": _build_visual_frame_response(
+            visual_frame=visual_frame_ref,  # type: ignore[arg-type]
+            session_id=session.id,
+            turn_id=payload.turn_id,
+            question_key=payload.question_key,
+            sample_index=payload.sample_index,
+            sample_started_at=payload.sample_started_at,
+            sample_ended_at=payload.sample_ended_at,
+            storage_uri=storage_uri,
+        ),
+        "face_result": _build_frame_capture_response(
+            capture_row=face_capture_ref,  # type: ignore[arg-type]
+            session_id=session.id,
+            question_key=payload.question_key,
+            modality="face",
+            result_payload=face_result,
+            storage_uri=storage_uri,
+            turn_bundle=turn_bundle,
+        ),
+        "pose_result": _build_frame_capture_response(
+            capture_row=pose_capture_ref,  # type: ignore[arg-type]
+            session_id=session.id,
+            question_key=payload.question_key,
+            modality="pose",
+            result_payload=pose_result,
+            storage_uri=storage_uri,
+            turn_bundle=turn_bundle,
+        ),
+        "turn_bundle": turn_bundle,
+        "multimodal_session": session_snapshot,
+    }
+
+
+def _log_visual_capture_timing(
+    *,
+    session_id: str,
+    turn_id: str | None,
+    sample_index: int,
+    image_bytes_length: int,
+    face_result: dict[str, Any],
+    pose_result: dict[str, Any],
+    storage_uri: str | None,
+    turn_bundle: dict[str, Any] | None,
+    total_ms: int,
+    face_infer_ms: int,
+    pose_infer_ms: int,
+    inference_total_ms: int,
+    storage_wait_ms: int,
+    redis_write_ms: int,
+    redis_write_success: bool,
+    persistence_ms: int,
+    coarse_checkpoint_due: bool,
+    coarse_checkpoint_applied: bool,
+) -> None:
+    logger.info(
+        "visual capture timing session_id=%s turn_id=%s sample_index=%s bytes=%s total_ms=%s "
+        "face_infer_ms=%s pose_infer_ms=%s inference_total_ms=%s storage_wait_ms=%s "
+        "redis_write_ms=%s redis_write_success=%s persistence_ms=%s coarse_checkpoint_due=%s coarse_checkpoint_applied=%s "
+        "upload_overlapped=%s storage_uri_present=%s turn_bundle_present=%s "
+        "face_status=%s pose_status=%s",
+        session_id,
+        turn_id,
+        sample_index,
+        image_bytes_length,
+        total_ms,
+        face_infer_ms,
+        pose_infer_ms,
+        inference_total_ms,
+        storage_wait_ms,
+        redis_write_ms,
+        redis_write_success,
+        persistence_ms,
+        coarse_checkpoint_due,
+        coarse_checkpoint_applied,
+        storage_wait_ms < inference_total_ms,
+        storage_uri is not None,
+        turn_bundle is not None,
+        face_result.get("processing_status"),
+        pose_result.get("processing_status"),
+    )
+
+
+def _infer_face_capture_result(
+    session_id: str,
+    payload: SubmitFrameCaptureRequest,
+) -> dict[str, Any]:
+    try:
+        raw_result = _extract_result_or_raise(
+            infer_face_emotion(
+                FrameEmotionInferRequest(
+                    image_base64=payload.require_image_base64(),
+                    image_format=payload.image_format,
+                    session_id=session_id,
+                    frame_id=payload.frame_id or f"face-{payload.sample_index}",
+                    timestamp=_isoformat(payload.sample_ended_at),
+                )
+            )
+        )
+        raw_result["quality_flags"] = {
+            **_compute_face_quality_flags(payload.require_image_bytes()),
+            **dict(raw_result.get("quality_flags") or {}),
+        }
+        return _normalize_face_result(raw_result, payload)
+    except MultimodalServiceError as exc:
+        return _build_failed_face_result(payload, error_message=exc.message)
+
+
+def _infer_pose_capture_result(
+    session_id: str,
+    payload: SubmitFrameCaptureRequest,
+) -> dict[str, Any]:
+    try:
+        raw_result = _extract_result_or_raise(
+            infer_pose_emotion(
+                FrameEmotionInferRequest(
+                    image_base64=payload.require_image_base64(),
+                    image_format=payload.image_format,
+                    session_id=session_id,
+                    turn_id=payload.turn_id,
+                    frame_id=payload.frame_id or f"pose-{payload.sample_index}",
+                    timestamp=_isoformat(payload.sample_ended_at),
+                )
+            )
+        )
+        logger.info(
+            "pose raw result session_id=%s turn_id=%s sample_index=%s label=%s score=%s frames=%s confidences=%s",
+            session_id,
+            payload.turn_id,
+            payload.sample_index,
+            raw_result.get("label"),
+            raw_result.get("score"),
+            ((raw_result.get("extra") or {}).get("frames")),
+            ((raw_result.get("extra") or {}).get("confidences")),
+        )
+        return _normalize_pose_result(raw_result, payload)
+    except MultimodalServiceError as exc:
+        return _build_failed_pose_result(payload, error_message=exc.message)
+
+
+def _record_frame_capture_result(
+    db_session,
+    *,
+    session_id: str,
+    payload: SubmitFrameCaptureRequest,
+    modality: str,
+    source_ref_id: str,
+    storage_uri: str | None,
+    inference_payload: dict[str, Any],
+    sample_id: str | None = None,
+) -> MultimodalCapture:
+    capture_row = _record_capture(
+        db_session,
+        session_id=session_id,
+        turn_id=payload.turn_id,
+        flow_run_id=payload.flow_run_id,
+        stage_id=payload.stage_id,
+        question_key=payload.question_key,
+        modality=modality,
+        capture_kind="frame",
+        source_ref_id=source_ref_id,
+        sample_index=payload.sample_index,
+        sample_started_at=payload.sample_started_at,
+        sample_ended_at=payload.sample_ended_at,
+        capture_payload={
+            **_build_frame_capture_payload(payload),
+            **({"visual_frame_id": sample_id} if sample_id else {}),
+        },
+        captured_at=payload.sample_ended_at,
+    )
+    capture_row.storage_uri = storage_uri
+    db_session.add(capture_row)
+    _record_inference_result(
+        db_session,
+        session_id=session_id,
+        turn_id=payload.turn_id,
+        flow_run_id=payload.flow_run_id,
+        stage_id=payload.stage_id,
+        question_key=payload.question_key,
+        modality=modality,
+        source_kind="frame",
+        source_ref_id=source_ref_id,
+        sample_id=capture_row.id,
+        inference_payload=inference_payload,
+        captured_at=payload.sample_ended_at,
+    )
+    return capture_row
+
+
+def _apply_frame_summary_counts(
+    result_payload: dict[str, Any],
+    *,
+    modality: str,
+    turn_bundle: dict[str, Any] | None,
+    sample_index: int,
+) -> None:
+    feature_key = f"{modality}_features"
+    features = dict((turn_bundle or {}).get(feature_key) or {})
+    if features:
+        result_payload["sample_count"] = features.get("sample_count")
+        result_payload["valid_sample_count"] = features.get("valid_sample_count")
+    if "sample_count" not in result_payload:
+        result_payload["sample_count"] = sample_index
+    if "valid_sample_count" not in result_payload:
+        result_payload["valid_sample_count"] = None
 
 
 def _submit_face_capture_with_session(
@@ -505,65 +1152,20 @@ def _submit_face_capture_with_session(
     source_ref_id: str,
     sample_id: str | None = None,
 ) -> dict[str, Any]:
-    capture_row = _record_capture(
+    face_result = _infer_face_capture_result(session.id, payload)
+    capture_row = _record_frame_capture_result(
         db_session,
         session_id=session.id,
-        turn_id=payload.turn_id,
-        flow_run_id=payload.flow_run_id,
-        stage_id=payload.stage_id,
-        question_key=payload.question_key,
+        payload=payload,
         modality="face",
-        capture_kind="frame",
         source_ref_id=source_ref_id,
-        sample_index=payload.sample_index,
-        sample_started_at=payload.sample_started_at,
-        sample_ended_at=payload.sample_ended_at,
-        capture_payload={
-            **_build_frame_capture_payload(payload),
-            **({"visual_frame_id": sample_id} if sample_id else {}),
-        },
-        captured_at=payload.sample_ended_at,
-    )
-    capture_row.storage_uri = storage_uri
-    db_session.add(capture_row)
-
-    try:
-        raw_result = _extract_result_or_raise(
-            infer_face_emotion(
-                FrameEmotionInferRequest(
-                    image_base64=payload.image_base64,
-                    image_format=payload.image_format,
-                    session_id=session.id,
-                    frame_id=payload.frame_id or f"face-{payload.sample_index}",
-                    timestamp=_isoformat(payload.sample_ended_at),
-                )
-            )
-        )
-        raw_result["quality_flags"] = {
-            **_compute_face_quality_flags(payload.image_base64),
-            **dict(raw_result.get("quality_flags") or {}),
-        }
-        face_result = _normalize_face_result(raw_result, payload)
-    except MultimodalServiceError as exc:
-        face_result = _build_failed_face_result(payload, error_message=exc.message)
-    _record_inference_result(
-        db_session,
-        session_id=session.id,
-        turn_id=payload.turn_id,
-        flow_run_id=payload.flow_run_id,
-        stage_id=payload.stage_id,
-        question_key=payload.question_key,
-        modality="face",
-        source_kind="frame",
-        source_ref_id=source_ref_id,
-        sample_id=capture_row.id,
+        storage_uri=storage_uri,
         inference_payload=face_result,
-        captured_at=payload.sample_ended_at,
+        sample_id=sample_id,
     )
 
     turn_bundle = None
     if payload.turn_id:
-        db_session.flush()
         turn_bundle = _upsert_turn_bundle(
             db_session,
             session.id,
@@ -572,36 +1174,24 @@ def _submit_face_capture_with_session(
             stage_id=payload.stage_id,
             question_key=payload.question_key,
         )
-        face_features = dict((turn_bundle or {}).get("face_features") or {})
-        if face_features:
-            face_result["sample_count"] = face_features.get("sample_count")
-            face_result["valid_sample_count"] = face_features.get("valid_sample_count")
-    if "sample_count" not in face_result:
-        face_result["sample_count"] = payload.sample_index
-    if "valid_sample_count" not in face_result:
-        face_result["valid_sample_count"] = None
+    _apply_frame_summary_counts(
+        face_result,
+        modality="face",
+        turn_bundle=turn_bundle,
+        sample_index=payload.sample_index,
+    )
     _refresh_live_payload(session, face_result)
     db_session.add(session)
     db_session.flush()
-    return {
-        "capture_id": capture_row.id,
-        "session_id": session.id,
-        "question_key": payload.question_key,
-        "modality": "face",
-        "processing_status": face_result["processing_status"],
-        "primary_label": face_result["primary_label"],
-        "primary_score": face_result["primary_score"],
-        "top_3_labels": face_result["top_3_labels"],
-        "quality_flags": face_result["quality_flags"],
-        "sample_started_at": face_result["sample_started_at"],
-        "sample_ended_at": face_result["sample_ended_at"],
-        "sample_count": face_result.get("sample_count"),
-        "valid_sample_count": face_result.get("valid_sample_count"),
-        "storage_uri": storage_uri,
-        "error_message": face_result.get("error_message"),
-        "created_at": _isoformat(capture_row.created_at),
-        "turn_bundle": turn_bundle,
-    }
+    return _build_frame_capture_response(
+        capture_row=capture_row,
+        session_id=session.id,
+        question_key=payload.question_key,
+        modality="face",
+        result_payload=face_result,
+        storage_uri=storage_uri,
+        turn_bundle=turn_bundle,
+    )
 
 
 def _submit_pose_capture_with_session(
@@ -613,72 +1203,20 @@ def _submit_pose_capture_with_session(
     source_ref_id: str,
     sample_id: str | None = None,
 ) -> dict[str, Any]:
-    capture_row = _record_capture(
+    pose_result = _infer_pose_capture_result(session.id, payload)
+    capture_row = _record_frame_capture_result(
         db_session,
         session_id=session.id,
-        turn_id=payload.turn_id,
-        flow_run_id=payload.flow_run_id,
-        stage_id=payload.stage_id,
-        question_key=payload.question_key,
+        payload=payload,
         modality="pose",
-        capture_kind="frame",
         source_ref_id=source_ref_id,
-        sample_index=payload.sample_index,
-        sample_started_at=payload.sample_started_at,
-        sample_ended_at=payload.sample_ended_at,
-        capture_payload={
-            **_build_frame_capture_payload(payload),
-            **({"visual_frame_id": sample_id} if sample_id else {}),
-        },
-        captured_at=payload.sample_ended_at,
-    )
-    capture_row.storage_uri = storage_uri
-    db_session.add(capture_row)
-
-    try:
-        raw_result = _extract_result_or_raise(
-            infer_pose_emotion(
-                FrameEmotionInferRequest(
-                    image_base64=payload.image_base64,
-                    image_format=payload.image_format,
-                    session_id=session.id,
-                    turn_id=payload.turn_id,
-                    frame_id=payload.frame_id or f"pose-{payload.sample_index}",
-                    timestamp=_isoformat(payload.sample_ended_at),
-                )
-            )
-        )
-        logger.info(
-            "pose raw result session_id=%s turn_id=%s sample_index=%s label=%s score=%s frames=%s confidences=%s",
-            session.id,
-            payload.turn_id,
-            payload.sample_index,
-            raw_result.get("label"),
-            raw_result.get("score"),
-            ((raw_result.get("extra") or {}).get("frames")),
-            ((raw_result.get("extra") or {}).get("confidences")),
-        )
-        pose_result = _normalize_pose_result(raw_result, payload)
-    except MultimodalServiceError as exc:
-        pose_result = _build_failed_pose_result(payload, error_message=exc.message)
-    _record_inference_result(
-        db_session,
-        session_id=session.id,
-        turn_id=payload.turn_id,
-        flow_run_id=payload.flow_run_id,
-        stage_id=payload.stage_id,
-        question_key=payload.question_key,
-        modality="pose",
-        source_kind="frame",
-        source_ref_id=source_ref_id,
-        sample_id=capture_row.id,
+        storage_uri=storage_uri,
         inference_payload=pose_result,
-        captured_at=payload.sample_ended_at,
+        sample_id=sample_id,
     )
 
     turn_bundle = None
     if payload.turn_id:
-        db_session.flush()
         turn_bundle = _upsert_turn_bundle(
             db_session,
             session.id,
@@ -687,36 +1225,24 @@ def _submit_pose_capture_with_session(
             stage_id=payload.stage_id,
             question_key=payload.question_key,
         )
-        pose_features = dict((turn_bundle or {}).get("pose_features") or {})
-        if pose_features:
-            pose_result["sample_count"] = pose_features.get("sample_count")
-            pose_result["valid_sample_count"] = pose_features.get("valid_sample_count")
-    if "sample_count" not in pose_result:
-        pose_result["sample_count"] = payload.sample_index
-    if "valid_sample_count" not in pose_result:
-        pose_result["valid_sample_count"] = None
+    _apply_frame_summary_counts(
+        pose_result,
+        modality="pose",
+        turn_bundle=turn_bundle,
+        sample_index=payload.sample_index,
+    )
     _refresh_live_payload(session, pose_result)
     db_session.add(session)
     db_session.flush()
-    return {
-        "capture_id": capture_row.id,
-        "session_id": session.id,
-        "question_key": payload.question_key,
-        "modality": "pose",
-        "processing_status": pose_result["processing_status"],
-        "primary_label": pose_result["primary_label"],
-        "primary_score": pose_result["primary_score"],
-        "top_3_labels": pose_result["top_3_labels"],
-        "quality_flags": pose_result["quality_flags"],
-        "sample_started_at": pose_result["sample_started_at"],
-        "sample_ended_at": pose_result["sample_ended_at"],
-        "sample_count": pose_result.get("sample_count"),
-        "valid_sample_count": pose_result.get("valid_sample_count"),
-        "storage_uri": storage_uri,
-        "error_message": pose_result.get("error_message"),
-        "created_at": _isoformat(capture_row.created_at),
-        "turn_bundle": turn_bundle,
-    }
+    return _build_frame_capture_response(
+        capture_row=capture_row,
+        session_id=session.id,
+        question_key=payload.question_key,
+        modality="pose",
+        result_payload=pose_result,
+        storage_uri=storage_uri,
+        turn_bundle=turn_bundle,
+    )
 
 
 def _normalize_pose_result(raw_result: dict[str, Any], payload: SubmitFrameCaptureRequest) -> dict[str, Any]:
@@ -1167,39 +1693,10 @@ def _record_inference_result(
 
 
 def _refresh_live_payload(session: MultimodalSession, *results: dict[str, Any]) -> None:
-    live_payload = dict(session.live_state_payload or {})
-    for result in results:
-        modality = str(result.get("modality") or "").strip().lower()
-        if not modality:
-            continue
-        if modality in {"face", "pose"}:
-            live_payload[modality] = {
-                "status": result.get("status", "pending"),
-                "processing_status": result.get("processing_status", "pending"),
-                "primary_label": result.get("primary_label"),
-                "primary_score": result.get("primary_score"),
-                "top_3_labels": _copy_labels(result.get("top_3_labels")),
-                "quality_flags": dict(result.get("quality_flags") or {}),
-                "latest_capture_at": result.get("sample_ended_at"),
-                "sample_count": result.get("sample_count"),
-                "valid_sample_count": result.get("valid_sample_count"),
-                "error_message": result.get("error_message"),
-            }
-        else:
-            live_payload[modality] = {
-                "status": result.get("status", "pending"),
-                "primary_label": result.get("primary_label"),
-                "primary_score": result.get("primary_score"),
-                "top_3_labels": _copy_labels(result.get("top_3_labels")),
-            }
-            if modality == "speech":
-                live_payload[modality]["audio_uri"] = result.get("audio_uri")
-                live_payload[modality]["captured_at"] = result.get("captured_at")
-            if modality == "text":
-                live_payload[modality]["negative_terms"] = list(result.get("negative_terms") or [])
-                live_payload[modality]["transcript_text"] = result.get("transcript_text")
-                live_payload[modality]["captured_at"] = result.get("captured_at")
-    session.live_state_payload = dict(live_payload)
+    session.live_state_payload = _merge_live_payload(
+        dict(session.live_state_payload or {}),
+        *results,
+    )
     session.updated_at = _utcnow()
     if session.status == "created":
         session.status = "active"
@@ -1242,6 +1739,10 @@ def _build_turn_bundle_payload(
     flow_run_id: str | None = None,
     stage_id: str | None = None,
     question_key: str | None = None,
+    face_summary: dict[str, Any] | None = None,
+    pose_summary: dict[str, Any] | None = None,
+    visual_key_frames: list[dict[str, Any]] | None = None,
+    visual_selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     results_by_modality = {
         "speech": _load_inference_payloads(
@@ -1272,8 +1773,16 @@ def _build_turn_bundle_payload(
 
     latest_speech = results_by_modality["speech"][-1] if results_by_modality["speech"] else None
     latest_text = results_by_modality["text"][-1] if results_by_modality["text"] else None
-    face_summary = _summarize_frame_payloads("face", results_by_modality["face"], summary_type="turn_window")
-    pose_summary = _summarize_frame_payloads("pose", results_by_modality["pose"], summary_type="turn_window")
+    resolved_face_summary = face_summary or _summarize_frame_payloads(
+        "face",
+        results_by_modality["face"],
+        summary_type="turn_window",
+    )
+    resolved_pose_summary = pose_summary or _summarize_frame_payloads(
+        "pose",
+        results_by_modality["pose"],
+        summary_type="turn_window",
+    )
 
     return {
         "turn_id": turn_id,
@@ -1293,8 +1802,10 @@ def _build_turn_bundle_payload(
             "top_3_labels": _copy_labels(latest_text.get("top_3_labels")) if latest_text else [],
             "negative_terms": list(latest_text.get("negative_terms") or []) if latest_text else [],
         },
-        "face_features": face_summary,
-        "pose_features": pose_summary,
+        "face_features": resolved_face_summary,
+        "pose_features": resolved_pose_summary,
+        "visual_key_frames": list(visual_key_frames or []),
+        "visual_selection": dict(visual_selection or {}),
     }
 
 
@@ -1306,6 +1817,10 @@ def _upsert_turn_bundle(
     flow_run_id: str | None = None,
     stage_id: str | None = None,
     question_key: str | None = None,
+    face_summary: dict[str, Any] | None = None,
+    pose_summary: dict[str, Any] | None = None,
+    visual_key_frames: list[dict[str, Any]] | None = None,
+    visual_selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     bundle_payload = _build_turn_bundle_payload(
         db_session,
@@ -1314,6 +1829,10 @@ def _upsert_turn_bundle(
         flow_run_id=flow_run_id,
         stage_id=stage_id,
         question_key=question_key,
+        face_summary=face_summary,
+        pose_summary=pose_summary,
+        visual_key_frames=visual_key_frames,
+        visual_selection=visual_selection,
     )
     row = db_session.execute(
         select(MultimodalTurnBundle).where(
@@ -1344,6 +1863,247 @@ def _upsert_turn_bundle(
         row.updated_at = now
         db_session.add(row)
     return bundle_payload
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _load_turn_bundle_row(
+    db_session,
+    *,
+    session_id: str,
+    turn_id: str,
+) -> MultimodalTurnBundle | None:
+    return db_session.execute(
+        select(MultimodalTurnBundle).where(
+            MultimodalTurnBundle.session_id == session_id,
+            MultimodalTurnBundle.turn_id == turn_id,
+        )
+    ).scalar_one_or_none()
+
+
+def _is_finalized_turn_bundle_payload(bundle_payload: dict[str, Any] | None) -> bool:
+    payload = dict(bundle_payload or {})
+    visual_selection = dict(payload.get("visual_selection") or {})
+    if bool(visual_selection.get("persisted")):
+        return True
+    return bool(payload.get("visual_key_frames"))
+
+
+def _build_visual_recovery_boundaries(
+    *,
+    finalized_bundle_present: bool,
+) -> dict[str, Any]:
+    return {
+        "finalized_bundle_present": finalized_bundle_present,
+        "recoverable_from_postgres": [
+            "turn_bundle",
+            "visual aggregate summary",
+            "visual finalized state",
+            "visual live face_pose snapshot",
+        ]
+        if finalized_bundle_present
+        else [],
+        "not_recoverable_from_postgres": [
+            "full_frame_payloads",
+            "candidate_pool",
+            "pre_finalize_hot_state",
+        ],
+        "loss_boundary": (
+            "unfinalized visual hot-state depends on Redis and may be lost if Redis restarts"
+        ),
+    }
+
+
+def _build_key_frame_reference_payload(
+    *,
+    selected_frame_payload: dict[str, Any],
+    visual_frame_id: str,
+    face_capture_id: str,
+    pose_capture_id: str,
+) -> dict[str, Any]:
+    return {
+        **dict(selected_frame_payload or {}),
+        "visual_frame_id": visual_frame_id,
+        "face_capture_id": face_capture_id,
+        "pose_capture_id": pose_capture_id,
+    }
+
+
+def _persist_selected_visual_key_frames(
+    db_session,
+    *,
+    session_id: str,
+    turn_id: str,
+    flow_run_id: str | None,
+    stage_id: str | None,
+    question_key: str | None,
+    frame_payloads_by_index: dict[int, dict[str, Any]],
+    selected_frames: Sequence[dict[str, Any]],
+    face_summary: dict[str, Any] | None,
+    pose_summary: dict[str, Any] | None,
+    strategy_version: str,
+) -> list[dict[str, Any]]:
+    persisted_key_frames: list[dict[str, Any]] = []
+    for selected_frame in selected_frames:
+        sample_index = int(selected_frame.get("sample_index") or 0)
+        frame_payload = dict(frame_payloads_by_index.get(sample_index) or {})
+        if not frame_payload:
+            raise MultimodalServiceError(
+                f"selected key frame payload missing for sample_index={sample_index}",
+                5004,
+                500,
+            )
+
+        sample_started_at = _parse_iso_datetime(frame_payload.get("sample_started_at"))
+        sample_ended_at = _parse_iso_datetime(frame_payload.get("sample_ended_at"))
+        visual_frame = _record_visual_frame(
+            db_session,
+            session_id=session_id,
+            turn_id=turn_id,
+            flow_run_id=flow_run_id,
+            stage_id=stage_id,
+            question_key=question_key,
+            sample_index=sample_index,
+            sample_started_at=sample_started_at,
+            sample_ended_at=sample_ended_at,
+            mime_type=None,
+            capture_payload={
+                "source": "turn_finalize",
+                "sample_index": sample_index,
+                "sample_started_at": frame_payload.get("sample_started_at"),
+                "sample_ended_at": frame_payload.get("sample_ended_at"),
+                "selection_bucket": selected_frame.get("selection_bucket"),
+                "selection_reasons": list(selected_frame.get("selection_reasons") or []),
+                "selection_score": selected_frame.get("score"),
+                "selection_strategy_version": strategy_version,
+            },
+            captured_at=sample_ended_at,
+            storage_uri=frame_payload.get("storage_uri"),
+        )
+
+        face_result = dict(frame_payload.get("face_result") or {})
+        pose_result = dict(frame_payload.get("pose_result") or {})
+        if face_summary:
+            face_result["sample_count"] = face_summary.get("sample_count")
+            face_result["valid_sample_count"] = face_summary.get("valid_sample_count")
+        if pose_summary:
+            pose_result["sample_count"] = pose_summary.get("sample_count")
+            pose_result["valid_sample_count"] = pose_summary.get("valid_sample_count")
+
+        face_capture = _record_capture(
+            db_session,
+            session_id=session_id,
+            turn_id=turn_id,
+            flow_run_id=flow_run_id,
+            stage_id=stage_id,
+            question_key=question_key,
+            modality="face",
+            capture_kind="frame",
+            source_ref_id=visual_frame.id,
+            sample_index=sample_index,
+            sample_started_at=sample_started_at,
+            sample_ended_at=sample_ended_at,
+            capture_payload={
+                "source": "turn_finalize",
+                "visual_frame_id": visual_frame.id,
+                "sample_index": sample_index,
+                "sample_started_at": frame_payload.get("sample_started_at"),
+                "sample_ended_at": frame_payload.get("sample_ended_at"),
+                "selection_bucket": selected_frame.get("selection_bucket"),
+                "selection_reasons": list(selected_frame.get("selection_reasons") or []),
+                "selection_score": selected_frame.get("score"),
+                "selection_strategy_version": strategy_version,
+            },
+            captured_at=sample_ended_at,
+        )
+        face_capture.storage_uri = frame_payload.get("storage_uri")
+        db_session.add(face_capture)
+        _record_inference_result(
+            db_session,
+            session_id=session_id,
+            turn_id=turn_id,
+            flow_run_id=flow_run_id,
+            stage_id=stage_id,
+            question_key=question_key,
+            modality="face",
+            source_kind="frame",
+            source_ref_id=visual_frame.id,
+            sample_id=face_capture.id,
+            inference_payload=face_result,
+            captured_at=sample_ended_at,
+        )
+
+        pose_capture = _record_capture(
+            db_session,
+            session_id=session_id,
+            turn_id=turn_id,
+            flow_run_id=flow_run_id,
+            stage_id=stage_id,
+            question_key=question_key,
+            modality="pose",
+            capture_kind="frame",
+            source_ref_id=visual_frame.id,
+            sample_index=sample_index,
+            sample_started_at=sample_started_at,
+            sample_ended_at=sample_ended_at,
+            capture_payload={
+                "source": "turn_finalize",
+                "visual_frame_id": visual_frame.id,
+                "sample_index": sample_index,
+                "sample_started_at": frame_payload.get("sample_started_at"),
+                "sample_ended_at": frame_payload.get("sample_ended_at"),
+                "selection_bucket": selected_frame.get("selection_bucket"),
+                "selection_reasons": list(selected_frame.get("selection_reasons") or []),
+                "selection_score": selected_frame.get("score"),
+                "selection_strategy_version": strategy_version,
+            },
+            captured_at=sample_ended_at,
+        )
+        pose_capture.storage_uri = frame_payload.get("storage_uri")
+        db_session.add(pose_capture)
+        _record_inference_result(
+            db_session,
+            session_id=session_id,
+            turn_id=turn_id,
+            flow_run_id=flow_run_id,
+            stage_id=stage_id,
+            question_key=question_key,
+            modality="pose",
+            source_kind="frame",
+            source_ref_id=visual_frame.id,
+            sample_id=pose_capture.id,
+            inference_payload=pose_result,
+            captured_at=sample_ended_at,
+        )
+
+        persisted_key_frames.append(
+            _build_key_frame_reference_payload(
+                selected_frame_payload=selected_frame,
+                visual_frame_id=visual_frame.id,
+                face_capture_id=face_capture.id,
+                pose_capture_id=pose_capture.id,
+            )
+        )
+    return persisted_key_frames
 
 
 def submit_audio_turn(
@@ -1448,6 +2208,7 @@ def submit_audio_turn(
                     effective_audio_emotion_wav_path,
                 )
             else:
+                assert resolved_audio_base64 is not None
                 speech_future = _AUDIO_TURN_EXECUTOR.submit(
                     _infer_audio_emotion_payload,
                     session_id=session.id,
@@ -1575,7 +2336,7 @@ def submit_face_capture(
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
-        image_bytes = base64.b64decode(payload.image_base64)
+        image_bytes = payload.require_image_bytes()
         storage_uri = _build_frame_storage_uri(
             modality="face",
             session_id=session.id,
@@ -1603,7 +2364,7 @@ def submit_pose_capture(
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
-        image_bytes = base64.b64decode(payload.image_base64)
+        image_bytes = payload.require_image_bytes()
         storage_uri = _build_frame_storage_uri(
             modality="pose",
             session_id=session.id,
@@ -1627,19 +2388,180 @@ def submit_visual_capture(
     acting_user_id: str | None = None,
 ) -> dict[str, Any]:
     with get_db_session() as db_session:
+        request_started_at = time.perf_counter()
         session = db_session.get(MultimodalSession, session_id)
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
 
-        image_bytes = base64.b64decode(payload.image_base64)
-        visual_storage_uri = _build_visual_frame_storage_uri(
+        existing_response = _find_existing_visual_capture_response(
+            db_session,
+            session=session,
+            payload=payload,
+        )
+        if existing_response is not None:
+            logger.info(
+                "visual capture idempotent reuse session_id=%s turn_id=%s sample_index=%s source=db",
+                session.id,
+                payload.turn_id,
+                payload.sample_index,
+            )
+            return existing_response
+
+        image_bytes = payload.require_image_bytes()
+        image_bytes_length = len(image_bytes)
+        visual_storage_future = _VISUAL_STORAGE_EXECUTOR.submit(
+            _build_visual_frame_storage_uri,
             session_id=session.id,
             turn_id=payload.turn_id,
             sample_index=payload.sample_index,
             image_format=payload.image_format,
             image_bytes=image_bytes,
         )
+
+        face_payload = payload.model_copy(
+            update={"frame_id": payload.frame_id or f"face-{payload.sample_index}"}
+        )
+        pose_payload = payload.model_copy(
+            update={"frame_id": payload.frame_id or f"pose-{payload.sample_index}"}
+        )
+        face_infer_started_at = time.perf_counter()
+        face_result = _infer_face_capture_result(session.id, face_payload)
+        face_infer_completed_at = time.perf_counter()
+        pose_infer_started_at = time.perf_counter()
+        pose_result = _infer_pose_capture_result(session.id, pose_payload)
+        pose_infer_completed_at = time.perf_counter()
+
+        storage_wait_started_at = time.perf_counter()
+        visual_storage_uri = visual_storage_future.result()
+        storage_wait_completed_at = time.perf_counter()
+        redis_live_payload = _merge_live_payload(
+            dict(session.live_state_payload or {}),
+            face_result,
+            pose_result,
+        )
+        redis_write_started_at = time.perf_counter()
+        redis_write_result = write_visual_frame_state(
+            session_id=session.id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            question_key=payload.question_key,
+            stage_id=payload.stage_id,
+            sample_index=payload.sample_index,
+            sample_started_at=payload.sample_started_at,
+            sample_ended_at=payload.sample_ended_at,
+            storage_uri=visual_storage_uri,
+            face_result=face_result,
+            pose_result=pose_result,
+            live_payload=redis_live_payload,
+        )
+        redis_write_completed_at = time.perf_counter()
+        coarse_checkpoint_due = bool(redis_write_result.coarse_checkpoint_due)
+        coarse_checkpoint_applied = False
+        if redis_write_result.coarse_checkpoint_due:
+            logger.info(
+                "visual turn coarse checkpoint due session_id=%s turn_id=%s sample_index=%s",
+                session.id,
+                payload.turn_id,
+                payload.sample_index,
+            )
+        redis_turn_aggregate = redis_write_result.turn_aggregate_payload
+        if redis_write_result.duplicate:
+            logger.info(
+                "visual capture duplicate redis hit session_id=%s turn_id=%s sample_index=%s",
+                session.id,
+                payload.turn_id,
+                payload.sample_index,
+            )
+            existing_response = _find_existing_visual_capture_response(
+                db_session,
+                session=session,
+                payload=payload,
+            )
+            if existing_response is not None:
+                logger.info(
+                    "visual capture idempotent reuse session_id=%s turn_id=%s sample_index=%s source=redis+db",
+                    session.id,
+                    payload.turn_id,
+                    payload.sample_index,
+                )
+                return existing_response
+        turn_bundle = _build_current_turn_bundle_from_redis(
+            db_session,
+            session_id=session.id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
+            redis_turn_aggregate=redis_turn_aggregate,
+        )
+        if redis_write_result.success:
+            checkpoint_started_at = time.perf_counter()
+            if coarse_checkpoint_due:
+                coarse_checkpoint_applied = _apply_visual_coarse_checkpoint(
+                    db_session,
+                    session=session,
+                    payload=payload,
+                    face_result=face_result,
+                    pose_result=pose_result,
+                    redis_turn_aggregate=redis_turn_aggregate,
+                    redis_turn_state=redis_write_result.turn_state_payload,
+                )
+            checkpoint_completed_at = time.perf_counter()
+            _apply_frame_summary_counts(
+                face_result,
+                modality="face",
+                turn_bundle=turn_bundle,
+                sample_index=payload.sample_index,
+            )
+            _apply_frame_summary_counts(
+                pose_result,
+                modality="pose",
+                turn_bundle=turn_bundle,
+                sample_index=payload.sample_index,
+            )
+            hot_path_completed_at = checkpoint_completed_at
+            response_payload = _build_hot_path_visual_capture_response(
+                session=session,
+                payload=payload,
+                storage_uri=visual_storage_uri,
+                face_result=face_result,
+                pose_result=pose_result,
+                turn_bundle=turn_bundle,
+            )
+            _log_visual_capture_timing(
+                session_id=session.id,
+                turn_id=payload.turn_id,
+                sample_index=payload.sample_index,
+                image_bytes_length=image_bytes_length,
+                face_result=face_result,
+                pose_result=pose_result,
+                storage_uri=visual_storage_uri,
+                turn_bundle=turn_bundle,
+                total_ms=_elapsed_ms(request_started_at, hot_path_completed_at),
+                face_infer_ms=_elapsed_ms(face_infer_started_at, face_infer_completed_at),
+                pose_infer_ms=_elapsed_ms(pose_infer_started_at, pose_infer_completed_at),
+                inference_total_ms=_elapsed_ms(face_infer_started_at, pose_infer_completed_at),
+                storage_wait_ms=_elapsed_ms(
+                    storage_wait_started_at,
+                    storage_wait_completed_at,
+                ),
+                redis_write_ms=_elapsed_ms(
+                    redis_write_started_at,
+                    redis_write_completed_at,
+                ),
+                redis_write_success=redis_write_result.success,
+                persistence_ms=_elapsed_ms(
+                    checkpoint_started_at,
+                    checkpoint_completed_at,
+                )
+                if coarse_checkpoint_due
+                else 0,
+                coarse_checkpoint_due=coarse_checkpoint_due,
+                coarse_checkpoint_applied=coarse_checkpoint_applied,
+            )
+            return response_payload
+        persistence_started_at = time.perf_counter()
         visual_frame = _record_visual_frame(
             db_session,
             session_id=session.id,
@@ -1656,49 +2578,112 @@ def submit_visual_capture(
             storage_uri=visual_storage_uri,
         )
         visual_frame_id = visual_frame.id
-
-        face_payload = payload.model_copy(
-            update={"frame_id": payload.frame_id or f"face-{payload.sample_index}"}
-        )
-        face_response = _submit_face_capture_with_session(
+        face_capture_row = _record_frame_capture_result(
             db_session,
-            session,
-            face_payload,
-            storage_uri=visual_storage_uri,
+            session_id=session.id,
+            payload=face_payload,
+            modality="face",
             source_ref_id=visual_frame_id,
+            storage_uri=visual_storage_uri,
+            inference_payload=face_result,
             sample_id=visual_frame_id,
         )
-        pose_payload = payload.model_copy(
-            update={"frame_id": payload.frame_id or f"pose-{payload.sample_index}"}
-        )
-        pose_response = _submit_pose_capture_with_session(
+        pose_capture_row = _record_frame_capture_result(
             db_session,
-            session,
-            pose_payload,
-            storage_uri=visual_storage_uri,
+            session_id=session.id,
+            payload=pose_payload,
+            modality="pose",
             source_ref_id=visual_frame_id,
+            storage_uri=visual_storage_uri,
+            inference_payload=pose_result,
             sample_id=visual_frame_id,
         )
 
-        turn_bundle = pose_response.get("turn_bundle") or face_response.get("turn_bundle")
+        if payload.turn_id:
+            turn_bundle = _upsert_turn_bundle(
+                db_session,
+                session.id,
+                payload.turn_id,
+                flow_run_id=payload.flow_run_id,
+                stage_id=payload.stage_id,
+                question_key=payload.question_key,
+                face_summary=(redis_turn_aggregate or {}).get("face_features"),
+                pose_summary=(redis_turn_aggregate or {}).get("pose_features"),
+            )
+        _apply_frame_summary_counts(
+            face_result,
+            modality="face",
+            turn_bundle=turn_bundle,
+            sample_index=payload.sample_index,
+        )
+        _apply_frame_summary_counts(
+            pose_result,
+            modality="pose",
+            turn_bundle=turn_bundle,
+            sample_index=payload.sample_index,
+        )
+        _refresh_live_payload(session, face_result, pose_result)
+        db_session.add(session)
+        db_session.flush()
+        persistence_completed_at = time.perf_counter()
         db_session.refresh(session)
-        return {
-            "visual_frame": {
-                "visual_frame_id": visual_frame.id,
-                "session_id": session.id,
-                "turn_id": payload.turn_id,
-                "question_key": payload.question_key,
-                "sample_index": payload.sample_index,
-                "sample_started_at": _isoformat(payload.sample_started_at),
-                "sample_ended_at": _isoformat(payload.sample_ended_at),
-                "storage_uri": visual_storage_uri,
-                "created_at": _isoformat(visual_frame.created_at),
-            },
-            "face_result": face_response,
-            "pose_result": pose_response,
-            "turn_bundle": turn_bundle,
-            "multimodal_session": _snapshot(session),
-        }
+        face_response = _build_frame_capture_response(
+            capture_row=face_capture_row,
+            session_id=session.id,
+            question_key=payload.question_key,
+            modality="face",
+            result_payload=face_result,
+            storage_uri=visual_storage_uri,
+            turn_bundle=turn_bundle,
+        )
+        pose_response = _build_frame_capture_response(
+            capture_row=pose_capture_row,
+            session_id=session.id,
+            question_key=payload.question_key,
+            modality="pose",
+            result_payload=pose_result,
+            storage_uri=visual_storage_uri,
+            turn_bundle=turn_bundle,
+        )
+        response_payload = _build_visual_capture_response(
+            visual_frame=visual_frame,
+            session=session,
+            payload=payload,
+            storage_uri=visual_storage_uri,
+            face_response=face_response,
+            pose_response=pose_response,
+            turn_bundle=turn_bundle,
+        )
+        _log_visual_capture_timing(
+            session_id=session.id,
+            turn_id=payload.turn_id,
+            sample_index=payload.sample_index,
+            image_bytes_length=image_bytes_length,
+            face_result=face_result,
+            pose_result=pose_result,
+            storage_uri=visual_storage_uri,
+            turn_bundle=turn_bundle,
+            total_ms=_elapsed_ms(request_started_at, persistence_completed_at),
+            face_infer_ms=_elapsed_ms(face_infer_started_at, face_infer_completed_at),
+            pose_infer_ms=_elapsed_ms(pose_infer_started_at, pose_infer_completed_at),
+            inference_total_ms=_elapsed_ms(face_infer_started_at, pose_infer_completed_at),
+            storage_wait_ms=_elapsed_ms(
+                storage_wait_started_at,
+                storage_wait_completed_at,
+            ),
+            redis_write_ms=_elapsed_ms(
+                redis_write_started_at,
+                redis_write_completed_at,
+            ),
+            redis_write_success=redis_write_result.success,
+            persistence_ms=_elapsed_ms(
+                persistence_started_at,
+                persistence_completed_at,
+            ),
+            coarse_checkpoint_due=coarse_checkpoint_due,
+            coarse_checkpoint_applied=coarse_checkpoint_applied,
+        )
+        return response_payload
 
 
 def get_multimodal_live(session_id: str, acting_user_id: str | None = None) -> dict[str, Any]:
@@ -1707,10 +2692,14 @@ def get_multimodal_live(session_id: str, acting_user_id: str | None = None) -> d
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
-        live_payload = dict(session.live_state_payload or {})
+        redis_live_payload = read_visual_live_payload(session.id)
+        live_payload = _overlay_visual_live_payload(
+            dict(session.live_state_payload or {}),
+            redis_live_payload,
+        )
         return {
             "session_id": session.id,
-            "updated_at": _isoformat(session.updated_at),
+            "updated_at": (redis_live_payload or {}).get("updated_at") or _isoformat(session.updated_at),
             "speech": live_payload.get("speech", _build_pending_live_modality("speech")),
             "text": live_payload.get("text", _build_pending_live_modality("text")),
             "face": live_payload.get("face", _build_pending_live_modality("face")),
@@ -1729,15 +2718,292 @@ def get_multimodal_turn_bundle(
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
 
-        row = db_session.execute(
-            select(MultimodalTurnBundle).where(
-                MultimodalTurnBundle.session_id == session_id,
-                MultimodalTurnBundle.turn_id == turn_id,
+        row = _load_turn_bundle_row(
+            db_session,
+            session_id=session.id,
+            turn_id=turn_id,
+        )
+        if row is not None and _is_finalized_turn_bundle_payload(row.bundle_payload):
+            return row.bundle_payload
+
+        redis_turn_aggregate = read_visual_turn_aggregate_payload(session.id, turn_id)
+        if redis_turn_aggregate is not None:
+            return _build_turn_bundle_payload(
+                db_session,
+                session.id,
+                turn_id,
+                flow_run_id=str(
+                    redis_turn_aggregate.get("flow_run_id") or session.flow_run_id or ""
+                )
+                or None,
+                stage_id=str(redis_turn_aggregate.get("stage_id") or "").strip() or None,
+                question_key=str(redis_turn_aggregate.get("question_key") or "").strip() or None,
+                face_summary=(redis_turn_aggregate or {}).get("face_features"),
+                pose_summary=(redis_turn_aggregate or {}).get("pose_features"),
             )
-        ).scalar_one_or_none()
+
         if row is None:
             raise MultimodalServiceError("multimodal turn bundle not found", 4042, 404)
         return row.bundle_payload
+
+
+def recover_multimodal_turn_hot_state(
+    session_id: str,
+    turn_id: str,
+    acting_user_id: str | None = None,
+) -> dict[str, Any]:
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
+
+        bundle_row = _load_turn_bundle_row(
+            db_session,
+            session_id=session.id,
+            turn_id=turn_id,
+        )
+        if bundle_row is None or not _is_finalized_turn_bundle_payload(bundle_row.bundle_payload):
+            return {
+                "session_id": session.id,
+                "turn_id": turn_id,
+                "status": "not_recoverable",
+                "recovery_applied": False,
+                "recovery_source": None,
+                "boundaries": _build_visual_recovery_boundaries(
+                    finalized_bundle_present=False,
+                ),
+                "metrics": {
+                    "redis_live_restored": False,
+                    "redis_aggregate_restored": False,
+                    "redis_state_restored": False,
+                    "persisted_key_frame_count": 0,
+                },
+            }
+
+        bundle_payload = dict(bundle_row.bundle_payload or {})
+        visual_selection = dict(bundle_payload.get("visual_selection") or {})
+        visual_key_frames = list(bundle_payload.get("visual_key_frames") or [])
+        finalized_at = _parse_iso_datetime(visual_selection.get("persisted_at")) or bundle_row.updated_at
+        recovered = recover_visual_turn_hot_state_from_bundle(
+            session.id,
+            turn_id,
+            flow_run_id=bundle_row.flow_run_id,
+            stage_id=bundle_row.stage_id,
+            question_key=bundle_row.question_key,
+            finalized_at=finalized_at,
+            face_summary=dict(bundle_payload.get("face_features") or {}),
+            pose_summary=dict(bundle_payload.get("pose_features") or {}),
+            visual_key_frames=visual_key_frames,
+            visual_selection=visual_selection,
+        )
+        if not recovered:
+            raise MultimodalServiceError(
+                "visual turn redis recovery unavailable",
+                5032,
+                503,
+            )
+
+        logger.info(
+            "visual turn redis recovery applied session_id=%s turn_id=%s key_frames=%s",
+            session.id,
+            turn_id,
+            len(visual_key_frames),
+        )
+        return {
+            "session_id": session.id,
+            "turn_id": turn_id,
+            "status": "recovered",
+            "recovery_applied": True,
+            "recovery_source": "postgres_finalized_bundle",
+            "boundaries": _build_visual_recovery_boundaries(
+                finalized_bundle_present=True,
+            ),
+            "metrics": {
+                "redis_live_restored": True,
+                "redis_aggregate_restored": True,
+                "redis_state_restored": True,
+                "persisted_key_frame_count": len(visual_key_frames),
+                "recovered_at": _isoformat(_utcnow()),
+            },
+            "turn_bundle": bundle_payload,
+        }
+
+
+def finalize_multimodal_turn(
+    session_id: str,
+    turn_id: str,
+    acting_user_id: str | None = None,
+) -> dict[str, Any]:
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
+
+        existing_bundle_row = _load_turn_bundle_row(
+            db_session,
+            session_id=session.id,
+            turn_id=turn_id,
+        )
+        if existing_bundle_row is not None and _is_finalized_turn_bundle_payload(
+            existing_bundle_row.bundle_payload
+        ):
+            existing_selection = dict(
+                (existing_bundle_row.bundle_payload or {}).get("visual_selection") or {}
+            )
+            return {
+                "session_id": session.id,
+                "turn_id": turn_id,
+                "status": "already_finalized",
+                "finalized_at": existing_selection.get("persisted_at")
+                or _isoformat(existing_bundle_row.updated_at),
+                "persisted": True,
+                "source": "postgres_finalized_bundle",
+                "turn_state": {
+                    "frame_count": existing_selection.get("frame_count"),
+                    "candidate_count": None,
+                    "last_sample_index": None,
+                    "last_updated_at": None,
+                },
+                "key_frame_selection": existing_selection,
+                "turn_bundle": dict(existing_bundle_row.bundle_payload or {}),
+            }
+
+        redis_turn_aggregate = read_visual_turn_aggregate_payload(session.id, turn_id)
+        redis_turn_state = read_visual_turn_state_payload(session.id, turn_id)
+        flow_run_id = None
+        stage_id = None
+        question_key = None
+        face_summary = None
+        pose_summary = None
+        frame_payloads: list[dict[str, Any]] = []
+        candidate_payloads: list[dict[str, Any]] = []
+        key_frame_selection: dict[str, Any]
+        persisted_key_frames: list[dict[str, Any]]
+
+        if redis_turn_aggregate is not None:
+            flow_run_id = (
+                str(redis_turn_aggregate.get("flow_run_id") or session.flow_run_id or "") or None
+            )
+            stage_id = str(redis_turn_aggregate.get("stage_id") or "").strip() or None
+            question_key = str(redis_turn_aggregate.get("question_key") or "").strip() or None
+            face_summary = (redis_turn_aggregate or {}).get("face_features")
+            pose_summary = (redis_turn_aggregate or {}).get("pose_features")
+
+        if redis_turn_aggregate is not None and redis_turn_state is not None:
+            frame_payloads = read_visual_turn_frame_payloads(
+                session.id,
+                turn_id,
+                sample_indexes=redis_turn_state.get("all_frame_sample_indexes"),
+            )
+            if not frame_payloads:
+                raise MultimodalServiceError("visual turn frame state not found", 4044, 404)
+            candidate_payloads = read_visual_turn_candidate_payloads(
+                session.id,
+                turn_id,
+                sample_indexes=redis_turn_state.get("candidate_sample_indexes"),
+            )
+            key_frame_selection = select_visual_key_frames(
+                VisualKeyFrameSelectorInput(
+                    frame_payloads=frame_payloads,
+                    candidate_payloads=candidate_payloads,
+                    turn_state_payload=redis_turn_state,
+                    turn_aggregate_payload=redis_turn_aggregate,
+                )
+            ).to_payload()
+            frame_payloads_by_index = {
+                int(payload.get("sample_index") or 0): dict(payload) for payload in frame_payloads
+            }
+            persisted_key_frames = _persist_selected_visual_key_frames(
+                db_session,
+                session_id=session.id,
+                turn_id=turn_id,
+                flow_run_id=flow_run_id,
+                stage_id=stage_id,
+                question_key=question_key,
+                frame_payloads_by_index=frame_payloads_by_index,
+                selected_frames=list(key_frame_selection.get("selected_frames") or []),
+                face_summary=face_summary,
+                pose_summary=pose_summary,
+                strategy_version=str(key_frame_selection.get("strategy_version") or ""),
+            )
+        else:
+            key_frame_selection = {
+                "strategy_version": str(
+                    get_settings()["visual_key_frame_strategy_version"]
+                ),
+                "frame_count": 0,
+                "target_count": 0,
+                "turn_duration_seconds": 0.0,
+                "base_target_count": 0,
+                "extra_time_coverage_count": 0,
+                "applied_rules": ["no_visual_turn_state"],
+                "selected_frames": [],
+            }
+            persisted_key_frames = []
+
+        persisted_at = _isoformat(_utcnow())
+        persisted_visual_selection = {
+            **key_frame_selection,
+            "persisted": True,
+            "persisted_at": persisted_at,
+            "selected_frames": persisted_key_frames,
+        }
+        turn_bundle = _upsert_turn_bundle(
+            db_session,
+            session.id,
+            turn_id,
+            flow_run_id=flow_run_id,
+            stage_id=stage_id,
+            question_key=question_key,
+            face_summary=face_summary,
+            pose_summary=pose_summary,
+            visual_key_frames=persisted_key_frames,
+            visual_selection=persisted_visual_selection,
+        )
+        db_session.flush()
+        db_session.commit()
+        redis_hot_state_cleaned = finalize_visual_turn_hot_state(
+            session.id,
+            turn_id,
+            finalized_at=_parse_iso_datetime(persisted_at) or _utcnow(),
+            persisted_key_frame_count=len(persisted_key_frames),
+        )
+        if not redis_hot_state_cleaned:
+            logger.warning(
+                "visual redis finalize cleanup skipped or failed session_id=%s turn_id=%s",
+                session.id,
+                turn_id,
+            )
+        try:
+            pose_runtime_cleared = runtime_store.clear_pose_turn_state(session.id, turn_id)
+        except Exception:
+            logger.warning(
+                "pose runtime clear failed after finalize session_id=%s turn_id=%s",
+                session.id,
+                turn_id,
+                exc_info=True,
+            )
+            pose_runtime_cleared = False
+        return {
+            "session_id": session.id,
+            "turn_id": turn_id,
+            "status": "finalized",
+            "finalized_at": persisted_at,
+            "persisted": True,
+            "source": "postgres_finalized_bundle",
+            "turn_state": {
+                "frame_count": int((redis_turn_state or {}).get("frame_count") or len(frame_payloads)),
+                "candidate_count": len(candidate_payloads),
+                "last_sample_index": (redis_turn_state or {}).get("last_sample_index"),
+                "last_updated_at": (redis_turn_state or {}).get("last_updated_at"),
+            },
+            "redis_hot_state_cleaned": redis_hot_state_cleaned,
+            "pose_runtime_cleared": pose_runtime_cleared,
+            "key_frame_selection": persisted_visual_selection,
+            "turn_bundle": turn_bundle,
+        }
 
 
 def clear_pose_turn_runtime_state(

@@ -1,9 +1,59 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import numpy as np
+
+sys.modules.setdefault(
+    "onnxruntime",
+    SimpleNamespace(get_available_providers=lambda: ["CPUExecutionProvider"]),
+)
+sys.modules.setdefault(
+    "infer_text",
+    SimpleNamespace(build_runtime_engine=lambda **_kwargs: object()),
+)
+sys.modules.setdefault(
+    "infer_audio",
+    SimpleNamespace(build_runtime_engine=lambda **_kwargs: object()),
+)
+sys.modules.setdefault(
+    "infer_face",
+    SimpleNamespace(build_runtime_engine=lambda **_kwargs: object()),
+)
+sys.modules.setdefault(
+    "infer_pose",
+    SimpleNamespace(
+        build_runtime_engine=lambda **_kwargs: object(),
+        build_turn_state=lambda *_args, **_kwargs: SimpleNamespace(last_used_at=0.0),
+        close_runtime_engine=lambda *_args, **_kwargs: None,
+    ),
+)
+sys.modules.setdefault(
+    "app.services.non_eeg_runtime",
+    SimpleNamespace(runtime_store=SimpleNamespace()),
+)
+sys.modules.setdefault(
+    "app.services.non_eeg_inference",
+    SimpleNamespace(
+        infer_audio_emotion=lambda *_args, **_kwargs: None,
+        infer_audio_emotion_from_wav_path=lambda *_args, **_kwargs: None,
+        infer_face_emotion=lambda *_args, **_kwargs: None,
+        infer_pose_emotion=lambda *_args, **_kwargs: None,
+        infer_text_emotion=lambda *_args, **_kwargs: None,
+    ),
+)
+sys.modules.setdefault(
+    "app.services.object_storage",
+    SimpleNamespace(
+        ensure_multimodal_bucket=lambda: None,
+        upload_audio_object=lambda *_args, **_kwargs: "s3://bucket/key",
+        download_object_bytes=lambda *_args, **_kwargs: b"",
+        parse_s3_uri=lambda uri: ("bucket", "key"),
+        upload_object_to_bucket=lambda **_kwargs: "s3://bucket/key",
+    ),
+)
 
 from app.schemas.multimodal import SubmitFrameCaptureRequest
 from app.services.multimodal_session_service import (
@@ -104,19 +154,24 @@ def test_build_failed_face_result_returns_standardized_payload() -> None:
     assert result["error_message"] == "object storage unavailable"
 
 
-def test_compute_face_quality_flags_handles_invalid_base64() -> None:
-    flags = _compute_face_quality_flags("not-base64")
+def test_compute_face_quality_flags_handles_invalid_image_bytes() -> None:
+    flags = _compute_face_quality_flags(b"not-an-image")
     assert flags == {"blur": False, "low_light": False}
 
 
 def test_compute_face_quality_flags_detects_dark_blurry_frame(monkeypatch) -> None:
     dark_frame = np.zeros((64, 64, 3), dtype=np.uint8)
-    monkeypatch.setattr(
-        "app.services.multimodal_session_service.decode_base64_image",
-        lambda _: dark_frame,
+    fake_cv2 = SimpleNamespace(
+        IMREAD_COLOR=1,
+        COLOR_BGR2GRAY=2,
+        CV_64F=3,
+        imdecode=lambda *_args, **_kwargs: dark_frame,
+        cvtColor=lambda frame, _code: frame[:, :, 0],
+        Laplacian=lambda frame, _depth: frame,
     )
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv2)
 
-    flags = _compute_face_quality_flags("unused")
+    flags = _compute_face_quality_flags(b"unused")
 
     assert flags == {"blur": True, "low_light": True}
 
@@ -125,12 +180,17 @@ def test_compute_face_quality_flags_detects_bright_detailed_frame(monkeypatch) -
     checker = np.indices((64, 64)).sum(axis=0) % 2
     checker = (checker * 255).astype(np.uint8)
     bright_frame = np.stack([checker, checker, checker], axis=-1)
-    monkeypatch.setattr(
-        "app.services.multimodal_session_service.decode_base64_image",
-        lambda _: bright_frame,
+    fake_cv2 = SimpleNamespace(
+        IMREAD_COLOR=1,
+        COLOR_BGR2GRAY=2,
+        CV_64F=3,
+        imdecode=lambda *_args, **_kwargs: bright_frame,
+        cvtColor=lambda frame, _code: frame[:, :, 0],
+        Laplacian=lambda frame, _depth: frame,
     )
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv2)
 
-    flags = _compute_face_quality_flags("unused")
+    flags = _compute_face_quality_flags(b"unused")
 
     assert flags == {"blur": False, "low_light": False}
 
@@ -244,7 +304,7 @@ def test_submit_face_capture_success_updates_live_and_uses_bundle_counts(monkeyp
     )
     monkeypatch.setattr(
         "app.services.multimodal_session_service._compute_face_quality_flags",
-        lambda image_base64: {"blur": True, "low_light": False},
+        lambda image_bytes: {"blur": True, "low_light": False},
     )
     monkeypatch.setattr(
         "app.services.multimodal_session_service._record_inference_result",
@@ -286,7 +346,7 @@ def test_submit_face_capture_success_updates_live_and_uses_bundle_counts(monkeyp
     assert face_live["sample_count"] == 9
     assert face_live["valid_sample_count"] == 7
     assert face_live["error_message"] is None
-    assert db_session.flush_count >= 2
+    assert db_session.flush_count >= 1
 
 
 def test_submit_face_capture_failure_returns_standardized_failed_payload(monkeypatch) -> None:

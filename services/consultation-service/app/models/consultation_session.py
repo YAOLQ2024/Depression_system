@@ -47,8 +47,6 @@ class ConsultationSession(Base):
     high_risk_screening_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     scale_handoff_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     multimodal_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
-    multimodal_live_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    multimodal_live_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     subtitle_history_payload: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

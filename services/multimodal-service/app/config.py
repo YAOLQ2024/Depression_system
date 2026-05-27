@@ -47,6 +47,95 @@ def get_settings() -> dict:
             "DATABASE_URL",
             "postgresql://mcs:mcs@127.0.0.1:5432/mcs",
         ),
+        "redis_enabled": _as_bool(os.getenv("REDIS_ENABLED"), False),
+        "redis_url": os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0").strip(),
+        "redis_key_prefix": os.getenv("REDIS_KEY_PREFIX", "mcs:multimodal").strip()
+        or "mcs:multimodal",
+        "redis_socket_timeout_seconds": _as_int(
+            os.getenv("REDIS_SOCKET_TIMEOUT_SECONDS"),
+            2,
+        ),
+        "redis_connect_timeout_seconds": _as_int(
+            os.getenv("REDIS_CONNECT_TIMEOUT_SECONDS"),
+            2,
+        ),
+        "redis_health_check_interval_seconds": _as_int(
+            os.getenv("REDIS_HEALTH_CHECK_INTERVAL_SECONDS"),
+            30,
+        ),
+        "visual_live_ttl_seconds": _as_int(
+            os.getenv("VISUAL_LIVE_TTL_SECONDS"),
+            300,
+        ),
+        "visual_turn_aggregate_ttl_seconds": _as_int(
+            os.getenv("VISUAL_TURN_AGGREGATE_TTL_SECONDS"),
+            1800,
+        ),
+        "visual_turn_frames_ttl_seconds": _as_int(
+            os.getenv("VISUAL_TURN_FRAMES_TTL_SECONDS"),
+            1800,
+        ),
+        "visual_turn_candidates_ttl_seconds": _as_int(
+            os.getenv("VISUAL_TURN_CANDIDATES_TTL_SECONDS"),
+            1800,
+        ),
+        "visual_turn_state_ttl_seconds": _as_int(
+            os.getenv("VISUAL_TURN_STATE_TTL_SECONDS"),
+            1800,
+        ),
+        "visual_turn_candidate_limit": _as_int(
+            os.getenv("VISUAL_TURN_CANDIDATE_LIMIT"),
+            16,
+        ),
+        "visual_turn_recent_frame_limit": _as_int(
+            os.getenv("VISUAL_TURN_RECENT_FRAME_LIMIT"),
+            64,
+        ),
+        "visual_turn_coarse_checkpoint_enabled": _as_bool(
+            os.getenv("VISUAL_TURN_COARSE_CHECKPOINT_ENABLED"),
+            True,
+        ),
+        "visual_turn_first_checkpoint_interval_seconds": _as_int(
+            os.getenv("VISUAL_TURN_FIRST_CHECKPOINT_INTERVAL_SECONDS"),
+            20,
+        ),
+        "visual_turn_first_checkpoint_min_frame_count": _as_int(
+            os.getenv("VISUAL_TURN_FIRST_CHECKPOINT_MIN_FRAME_COUNT"),
+            10,
+        ),
+        "visual_turn_subsequent_checkpoint_interval_seconds": _as_int(
+            os.getenv("VISUAL_TURN_SUBSEQUENT_CHECKPOINT_INTERVAL_SECONDS"),
+            30,
+        ),
+        "visual_turn_subsequent_checkpoint_min_frame_count": _as_int(
+            os.getenv("VISUAL_TURN_SUBSEQUENT_CHECKPOINT_MIN_FRAME_COUNT"),
+            20,
+        ),
+        "visual_turn_finalized_aggregate_ttl_seconds": _as_int(
+            os.getenv("VISUAL_TURN_FINALIZED_AGGREGATE_TTL_SECONDS"),
+            1800,
+        ),
+        "visual_turn_finalized_state_ttl_seconds": _as_int(
+            os.getenv("VISUAL_TURN_FINALIZED_STATE_TTL_SECONDS"),
+            1800,
+        ),
+        "visual_key_frame_strategy_version": os.getenv(
+            "VISUAL_KEY_FRAME_STRATEGY_VERSION",
+            "visual-key-frame-v1",
+        ).strip()
+        or "visual-key-frame-v1",
+        "visual_key_frame_long_turn_step_seconds": _as_int(
+            os.getenv("VISUAL_KEY_FRAME_LONG_TURN_STEP_SECONDS"),
+            20,
+        ),
+        "visual_key_frame_default_max_count": _as_int(
+            os.getenv("VISUAL_KEY_FRAME_DEFAULT_MAX_COUNT"),
+            5,
+        ),
+        "visual_key_frame_hard_max_count": _as_int(
+            os.getenv("VISUAL_KEY_FRAME_HARD_MAX_COUNT"),
+            8,
+        ),
         "minio_endpoint": os.getenv("MINIO_ENDPOINT", "http://127.0.0.1:9000"),
         "minio_access_key": os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
         "minio_secret_key": os.getenv("MINIO_SECRET_KEY", "minioadmin"),

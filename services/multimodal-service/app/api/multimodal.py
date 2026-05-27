@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from datetime import datetime
 from mimetypes import guess_type
 from typing import Any
@@ -16,10 +15,12 @@ from app.schemas import (
 )
 from app.services.multimodal_session_service import (
     clear_pose_turn_runtime_state,
+    finalize_multimodal_turn,
     MultimodalServiceError as SessionServiceError,
     get_multimodal_live,
     get_multimodal_session,
     get_multimodal_turn_bundle,
+    recover_multimodal_turn_hot_state,
     submit_audio_turn,
     submit_visual_capture,
     warmup_multimodal_session,
@@ -47,14 +48,14 @@ def _detect_image_format(mime_type: str, filename: str | None) -> str:
     return "jpeg"
 
 
-async def _to_base64(upload: UploadFile) -> str:
+async def _read_upload_bytes(upload: UploadFile) -> bytes:
     content = await upload.read()
     if not content:
         raise HTTPException(
             status_code=400,
             detail=error_response(message="empty_image_file", code=4003),
         )
-    return base64.b64encode(content).decode("ascii")
+    return content
 
 
 def _translate_error(
@@ -218,6 +219,7 @@ async def post_visual_capture(
     image_file: UploadFile = File(...),
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    image_bytes = await _read_upload_bytes(image_file)
     payload = SubmitFrameCaptureRequest(
         flow_run_id=flow_run_id,
         question_key=question_key,
@@ -228,7 +230,7 @@ async def post_visual_capture(
         sample_index=sample_index,
         mime_type=mime_type,
         image_format=_detect_image_format(mime_type, image_file.filename),
-        image_base64=await _to_base64(image_file),
+        image_bytes=image_bytes,
         frame_id=f"visual-{sample_index}",
     )
     try:
@@ -262,6 +264,40 @@ def get_turn_bundle(
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response(result)
+
+
+@router.post("/sessions/{session_id}/turns/{turn_id}/finalize")
+def post_finalize_turn(
+    session_id: str,
+    turn_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        result = finalize_multimodal_turn(
+            session_id,
+            turn_id,
+            acting_user_id=x_mcs_user_id,
+        )
+    except (SessionServiceError, StoreServiceError) as exc:
+        raise _translate_error(exc) from exc
+    return success_response(result, message="turn finalized")
+
+
+@router.post("/sessions/{session_id}/turns/{turn_id}/recover")
+def post_recover_turn_hot_state(
+    session_id: str,
+    turn_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        result = recover_multimodal_turn_hot_state(
+            session_id,
+            turn_id,
+            acting_user_id=x_mcs_user_id,
+        )
+    except (SessionServiceError, StoreServiceError) as exc:
+        raise _translate_error(exc) from exc
+    return success_response(result, message="turn hot state recovered")
 
 
 @router.post("/sessions/{session_id}/turns/{turn_id}/pose-runtime/clear")

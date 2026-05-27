@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app.api.multimodal import router as multimodal_router
 from app.api.non_eeg_inference import legacy_router, router as non_eeg_inference_router
 from app.config import get_settings
+from app.redis import close_redis_client
 from app.services.multimodal_store import (
     recover_incomplete_audio_turns,
     shutdown_transcription_executor,
@@ -36,6 +37,7 @@ def startup() -> None:
 @app.on_event("shutdown")
 def shutdown() -> None:
     shutdown_transcription_executor()
+    close_redis_client()
     runtime_store.shutdown()
 
 

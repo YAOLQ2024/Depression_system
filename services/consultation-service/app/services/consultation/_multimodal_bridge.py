@@ -7,7 +7,7 @@ from app.clients.multimodal_client import (
     get_multimodal_live as fetch_upstream_multimodal_live,
 )
 from app.models import ConsultationSession
-from app.services.consultation import ConsultationServiceError, _now
+from app.services.consultation import ConsultationServiceError
 
 
 def _extract_upstream_data(
@@ -90,6 +90,4 @@ def _refresh_multimodal_live_snapshot(
         ),
         error_code=5024,
     )
-    session_record.multimodal_live_payload = live_data
-    session_record.multimodal_live_updated_at = _now()
     return live_data

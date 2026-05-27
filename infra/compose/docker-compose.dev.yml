@@ -147,6 +147,9 @@ services:
       context: ../../services/multimodal-service
     environment:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+      REDIS_KEY_PREFIX: mcs:multimodal
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
