@@ -111,6 +111,53 @@ def test_live_route_returns_step4d_shape(monkeypatch) -> None:
     assert data["face"]["sample_count"] == 6
 
 
+def test_live_stream_route_returns_event_stream(monkeypatch) -> None:
+    from app.api import multimodal as api
+
+    initial_snapshot = {
+        "session_id": "mm-session-1",
+        "updated_at": "2026-05-27T10:01:20Z",
+        "speech": {"status": "ready"},
+        "text": {"status": "pending"},
+        "face": {"status": "ready"},
+        "pose": {"status": "pending"},
+    }
+
+    async def fake_iter_multimodal_live_events(**kwargs):
+        assert kwargs["session_id"] == "mm-session-1"
+        assert kwargs["initial_snapshot"] == initial_snapshot
+        yield (
+            'event: live_snapshot\n'
+            'data: {"session_id":"mm-session-1","updated_at":"2026-05-27T10:01:20Z"}\n\n'
+        )
+        yield (
+            'event: heartbeat\n'
+            'data: {"session_id":"mm-session-1","updated_at":"2026-05-27T10:01:20Z"}\n\n'
+        )
+
+    monkeypatch.setattr(
+        api,
+        "get_multimodal_live",
+        lambda session_id, acting_user_id=None: initial_snapshot,
+    )
+    monkeypatch.setattr(
+        api,
+        "iter_multimodal_live_events",
+        fake_iter_multimodal_live_events,
+    )
+
+    with build_test_client(monkeypatch) as client:
+        response = client.get(
+            "/api/v1/multimodal/sessions/mm-session-1/live/stream",
+            headers={"x-mcs-user-id": "user-1"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: live_snapshot" in response.text
+    assert "event: heartbeat" in response.text
+
+
 def test_visual_capture_accepts_shared_frame_form(monkeypatch) -> None:
     from app.api import multimodal as api
 

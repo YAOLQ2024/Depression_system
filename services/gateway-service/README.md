@@ -8,6 +8,7 @@ Responsibilities:
 - terminate session token into `mcs_session` cookie
 - read workflow resources from `packages/workflow-resources`
 - aggregate bootstrap data for frontend shells
+- proxy consultation live snapshot and SSE stream for realtime dashboard consumers
 
 ## Current API
 
@@ -20,6 +21,9 @@ Responsibilities:
 - `GET /api/v1/consultations/{id}`
 - `POST /api/v1/consultations/{id}/start`
 - `POST /api/v1/consultations/{id}/turns`
+- `GET /api/v1/consultations/{id}/multimodal/live`
+- `GET /api/v1/consultations/{id}/multimodal/live/stream`
+- `GET /api/v1/consultations/{id}/turns/{turn_id}/multimodal/bundle`
 - `GET /api/v1/assessment/catalog`
 - `POST /api/v1/assessment/sessions`
 - `GET /api/v1/assessment/sessions/{id}`

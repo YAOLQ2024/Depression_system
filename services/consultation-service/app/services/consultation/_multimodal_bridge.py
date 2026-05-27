@@ -7,7 +7,7 @@ from app.clients.multimodal_client import (
     get_multimodal_live as fetch_upstream_multimodal_live,
 )
 from app.models import ConsultationSession
-from app.services.consultation import ConsultationServiceError
+from app.services.consultation import ConsultationServiceError, _now
 
 
 def _extract_upstream_data(

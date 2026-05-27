@@ -6,6 +6,28 @@ import uuid
 from urllib import error, request
 
 from app.config import get_settings
+from app.services.consultation import ConsultationServiceError
+
+
+class UpstreamEventStream:
+    def __init__(self, response) -> None:
+        self._response = response
+
+    def iter_bytes(self, chunk_size: int = 1024) -> bytes:
+        try:
+            while True:
+                chunk = self._response.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        try:
+            self._response.close()
+        except Exception:
+            return
 
 
 def _forward_multimodal_request(
@@ -47,6 +69,45 @@ def _forward_multimodal_request(
                 "data": {},
             },
         }
+
+
+def _open_multimodal_stream_request(
+    method: str,
+    path: str,
+    *,
+    acting_user_id: str,
+    timeout: int = 120,
+) -> UpstreamEventStream:
+    settings = get_settings()
+    target_url = f"{settings['multimodal_service_url']}{path}"
+    headers = {
+        "Accept": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "X-MCS-User-Id": acting_user_id,
+    }
+    req = request.Request(target_url, headers=headers, method=method)
+    try:
+        response = request.urlopen(req, timeout=timeout)
+        return UpstreamEventStream(response)
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8") if exc.fp else "{}"
+        try:
+            payload_obj = json.loads(body)
+        except json.JSONDecodeError:
+            payload_obj = {"message": body or "multimodal service http error"}
+        if "detail" in payload_obj and isinstance(payload_obj["detail"], dict):
+            payload_obj = payload_obj["detail"]
+        raise ConsultationServiceError(
+            str(payload_obj.get("message") or "multimodal service request failed"),
+            code=int(payload_obj.get("code") or 5031),
+            status_code=int(exc.code),
+        ) from exc
+    except error.URLError as exc:
+        raise ConsultationServiceError(
+            f"multimodal service unavailable: {exc.reason}",
+            code=5031,
+            status_code=503,
+        ) from exc
 
 
 def _encode_multipart_formdata(fields: dict[str, str], file_field: str, filename: str, content_type: str, file_bytes: bytes) -> tuple[bytes, str]:
@@ -141,6 +202,18 @@ def get_multimodal_live(*, multimodal_session_id: str, acting_user_id: str) -> d
         "GET",
         f"/api/v1/multimodal/sessions/{multimodal_session_id}/live",
         None,
+        acting_user_id=acting_user_id,
+    )
+
+
+def stream_multimodal_live(
+    *,
+    multimodal_session_id: str,
+    acting_user_id: str,
+) -> UpstreamEventStream:
+    return _open_multimodal_stream_request(
+        "GET",
+        f"/api/v1/multimodal/sessions/{multimodal_session_id}/live/stream",
         acting_user_id=acting_user_id,
     )
 

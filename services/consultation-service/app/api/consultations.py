@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.schemas.consultations import (
     ConsultationTurnRequest,
@@ -14,6 +15,7 @@ from app.services.consultation_engine import (
     get_consultation_session,
     get_consultation_turn_multimodal_bundle,
     start_consultation_session,
+    stream_consultation_multimodal_live,
     submit_consultation_visual_capture,
     submit_consultation_turn,
 )
@@ -124,6 +126,29 @@ def get_consultation_live(
     except ConsultationServiceError as exc:
         raise _translate_error(exc) from exc
     return success_response(live_payload)
+
+
+@router.get("/consultations/{session_id}/multimodal/live/stream")
+def get_consultation_live_stream(
+    session_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        upstream_stream = stream_consultation_multimodal_live(
+            session_id,
+            acting_user_id=x_mcs_user_id,
+        )
+    except ConsultationServiceError as exc:
+        raise _translate_error(exc) from exc
+    return StreamingResponse(
+        upstream_stream.iter_bytes(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/consultations/{session_id}/turns/{turn_id}/multimodal/bundle")

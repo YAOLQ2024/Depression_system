@@ -1,4 +1,4 @@
-# `multimodal-service` live 状态与 SSE 实时推送设计
+# `multimodal-service` live 状态与 SSE 实时推送设计与完成说明
 
 更新时间：2026-05-27
 
@@ -8,24 +8,30 @@
 
 ## 1. 文档目标
 
-本文档用于明确 `multimodal-service` 与问诊看板的 live 数据设计，解决两个已经暴露出来的问题：
+本文档用于说明 `multimodal-service` 与问诊看板的 live 数据设计，以及当前落地结果。
+
+本次改造主要解决了两个问题：
 
 - `consultation-service` 对 live 快照的重复落库
 - 当前 HTTP polling 方案的实时性与资源效率不足
 
-本文档是正式设计稿，不是讨论记录。
+本文档当前状态为：
+
+- 设计已落地
+- 主链路已完成
+- 可作为现状说明使用
 
 ---
 
 ## 2. 结论摘要
 
-本次设计的核心结论如下：
+本次改造的核心结论如下：
 
-1. `consultation-service.consultation_sessions.multimodal_live_payload` 应从目标架构中移除。
-2. live 快照应被定义为“热状态”，只服务实时看板，不作为业务事实持久化。
+1. `consultation-service.consultation_sessions.multimodal_live_payload` 已从实现中移除。
+2. live 快照已被定义为“热状态”，只服务实时看板，不作为 `consultation-service` 的业务事实持久化。
 3. 业务事实继续由各模态自己的明细表、推理结果表、turn bundle 表承担。
-4. 实时看板推荐从“5s polling”演进为“SSE 推送 + polling 降级”。
-5. 第一阶段先去掉 `consultation-service` 的冗余写库，不必等待 SSE 完成后再收敛存储。
+4. 实时看板已从“5s polling 主导”演进为“SSE 优先 + polling 降级”。
+5. `multimodal-service`、`consultation-service`、`gateway-service`、前端问诊页的 SSE 主链路已接通。
 
 ---
 
@@ -36,37 +42,45 @@
 当前问诊页存在两套并行机制：
 
 - 视觉采样上传间隔：`1500ms`
-- live 轮询间隔：`5000ms`
+- live 轮询兜底间隔：`5000ms`
 
-也就是：
+当前行为是：
 
 - 前端每 `1.5s` 抓取一帧视觉输入并上传
-- 前端每 `5s` 请求一次 `/consultations/{session_id}/multimodal/live`
+- 页面初始化先请求一次 `/consultations/{session_id}/multimodal/live`
+- 然后优先建立 `/consultations/{session_id}/multimodal/live/stream`
+- 只有 SSE 不可用或中断时，才退回 `5s` polling
 
-当前没有正式接入：
+当前没有接入 WebSocket。
 
-- WebSocket
+当前已正式接入：
+
 - SSE
 
-因此系统整体仍然属于：
+因此系统整体已经变成：
 
-- **HTTP polling 主导**
+- **SSE 主导，HTTP polling 兜底**
 
 ## 3.2 当前 live 读取链路
 
-当前前端读取链路为：
+当前 snapshot 读取链路为：
 
 1. 前端请求 `GET /api/v1/consultations/{session_id}/multimodal/live`
 2. `gateway-service` 转发到 `consultation-service`
 3. `consultation-service` 调用上游 `multimodal-service /sessions/{session_id}/live`
-4. `consultation-service` 将上游返回的 live 数据写入 `consultation_sessions.multimodal_live_payload`
-5. `consultation-service` `flush()` 数据库
-6. `consultation-service` 再把 live 数据返回前端
+4. `consultation-service` 直接把 live 数据返回前端
 
-也就是说，当前 `consultation-service` 在 live 读取时承担了两件事：
+当前 `consultation-service` 在 live 读取时只承担：
 
 - 透传读取
-- 冗余缓存落库
+
+当前 SSE 读取链路为：
+
+1. 前端订阅 `GET /api/v1/consultations/{session_id}/multimodal/live/stream`
+2. `gateway-service` 代理到 `consultation-service`
+3. `consultation-service` 通过会话绑定关系映射到 `multimodal_session_id`
+4. `consultation-service` 代理到 `multimodal-service /sessions/{session_id}/live/stream`
+5. `multimodal-service` 通过 Redis pubsub + snapshot reconcile 持续推送 `live_snapshot`
 
 ## 3.3 当前 live 数据的真实来源
 
@@ -329,11 +343,11 @@
 
 ---
 
-## 7. 目标架构
+## 7. 当前架构
 
 ## 7.1 总体结构
 
-目标架构如下：
+当前架构如下：
 
 1. 各模态处理链路继续生成正式业务事实
 2. `multimodal-service` 维护会话级 live 热状态
@@ -342,7 +356,7 @@
 5. 前端优先订阅 SSE
 6. SSE 失败时退回 HTTP polling
 
-## 7.2 consultation-service 的目标职责
+## 7.2 consultation-service 的当前职责
 
 `consultation-service` 保留：
 
@@ -356,7 +370,7 @@
 - `multimodal_live_updated_at`
 - `_refresh_multimodal_live_snapshot()` 中的持久化副作用
 
-## 7.3 multimodal-service 的目标职责
+## 7.3 multimodal-service 的当前职责
 
 `multimodal-service` 负责：
 
@@ -367,7 +381,7 @@
   - snapshot 读取接口
   - SSE 订阅接口
 
-## 7.4 热状态存储目标
+## 7.4 热状态存储现状
 
 推荐继续把 live 定位为热状态，而不是正式业务事实表。
 
@@ -409,7 +423,7 @@
 
 ## 8.2 新增的 SSE 接口
 
-建议新增：
+当前已提供：
 
 - `GET /api/v1/multimodal/sessions/{session_id}/live/stream`
 
@@ -417,7 +431,7 @@
 
 - `text/event-stream`
 
-建议事件类型：
+当前事件类型：
 
 - `live_snapshot`
 - `heartbeat`
@@ -456,7 +470,7 @@ heartbeat 不要求携带完整 live 数据。
 
 ## 8.5 gateway-service 代理接口
 
-建议对前端暴露：
+当前对前端暴露：
 
 - `GET /api/v1/consultations/{session_id}/multimodal/live/stream`
 
@@ -473,7 +487,7 @@ heartbeat 不要求携带完整 live 数据。
 - 前端直接持有 `multimodal_session_id`
 - `gateway-service` 直接代理到 `multimodal-service`
 
-当前更推荐方案 A，因为它更符合现有边界，不要求前端额外理解多模态会话路由细节。
+当前已采用方案 A，因为它更符合现有边界，不要求前端额外理解多模态会话路由细节。
 
 ---
 
@@ -514,15 +528,15 @@ heartbeat 不要求携带完整 live 数据。
 
 ---
 
-## 10. 分阶段实施方案
+## 10. 分阶段实施结果
 
 ## 10.1 Phase 1：去掉 consultation-service 冗余落库
 
-本阶段目标：
+本阶段状态：
 
-- `consultation-service` 只透传 live，不再写 `multimodal_live_payload`
+- 已完成
 
-建议动作：
+完成结果：
 
 1. 从 `consultation-service` 模型中移除：
    - `multimodal_live_payload`
@@ -530,10 +544,8 @@ heartbeat 不要求携带完整 live 数据。
 2. 调整 `get_consultation_multimodal_live()`：
    - 不再写库
    - 不再 `flush()` live 快照
-3. 调整 session 序列化：
-   - 不再返回 `consultation.multimodal_live`
-   - 或只在前端本地态中维护，不再由 session 接口携带
-4. 编写迁移脚本删除冗余列
+3. 保留 session 兼容键，但不再由数据库字段驱动
+4. 已补充迁移脚本删除冗余列
 
 交付结果：
 
@@ -542,16 +554,17 @@ heartbeat 不要求携带完整 live 数据。
 
 ## 10.2 Phase 2：新增 multimodal-service SSE 能力
 
-本阶段目标：
+本阶段状态：
 
-- `multimodal-service` 增加 live stream 端点
+- 已完成
 
-建议动作：
+完成结果：
 
 1. 定义 `live/stream` SSE 路由
 2. 增加热状态变更后的事件发布机制
 3. 在连接建立时先推送一次当前 snapshot
 4. 定期发送 heartbeat
+5. Redis 不可用时退回服务端 polling 式流
 
 交付结果：
 
@@ -559,11 +572,11 @@ heartbeat 不要求携带完整 live 数据。
 
 ## 10.3 Phase 3：增加 gateway / consultation 流式代理
 
-本阶段目标：
+本阶段状态：
 
-- 前端不必直连 `multimodal-service`
+- 已完成
 
-建议动作：
+完成结果：
 
 1. 在 `gateway-service` 增加 SSE 透传
 2. 在 `consultation-service` 或 gateway 层完成会话映射
@@ -575,17 +588,18 @@ heartbeat 不要求携带完整 live 数据。
 
 ## 10.4 Phase 4：前端优先使用 SSE，polling 作为降级
 
-本阶段目标：
+本阶段状态：
 
-- 让问诊看板优先使用事件流
+- 已完成
 
-建议动作：
+完成结果：
 
 1. 页面初始化先调用一次 snapshot
 2. 建立 `EventSource`
 3. 收到 `live_snapshot` 即更新本地状态
 4. 流中断时退回 polling
 5. 恢复后重新连接 SSE
+6. 页面右上角增加 `SSE / HTTP` 传输状态提示
 
 交付结果：
 
@@ -675,7 +689,7 @@ SSE 只是分发机制，不是数据真源。
 
 ## 13. 验收口径
 
-完成本设计后，验收应满足以下条件：
+当前实现已经满足以下验收条件：
 
 ### Phase 1 验收
 
@@ -703,14 +717,14 @@ SSE 只是分发机制，不是数据真源。
 
 ---
 
-## 15. 推荐决策
+## 15. 落地结论
 
-推荐按以下顺序推进：
+本次按以下顺序落地：
 
-1. 先删 `consultation-service` 的 `multimodal_live_payload` 冗余落库
-2. 保留现有 `/live` snapshot 接口
-3. 在 `multimodal-service` 新增 SSE `live/stream`
-4. 在 `gateway-service` 增加 SSE 代理
-5. 前端切到“SSE 优先，polling 降级”
+1. 已删除 `consultation-service` 的 `multimodal_live_payload` 冗余落库
+2. 已保留 `/live` snapshot 接口作为初始化和降级路径
+3. 已在 `multimodal-service` 新增 SSE `live/stream`
+4. 已在 `consultation-service` 与 `gateway-service` 增加 SSE 代理
+5. 前端已切到“SSE 优先，polling 降级”
 
-这是当前性价比最高、风险最低、最符合现有代码演进方向的方案。
+当前主链路已完成，可作为后续继续优化 live 热状态与视觉持久化结构的基础版本。

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Cookie, File, Form, Header, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.clients.consultation_client import (
     forward_consultation_multipart_request,
+    open_consultation_event_stream,
     forward_consultation_request,
 )
 from app.clients.identity_client import forward_json_request
@@ -199,6 +201,30 @@ def get_consultation_multimodal_live(
     if upstream["status"] >= 400:
         raise _proxy_error(upstream)
     return upstream["payload"]
+
+
+@router.get("/consultations/{session_id}/multimodal/live/stream")
+def get_consultation_multimodal_live_stream(
+    session_id: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = open_consultation_event_stream(
+        f"/api/v1/consultations/{session_id}/multimodal/live/stream",
+        acting_user_id=user["id"],
+    )
+    if isinstance(upstream, dict):
+        raise _proxy_error(upstream)
+    return StreamingResponse(
+        upstream.iter_bytes(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/consultations/{session_id}/turns/{turn_id}/multimodal/bundle")

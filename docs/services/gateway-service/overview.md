@@ -25,6 +25,7 @@
 - 浏览器会话 Cookie 的写入与删除
 - `/auth/*`、`/users/*` 的代理转发
 - `bootstrap` 聚合输出
+- consultation live snapshot 与 SSE 流式代理
 - `workflow` 与数字医生配置目录的只读加载
 
 不负责：
@@ -60,12 +61,13 @@
 - consultation 会话创建代理
 - consultation 会话状态查询代理
 - consultation 问答轮次代理
+- consultation live snapshot 代理
+- consultation live SSE 代理
 - gateway 到 consultation-service 的用户归属透传
 
 待实现：
 
 - assessment 会话代理
-- SSE/流式代理
 - 更清晰的上游错误映射
 
 已知限制：

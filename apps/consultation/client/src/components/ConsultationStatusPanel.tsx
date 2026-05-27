@@ -310,6 +310,7 @@ export function ConsultationStatusPanel({
   onRefresh,
   refreshing = false,
   isRecording = false,
+  liveTransport = "HTTP",
   className,
   cameraStream = null,
   cameraReady = false,
@@ -323,6 +324,7 @@ export function ConsultationStatusPanel({
   onRefresh: () => void;
   refreshing?: boolean;
   isRecording?: boolean;
+  liveTransport?: "SSE" | "HTTP";
   className?: string;
   cameraStream?: MediaStream | null;
   cameraReady?: boolean;
@@ -350,13 +352,18 @@ export function ConsultationStatusPanel({
           <Sparkles className="h-4 w-4 text-indigo-300" />
           <h2 className="text-[20px] font-semibold tracking-wide text-white">多模态检测区</h2>
         </div>
-        <button
-          onClick={onRefresh}
-          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-white/10"
-        >
-          <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
-          刷新
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex min-w-11 items-center justify-center rounded-[10px] border border-indigo-300/18 bg-indigo-500/18 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-indigo-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            {liveTransport}
+          </span>
+          <button
+            onClick={onRefresh}
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-white/10"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
+            刷新
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 flex flex-col gap-[3px] p-[3px]">

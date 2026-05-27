@@ -5,6 +5,7 @@ from mimetypes import guess_type
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.schemas import (
@@ -13,6 +14,7 @@ from app.schemas import (
     SubmitFrameCaptureRequest,
     WarmupMultimodalSessionRequest,
 )
+from app.services.multimodal_live_stream import iter_multimodal_live_events
 from app.services.multimodal_session_service import (
     clear_pose_turn_runtime_state,
     finalize_multimodal_turn,
@@ -247,6 +249,43 @@ def get_live(session_id: str, x_mcs_user_id: str | None = Header(default=None)):
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response(result)
+
+
+@router.get("/sessions/{session_id}/live/stream")
+async def get_live_stream(
+    session_id: str,
+    request: Request,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        initial_snapshot = get_multimodal_live(
+            session_id,
+            acting_user_id=x_mcs_user_id,
+        )
+    except (SessionServiceError, StoreServiceError) as exc:
+        raise _translate_error(exc) from exc
+
+    async def event_stream():
+        async for event in iter_multimodal_live_events(
+            session_id=session_id,
+            initial_snapshot=initial_snapshot,
+            snapshot_loader=lambda: get_multimodal_live(
+                session_id,
+                acting_user_id=x_mcs_user_id,
+            ),
+            disconnect_checker=request.is_disconnected,
+        ):
+            yield event
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/sessions/{session_id}/turns/{turn_id}/bundle")

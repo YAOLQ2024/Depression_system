@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, buildApiUrl } from "./client";
 import type {
   ConsultationMultimodalCapturePayload,
   ConsultationFrameCaptureResponse,
@@ -55,6 +55,10 @@ export async function getConsultationMultimodalLive(sessionId: string) {
   return apiRequest<ConsultationMultimodalLiveResponse>(`/consultations/${sessionId}/multimodal/live`, {
     method: "GET",
   });
+}
+
+export function getConsultationMultimodalLiveStreamUrl(sessionId: string) {
+  return buildApiUrl(`/consultations/${sessionId}/multimodal/live/stream`);
 }
 
 export async function getConsultationTurnMultimodalBundle(sessionId: string, turnId: string) {

@@ -9,6 +9,7 @@ from app.clients.multimodal_client import (
     create_multimodal_session as create_upstream_multimodal_session,
     finalize_multimodal_turn as finalize_upstream_multimodal_turn,
     get_multimodal_turn_bundle as fetch_upstream_multimodal_turn_bundle,
+    stream_multimodal_live as stream_upstream_multimodal_live,
     submit_visual_capture as submit_upstream_visual_capture,
 )
 from app.database import get_db_session
@@ -590,6 +591,28 @@ def get_consultation_multimodal_live(
             acting_user_id=acting_user_id,
         )
         return live_data
+
+
+def stream_consultation_multimodal_live(
+    session_id: str,
+    acting_user_id: str | None,
+):
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        db_session.flush()
+    return stream_upstream_multimodal_live(
+        multimodal_session_id=multimodal_session_id,
+        acting_user_id=acting_user_id,
+    )
 
 
 def get_consultation_turn_multimodal_bundle(

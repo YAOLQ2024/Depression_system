@@ -474,19 +474,23 @@ export function useConsultationApp() {
 
     try {
       const live = await getConsultationMultimodalLive(consultation.session_id);
-      setConsultation((current) =>
-        current
-          ? {
-              ...current,
-              multimodal_live: live,
-              multimodal_live_updated_at: live.updated_at || new Date().toISOString(),
-            }
-          : current,
-      );
+      applyConsultationMultimodalLive(live);
       return live;
     } catch {
       return null;
     }
+  }
+
+  function applyConsultationMultimodalLive(live: ConsultationMultimodalLive) {
+    setConsultation((current) =>
+      current
+        ? {
+            ...current,
+            multimodal_live: live,
+            multimodal_live_updated_at: live.updated_at || new Date().toISOString(),
+          }
+        : current,
+    );
   }
 
   async function getConsultationTurnBundle(turnId: string) {
@@ -755,6 +759,7 @@ export function useConsultationApp() {
       submitManualConsultationTurn,
       refreshConsultation,
       refreshConsultationMultimodalLive,
+      applyConsultationMultimodalLive,
       getConsultationTurnBundle,
       submitConsultationVisualCapture,
       completeConsultationSystemQuestionItem,
