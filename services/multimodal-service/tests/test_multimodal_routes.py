@@ -1,6 +1,70 @@
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
+
+sys.modules.setdefault(
+    "minio",
+    SimpleNamespace(Minio=object),
+)
+sys.modules.setdefault(
+    "minio.error",
+    SimpleNamespace(S3Error=Exception),
+)
+sys.modules.setdefault(
+    "onnxruntime",
+    SimpleNamespace(get_available_providers=lambda: ["CPUExecutionProvider"]),
+)
+sys.modules.setdefault(
+    "infer_text",
+    SimpleNamespace(build_runtime_engine=lambda **_kwargs: object()),
+)
+sys.modules.setdefault(
+    "infer_audio",
+    SimpleNamespace(
+        MODEL_SAMPLE_RATE=16000,
+        build_runtime_engine=lambda **_kwargs: object(),
+        predict_audio=lambda *_args, **_kwargs: {},
+        resample_linear=lambda data, *_args, **_kwargs: data,
+    ),
+)
+sys.modules.setdefault(
+    "infer_face",
+    SimpleNamespace(build_runtime_engine=lambda **_kwargs: object()),
+)
+sys.modules.setdefault(
+    "infer_pose",
+    SimpleNamespace(
+        build_runtime_engine=lambda **_kwargs: object(),
+        build_turn_state=lambda *_args, **_kwargs: SimpleNamespace(last_used_at=0.0),
+        close_runtime_engine=lambda *_args, **_kwargs: None,
+    ),
+)
+sys.modules.setdefault(
+    "app.services.object_storage",
+    SimpleNamespace(
+        ensure_multimodal_bucket=lambda: None,
+        upload_audio_object=lambda *_args, **_kwargs: "s3://bucket/key",
+        upload_object_to_bucket=lambda **_kwargs: "s3://bucket/key",
+        download_object_bytes=lambda *_args, **_kwargs: b"",
+        parse_s3_uri=lambda uri: ("bucket", "key"),
+        is_storage_ready=lambda: True,
+    ),
+)
+sys.modules.setdefault(
+    "python_multipart",
+    SimpleNamespace(__version__="0.0.20"),
+)
+sys.modules.setdefault(
+    "multipart",
+    SimpleNamespace(__version__="0.0.20"),
+)
+sys.modules.setdefault(
+    "multipart.multipart",
+    SimpleNamespace(parse_options_header=lambda value: value),
+)
 
 def build_test_client(monkeypatch: object) -> TestClient:
     from app import main as main_module
@@ -95,6 +159,8 @@ def test_visual_capture_accepts_shared_frame_form(monkeypatch) -> None:
     req = observed["payload"]
     assert req.sample_index == 9
     assert req.image_format == "jpeg"
+    assert req.image_bytes == b"jpeg-bytes"
+    assert req.image_base64 is None
 
 
 def test_bundle_route_returns_direct_bundle(monkeypatch) -> None:

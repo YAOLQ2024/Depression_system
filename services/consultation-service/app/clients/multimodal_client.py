@@ -159,6 +159,20 @@ def get_multimodal_turn_bundle(
     )
 
 
+def finalize_multimodal_turn(
+    *,
+    multimodal_session_id: str,
+    turn_id: str,
+    acting_user_id: str,
+) -> dict:
+    return _forward_multimodal_request(
+        "POST",
+        f"/api/v1/multimodal/sessions/{multimodal_session_id}/turns/{turn_id}/finalize",
+        {},
+        acting_user_id=acting_user_id,
+    )
+
+
 def clear_pose_turn_runtime(
     *,
     multimodal_session_id: str,

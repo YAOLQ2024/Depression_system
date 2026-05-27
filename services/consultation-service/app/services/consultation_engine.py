@@ -6,8 +6,8 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.clients.multimodal_client import (
-    clear_pose_turn_runtime as clear_upstream_pose_turn_runtime,
     create_multimodal_session as create_upstream_multimodal_session,
+    finalize_multimodal_turn as finalize_upstream_multimodal_turn,
     get_multimodal_turn_bundle as fetch_upstream_multimodal_turn_bundle,
     submit_visual_capture as submit_upstream_visual_capture,
 )
@@ -136,12 +136,8 @@ def _serialize_session(
             slot_values.get("digital_human_consultation_summary") or ""
         ),
         "multimodal_session_id": session_record.multimodal_session_id,
-        "multimodal_live": session_record.multimodal_live_payload or {},
-        "multimodal_live_updated_at": (
-            session_record.multimodal_live_updated_at.isoformat()
-            if session_record.multimodal_live_updated_at
-            else None
-        ),
+        "multimodal_live": {},
+        "multimodal_live_updated_at": None,
         "subtitle_history": _ensure_subtitle_history(
             session_record.subtitle_history_payload
         ),
@@ -177,22 +173,27 @@ def _require_acting_user_id(acting_user_id: str | None) -> str:
     return acting_user_id
 
 
-def _clear_pose_turn_runtime_best_effort(
+def _finalize_turn_bundle_upstream(
     *,
     multimodal_session_id: str | None,
     turn_id: str | None,
     acting_user_id: str,
-) -> None:
+) -> dict[str, Any] | None:
     if not multimodal_session_id or not turn_id:
-        return
-    try:
-        clear_upstream_pose_turn_runtime(
+        return None
+    finalize_data = _extract_optional_upstream_data(
+        finalize_upstream_multimodal_turn(
             multimodal_session_id=multimodal_session_id,
             turn_id=turn_id,
             acting_user_id=acting_user_id,
-        )
-    except Exception:
-        return
+        ),
+        error_code=5025,
+        allowed_statuses={404},
+    )
+    if not isinstance(finalize_data, dict):
+        return None
+    turn_bundle = finalize_data.get("turn_bundle")
+    return turn_bundle if isinstance(turn_bundle, dict) else None
 
 
 def create_consultation_session(
@@ -277,8 +278,6 @@ def create_consultation_session(
         slot_values={},
         engine_state=_default_engine_state(),
         multimodal_session_id=multimodal_session_id,
-        multimodal_live_payload={},
-        multimodal_live_updated_at=None,
         subtitle_history_payload=[],
         created_at=now,
         updated_at=now,
@@ -553,25 +552,12 @@ def submit_consultation_turn(
             )
 
         if multimodal_session_id:
-            _refresh_multimodal_live_snapshot(
-                session_record,
-                acting_user_id=acting_user_id,
-            )
-            turn_bundle_payload = _extract_optional_upstream_data(
-                fetch_upstream_multimodal_turn_bundle(
-                    multimodal_session_id=multimodal_session_id,
-                    turn_id=turn_id,
-                    acting_user_id=acting_user_id,
-                ),
-                error_code=5025,
-                allowed_statuses={404},
-            )
-            consultation_turn.turn_summary_payload = turn_bundle_payload
-            _clear_pose_turn_runtime_best_effort(
+            turn_bundle_payload = _finalize_turn_bundle_upstream(
                 multimodal_session_id=multimodal_session_id,
                 turn_id=turn_id,
                 acting_user_id=acting_user_id,
             )
+            consultation_turn.turn_summary_payload = turn_bundle_payload
 
         _clear_active_turn(session_record)
         session_record.status = "running"
@@ -603,7 +589,6 @@ def get_consultation_multimodal_live(
             session_record,
             acting_user_id=acting_user_id,
         )
-        db_session.flush()
         return live_data
 
 
