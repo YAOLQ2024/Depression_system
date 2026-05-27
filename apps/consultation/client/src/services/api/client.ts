@@ -59,6 +59,11 @@ function getStoredPersistenceMode(): SessionPersistenceMode {
 
 const API_BASE = normalizeApiBase(window.__MCS_API_BASE__ || getDefaultApiBase());
 
+export function buildApiUrl(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE}${normalizedPath}`;
+}
+
 export function getSessionToken() {
   return (
     window.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) ||
@@ -113,7 +118,8 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
-  const response = await fetch(`${API_BASE}${path}`, {
+  const targetUrl = buildApiUrl(path);
+  const response = await fetch(targetUrl, {
     credentials: "include",
     headers,
     ...options,

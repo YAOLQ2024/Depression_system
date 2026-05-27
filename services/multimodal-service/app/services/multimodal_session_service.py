@@ -47,6 +47,7 @@ from app.services.audio_processing import (
     ensure_processing_directory,
     write_source_audio_file,
 )
+from app.services.multimodal_live_stream import publish_multimodal_live_snapshot
 from app.services.object_storage import download_object_bytes, parse_s3_uri, upload_object_to_bucket
 from app.services.visual_key_frame_selector import (
     VisualKeyFrameSelectorInput,
@@ -157,6 +158,40 @@ def _overlay_visual_live_payload(
         if isinstance(modality_payload, dict):
             merged_payload[modality] = dict(modality_payload)
     return merged_payload
+
+
+def _build_multimodal_live_response(
+    session: MultimodalSession,
+    *,
+    redis_live_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    live_payload = _overlay_visual_live_payload(
+        dict(session.live_state_payload or {}),
+        redis_live_payload,
+    )
+    return {
+        "session_id": session.id,
+        "updated_at": (redis_live_payload or {}).get("updated_at")
+        or _isoformat(session.updated_at),
+        "speech": live_payload.get("speech", _build_pending_live_modality("speech")),
+        "text": live_payload.get("text", _build_pending_live_modality("text")),
+        "face": live_payload.get("face", _build_pending_live_modality("face")),
+        "pose": live_payload.get("pose", _build_pending_live_modality("pose")),
+    }
+
+
+def _publish_multimodal_live_snapshot(
+    session: MultimodalSession,
+    *,
+    redis_live_payload: dict[str, Any] | None = None,
+) -> None:
+    publish_multimodal_live_snapshot(
+        session.id,
+        _build_multimodal_live_response(
+            session,
+            redis_live_payload=redis_live_payload,
+        ),
+    )
 
 
 def _copy_labels(labels: Sequence[dict[str, Any]] | None, *, limit: int = 3) -> list[dict[str, Any]]:
@@ -1183,6 +1218,7 @@ def _submit_face_capture_with_session(
     _refresh_live_payload(session, face_result)
     db_session.add(session)
     db_session.flush()
+    _publish_multimodal_live_snapshot(session)
     return _build_frame_capture_response(
         capture_row=capture_row,
         session_id=session.id,
@@ -1234,6 +1270,7 @@ def _submit_pose_capture_with_session(
     _refresh_live_payload(session, pose_result)
     db_session.add(session)
     db_session.flush()
+    _publish_multimodal_live_snapshot(session)
     return _build_frame_capture_response(
         capture_row=capture_row,
         session_id=session.id,
@@ -2314,6 +2351,7 @@ def submit_audio_turn(
         )
         db_session.flush()
         db_session.refresh(session)
+        _publish_multimodal_live_snapshot(session)
         return {
             "multimodal_session": _snapshot(session),
             "transcript_text": final_transcript_text,
@@ -2627,6 +2665,10 @@ def submit_visual_capture(
         db_session.flush()
         persistence_completed_at = time.perf_counter()
         db_session.refresh(session)
+        _publish_multimodal_live_snapshot(
+            session,
+            redis_live_payload=redis_write_result.live_payload,
+        )
         face_response = _build_frame_capture_response(
             capture_row=face_capture_row,
             session_id=session.id,
@@ -2693,18 +2735,10 @@ def get_multimodal_live(session_id: str, acting_user_id: str | None = None) -> d
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
         redis_live_payload = read_visual_live_payload(session.id)
-        live_payload = _overlay_visual_live_payload(
-            dict(session.live_state_payload or {}),
-            redis_live_payload,
+        return _build_multimodal_live_response(
+            session,
+            redis_live_payload=redis_live_payload,
         )
-        return {
-            "session_id": session.id,
-            "updated_at": (redis_live_payload or {}).get("updated_at") or _isoformat(session.updated_at),
-            "speech": live_payload.get("speech", _build_pending_live_modality("speech")),
-            "text": live_payload.get("text", _build_pending_live_modality("text")),
-            "face": live_payload.get("face", _build_pending_live_modality("face")),
-            "pose": live_payload.get("pose", _build_pending_live_modality("pose")),
-        }
 
 
 def get_multimodal_turn_bundle(
@@ -2809,6 +2843,10 @@ def recover_multimodal_turn_hot_state(
             session.id,
             turn_id,
             len(visual_key_frames),
+        )
+        _publish_multimodal_live_snapshot(
+            session,
+            redis_live_payload=read_visual_live_payload(session.id),
         )
         return {
             "session_id": session.id,

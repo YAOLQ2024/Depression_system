@@ -27,7 +27,8 @@ import {
   warmupMultimodalSession,
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
-import type { ConsultationSession, ConsultationSubtitleHistoryEntry } from "../types";
+import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
+import type { ConsultationMultimodalLive, ConsultationSession, ConsultationSubtitleHistoryEntry } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
 const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
@@ -150,6 +151,7 @@ export default function ConsultationPage() {
   const [cameraError, setCameraError] = useState("");
   const [cameraFeedback, setCameraFeedback] = useState<MediaDeviceFeedback>(() => getInitialMediaFeedback("camera"));
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [isLiveStreamActive, setIsLiveStreamActive] = useState(false);
   const [microphoneFeedback, setMicrophoneFeedback] = useState<MediaDeviceFeedback>(() =>
     getInitialMediaFeedback("microphone"),
   );
@@ -172,6 +174,8 @@ export default function ConsultationPage() {
   const frameIndexRef = useRef(0);
   const captureInFlightRef = useRef(false);
   const liveRefreshInFlightRef = useRef(false);
+  const liveStreamRef = useRef<EventSource | null>(null);
+  const liveStreamActiveRef = useRef(false);
   const warmedUpMultimodalSessionIdsRef = useRef<Set<string>>(new Set());
 
   const playableVideoUri = useMemo(() => resolvePlayableVideoUri(consultation), [consultation]);
@@ -292,6 +296,10 @@ export default function ConsultationPage() {
     actions.resetFeedback();
   });
 
+  const applyLiveSnapshot = useEffectEvent((live: ConsultationMultimodalLive) => {
+    actions.applyConsultationMultimodalLive(live);
+  });
+
   const refreshLiveSnapshot = useEffectEvent(async () => {
     if (!consultation?.session_id) {
       return null;
@@ -300,6 +308,9 @@ export default function ConsultationPage() {
       return null;
     }
     if (liveRefreshInFlightRef.current) {
+      return null;
+    }
+    if (liveStreamActiveRef.current) {
       return null;
     }
 
@@ -383,11 +394,64 @@ export default function ConsultationPage() {
     }
 
     void refreshLiveSnapshot();
+    if (isLiveStreamActive) {
+      return;
+    }
     const timer = window.setInterval(() => {
       void refreshLiveSnapshot();
     }, LIVE_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
+  }, [consultation?.session_id, isLiveStreamActive]);
+
+  useEffect(() => {
+    if (!consultation?.session_id || typeof window === "undefined" || typeof EventSource === "undefined") {
+      liveStreamActiveRef.current = false;
+      setIsLiveStreamActive(false);
+      liveStreamRef.current?.close();
+      liveStreamRef.current = null;
+      return;
+    }
+
+    const eventSource = new EventSource(
+      getConsultationMultimodalLiveStreamUrl(consultation.session_id),
+      { withCredentials: true },
+    );
+    liveStreamRef.current = eventSource;
+
+    const handleOpen = () => {
+      liveStreamActiveRef.current = true;
+      setIsLiveStreamActive(true);
+    };
+    const handleError = () => {
+      liveStreamActiveRef.current = false;
+      setIsLiveStreamActive(false);
+    };
+    const handleLiveSnapshot = (event: MessageEvent<string>) => {
+      try {
+        const live = JSON.parse(event.data) as ConsultationMultimodalLive;
+        applyLiveSnapshot(live);
+      } catch {
+        liveStreamActiveRef.current = false;
+        setIsLiveStreamActive(false);
+      }
+    };
+
+    eventSource.addEventListener("open", handleOpen);
+    eventSource.addEventListener("error", handleError);
+    eventSource.addEventListener("live_snapshot", handleLiveSnapshot as EventListener);
+
+    return () => {
+      liveStreamActiveRef.current = false;
+      setIsLiveStreamActive(false);
+      eventSource.removeEventListener("open", handleOpen);
+      eventSource.removeEventListener("error", handleError);
+      eventSource.removeEventListener("live_snapshot", handleLiveSnapshot as EventListener);
+      eventSource.close();
+      if (liveStreamRef.current === eventSource) {
+        liveStreamRef.current = null;
+      }
+    };
   }, [consultation?.session_id]);
 
   useEffect(() => {
@@ -409,6 +473,9 @@ export default function ConsultationPage() {
   useEffect(() => {
     return () => {
       isUnmountingRef.current = true;
+      liveStreamActiveRef.current = false;
+      liveStreamRef.current?.close();
+      liveStreamRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (lastRecordingUrlRef.current) {
@@ -1037,6 +1104,7 @@ export default function ConsultationPage() {
                     onRefresh={handleRefresh}
                     refreshing={state.loading}
                     isRecording={isRecording}
+                    liveTransport={isLiveStreamActive ? "SSE" : "HTTP"}
                     cameraStream={cameraStream}
                     cameraReady={cameraReady}
                     cameraError={cameraError}

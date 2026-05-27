@@ -28,7 +28,7 @@
 
 ### P2：高级网关能力
 
-- GATEWAY-21：支持 SSE/流式转发
+- GATEWAY-21：支持 consultation live 的 SSE/流式转发
 - GATEWAY-22：增加更细粒度的角色权限映射
 - GATEWAY-23：增加配置缓存、资源热更新和更明确的降级策略
 
@@ -43,3 +43,4 @@
 - 浏览器端不需要直接访问任何内部领域服务端口
 - 网关只负责鉴权、转发、聚合和响应封装，不承担领域计算
 - 新服务接入时只新增 client/router/schemas，不把逻辑散落到现有模块里
+- consultation 页面可通过 gateway 订阅 `/consultations/{id}/multimodal/live/stream`
