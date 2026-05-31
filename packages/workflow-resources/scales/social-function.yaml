@@ -33,6 +33,11 @@ scoring:
   method: sum_excluding_not_applicable
   na_value: 9
   score_range: [0, 20]
+  normalized_output:
+    method: effective_item_ratio
+    source_score: raw_score
+    na_value: 9
+    max_score_per_applicable_item: 2
   notes:
     - 当前先保留原量表离散评分体系
     - 风险与严重度映射将在后续由 risk-service 单独定义

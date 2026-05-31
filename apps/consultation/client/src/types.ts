@@ -261,9 +261,11 @@ export type AssessmentResult = {
   scale_slug: string;
   raw_score: number;
   derived_score: number;
+  normalized_score?: number | null;
   interpretation_level?: string | null;
   interpretation_label?: string | null;
   risk_flags?: Array<Record<string, unknown>>;
+  score_details?: Record<string, unknown>;
   completed_at: string;
 };
 
