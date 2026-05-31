@@ -1,0 +1,501 @@
+workflow_id: scale-assessment-v1
+manifest_contract: digital-human-playlist/v1
+playlist_version: v1
+manifest_status: draft
+delivery_mode: fixed-video-playlist
+notes:
+  - "Digital human video playlist for the complete scale-assessment-v1 flow."
+  - "The active stages are phq9, sds, sas, and social-function."
+  - "Video binaries live in apps/consultation/client/public/digital-human/scale-assessment-v1/."
+
+stages:
+  - stage_id: phq9
+    stage_label: PHQ-9
+    stage_order: 1
+    question_items:
+      - question_key: phq9-001
+        order: 1
+        node_id: phq9-001
+        video_asset_id: phq9-001
+        video_uri: /digital-human/scale-assessment-v1/phq9-001.webm
+        question_text: 在过去两周内，你有多少时间感到做事提不起劲或没有兴趣
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-002
+        order: 2
+        node_id: phq9-002
+        video_asset_id: phq9-002
+        video_uri: /digital-human/scale-assessment-v1/phq9-002.webm
+        question_text: 在过去两周内，你有多少时间感到心情低落、沮丧或绝望
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-003
+        order: 3
+        node_id: phq9-003
+        video_asset_id: phq9-003
+        video_uri: /digital-human/scale-assessment-v1/phq9-003.webm
+        question_text: 在过去两周内，你有多少时间入睡困难、睡不安稳或睡眠过多
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-004
+        order: 4
+        node_id: phq9-004
+        video_asset_id: phq9-004
+        video_uri: /digital-human/scale-assessment-v1/phq9-004.webm
+        question_text: 在过去两周内，你有多少时间感觉疲倦或没有活力
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-005
+        order: 5
+        node_id: phq9-005
+        video_asset_id: phq9-005
+        video_uri: /digital-human/scale-assessment-v1/phq9-005.webm
+        question_text: 在过去两周内，你有多少时间食欲不振或吃的太多
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-006
+        order: 6
+        node_id: phq9-006
+        video_asset_id: phq9-006
+        video_uri: /digital-human/scale-assessment-v1/phq9-006.webm
+        question_text: 在过去两周内，你有多少时间觉得自己很糟，或觉得自己很失败，或让自己或家人失望
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-007
+        order: 7
+        node_id: phq9-007
+        video_asset_id: phq9-007
+        video_uri: /digital-human/scale-assessment-v1/phq9-007.webm
+        question_text: 在过去两周内，你有多少时间对事物专注有困难，例如阅读报纸或看电视时不能集中注意力
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-008
+        order: 8
+        node_id: phq9-008
+        video_asset_id: phq9-008
+        video_uri: /digital-human/scale-assessment-v1/phq9-008.webm
+        question_text: 在过去两周内，你有多少时间行动或说话缓慢到引起人们的注意；或刚好相反，坐立不安、烦躁易怒、到处走动
+        subtitle_text: null
+        response_required: true
+      - question_key: phq9-009
+        order: 9
+        node_id: phq9-009
+        video_asset_id: phq9-009
+        video_uri: /digital-human/scale-assessment-v1/phq9-009.webm
+        question_text: 在过去两周内，你有多少时间有不如死掉或用某种方式伤害自己的念头
+        subtitle_text: null
+        response_required: true
+  - stage_id: sds
+    stage_label: SDS
+    stage_order: 2
+    question_items:
+      - question_key: sds-001
+        order: 1
+        node_id: sds-001
+        video_asset_id: sds-001
+        video_uri: /digital-human/scale-assessment-v1/sds-001.webm
+        question_text: 接下来进入SDS量表问诊环节，请根据您最近一星期的实际情况回答。你觉得闷闷不乐，情绪低沉
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-002
+        order: 2
+        node_id: sds-002
+        video_asset_id: sds-002
+        video_uri: /digital-human/scale-assessment-v1/sds-002.webm
+        question_text: 你觉得一天之中早晨最好
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-003
+        order: 3
+        node_id: sds-003
+        video_asset_id: sds-003
+        video_uri: /digital-human/scale-assessment-v1/sds-003.webm
+        question_text: 你感觉要哭或者想哭
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-004
+        order: 4
+        node_id: sds-004
+        video_asset_id: sds-004
+        video_uri: /digital-human/scale-assessment-v1/sds-004.webm
+        question_text: 你晚上睡眠不好
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-005
+        order: 5
+        node_id: sds-005
+        video_asset_id: sds-005
+        video_uri: /digital-human/scale-assessment-v1/sds-005.webm
+        question_text: 你的饭量和往常一样多
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-006
+        order: 6
+        node_id: sds-006
+        video_asset_id: sds-006
+        video_uri: /digital-human/scale-assessment-v1/sds-006.webm
+        question_text: 你与异性亲密接触时能和以往一样感到愉快
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-007
+        order: 7
+        node_id: sds-007
+        video_asset_id: sds-007
+        video_uri: /digital-human/scale-assessment-v1/sds-007.webm
+        question_text: 你感到体重减轻
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-008
+        order: 8
+        node_id: sds-008
+        video_asset_id: sds-008
+        video_uri: /digital-human/scale-assessment-v1/sds-008.webm
+        question_text: 你有便秘的烦恼
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-009
+        order: 9
+        node_id: sds-009
+        video_asset_id: sds-009
+        video_uri: /digital-human/scale-assessment-v1/sds-009.webm
+        question_text: 你的心跳比平时快
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-010
+        order: 10
+        node_id: sds-010
+        video_asset_id: sds-010
+        video_uri: /digital-human/scale-assessment-v1/sds-010.webm
+        question_text: 你会无缘无故地感到疲乏
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-011
+        order: 11
+        node_id: sds-011
+        video_asset_id: sds-011
+        video_uri: /digital-human/scale-assessment-v1/sds-011.webm
+        question_text: 你的头脑跟往常一样清楚
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-012
+        order: 12
+        node_id: sds-012
+        video_asset_id: sds-012
+        video_uri: /digital-human/scale-assessment-v1/sds-012.webm
+        question_text: 你做事情像平时一样感到并没有困难
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-013
+        order: 13
+        node_id: sds-013
+        video_asset_id: sds-013
+        video_uri: /digital-human/scale-assessment-v1/sds-013.webm
+        question_text: 你感到坐卧不安，难以保持平静
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-014
+        order: 14
+        node_id: sds-014
+        video_asset_id: sds-014
+        video_uri: /digital-human/scale-assessment-v1/sds-014.webm
+        question_text: 你对未来感到有希望
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-015
+        order: 15
+        node_id: sds-015
+        video_asset_id: sds-015
+        video_uri: /digital-human/scale-assessment-v1/sds-015.webm
+        question_text: 你比平时更容易被激怒
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-016
+        order: 16
+        node_id: sds-016
+        video_asset_id: sds-016
+        video_uri: /digital-human/scale-assessment-v1/sds-016.webm
+        question_text: 你觉得决定事情很容易
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-017
+        order: 17
+        node_id: sds-017
+        video_asset_id: sds-017
+        video_uri: /digital-human/scale-assessment-v1/sds-017.webm
+        question_text: 你感到自己是有用的和不可缺少的人
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-018
+        order: 18
+        node_id: sds-018
+        video_asset_id: sds-018
+        video_uri: /digital-human/scale-assessment-v1/sds-018.webm
+        question_text: 你的生活很有意义
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-019
+        order: 19
+        node_id: sds-019
+        video_asset_id: sds-019
+        video_uri: /digital-human/scale-assessment-v1/sds-019.webm
+        question_text: 假若你死了别人会过得更好
+        subtitle_text: null
+        response_required: true
+      - question_key: sds-020
+        order: 20
+        node_id: sds-020
+        video_asset_id: sds-020
+        video_uri: /digital-human/scale-assessment-v1/sds-020.webm
+        question_text: 你仍然喜爱自己平时喜爱的东西
+        subtitle_text: null
+        response_required: true
+  - stage_id: sas
+    stage_label: SAS
+    stage_order: 3
+    question_items:
+      - question_key: sas-001
+        order: 1
+        node_id: sas-001
+        video_asset_id: sas-001
+        video_uri: /digital-human/scale-assessment-v1/sas-001.webm
+        question_text: 接下来进入SAS量表问诊环节，我会问您20个问题，请根据您最近一星期的实际感受，按照选项作答。你觉得比平常更容易紧张和着急。
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-002
+        order: 2
+        node_id: sas-002
+        video_asset_id: sas-002
+        video_uri: /digital-human/scale-assessment-v1/sas-002.webm
+        question_text: 你无缘无故地感到害怕
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-003
+        order: 3
+        node_id: sas-003
+        video_asset_id: sas-003
+        video_uri: /digital-human/scale-assessment-v1/sas-003.webm
+        question_text: 你容易心里烦乱或觉得惊恐
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-004
+        order: 4
+        node_id: sas-004
+        video_asset_id: sas-004
+        video_uri: /digital-human/scale-assessment-v1/sas-004.webm
+        question_text: 你觉得你可能将要发疯
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-005
+        order: 5
+        node_id: sas-005
+        video_asset_id: sas-005
+        video_uri: /digital-human/scale-assessment-v1/sas-005.webm
+        question_text: 你觉得一切都很好，也不会发生什么不幸
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-006
+        order: 6
+        node_id: sas-006
+        video_asset_id: sas-006
+        video_uri: /digital-human/scale-assessment-v1/sas-006.webm
+        question_text: 你手脚发抖打颤
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-007
+        order: 7
+        node_id: sas-007
+        video_asset_id: sas-007
+        video_uri: /digital-human/scale-assessment-v1/sas-007.webm
+        question_text: 你因为头痛、颈痛和背痛而苦恼
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-008
+        order: 8
+        node_id: sas-008
+        video_asset_id: sas-008
+        video_uri: /digital-human/scale-assessment-v1/sas-008.webm
+        question_text: 你感觉容易衰弱和疲乏
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-009
+        order: 9
+        node_id: sas-009
+        video_asset_id: sas-009
+        video_uri: /digital-human/scale-assessment-v1/sas-009.webm
+        question_text: 你觉得心平气和，并且容易安静坐着
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-010
+        order: 10
+        node_id: sas-010
+        video_asset_id: sas-010
+        video_uri: /digital-human/scale-assessment-v1/sas-010.webm
+        question_text: 你觉得心跳得很快
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-011
+        order: 11
+        node_id: sas-011
+        video_asset_id: sas-011
+        video_uri: /digital-human/scale-assessment-v1/sas-011.webm
+        question_text: 你因为一阵阵头晕而苦恼
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-012
+        order: 12
+        node_id: sas-012
+        video_asset_id: sas-012
+        video_uri: /digital-human/scale-assessment-v1/sas-012.webm
+        question_text: 你有晕倒发作或觉得要晕倒似的
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-013
+        order: 13
+        node_id: sas-013
+        video_asset_id: sas-013
+        video_uri: /digital-human/scale-assessment-v1/sas-013.webm
+        question_text: 你呼气吸气都感到很容易
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-014
+        order: 14
+        node_id: sas-014
+        video_asset_id: sas-014
+        video_uri: /digital-human/scale-assessment-v1/sas-014.webm
+        question_text: 你手脚麻木和刺痛
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-015
+        order: 15
+        node_id: sas-015
+        video_asset_id: sas-015
+        video_uri: /digital-human/scale-assessment-v1/sas-015.webm
+        question_text: 你因为胃痛和消化不良而苦恼
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-016
+        order: 16
+        node_id: sas-016
+        video_asset_id: sas-016
+        video_uri: /digital-human/scale-assessment-v1/sas-016.webm
+        question_text: 你常常要小便
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-017
+        order: 17
+        node_id: sas-017
+        video_asset_id: sas-017
+        video_uri: /digital-human/scale-assessment-v1/sas-017.webm
+        question_text: 你的手常常是干燥温暖的
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-018
+        order: 18
+        node_id: sas-018
+        video_asset_id: sas-018
+        video_uri: /digital-human/scale-assessment-v1/sas-018.webm
+        question_text: 你脸红发热
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-019
+        order: 19
+        node_id: sas-019
+        video_asset_id: sas-019
+        video_uri: /digital-human/scale-assessment-v1/sas-019.webm
+        question_text: 你容易入睡并且一夜睡得很好
+        subtitle_text: null
+        response_required: true
+      - question_key: sas-020
+        order: 20
+        node_id: sas-020
+        video_asset_id: sas-020
+        video_uri: /digital-human/scale-assessment-v1/sas-020.webm
+        question_text: 你做恶梦
+        subtitle_text: null
+        response_required: true
+  - stage_id: social-function
+    stage_label: 社会功能缺陷量表
+    stage_order: 4
+    stage_intro_text: 接下来进入社会功能量表问诊环节。我想了解您在家中和工作单位的一些情况。请告诉我您在以下几个方面是否存在问题或困难，可以回答我：无缺陷、有些缺陷、严重缺陷。如果您认为某个问题不适用于您自身，可以回答我不合适。
+    stage_intro_video_uri: /digital-human/scale-assessment-v1/social-function-000.webm
+    question_items:
+      - question_key: social-function-001
+        order: 1
+        node_id: social-function-001
+        video_asset_id: social-function-001
+        video_uri: /digital-human/scale-assessment-v1/social-function-001.webm
+        question_text: 职业和工作
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-002
+        order: 2
+        node_id: social-function-002
+        video_asset_id: social-function-002
+        video_uri: /digital-human/scale-assessment-v1/social-function-002.webm
+        question_text: 婚姻职能
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-003
+        order: 3
+        node_id: social-function-003
+        video_asset_id: social-function-003
+        video_uri: /digital-human/scale-assessment-v1/social-function-003.webm
+        question_text: 父母角色
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-004
+        order: 4
+        node_id: social-function-004
+        video_asset_id: social-function-004
+        video_uri: /digital-human/scale-assessment-v1/social-function-004.webm
+        question_text: 社交退缩
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-005
+        order: 5
+        node_id: social-function-005
+        video_asset_id: social-function-005
+        video_uri: /digital-human/scale-assessment-v1/social-function-005.webm
+        question_text: 家庭外的社会功能
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-006
+        order: 6
+        node_id: social-function-006
+        video_asset_id: social-function-006
+        video_uri: /digital-human/scale-assessment-v1/social-function-006.webm
+        question_text: 家庭内活动过少
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-007
+        order: 7
+        node_id: social-function-007
+        video_asset_id: social-function-007
+        video_uri: /digital-human/scale-assessment-v1/social-function-007.webm
+        question_text: 家庭功能
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-008
+        order: 8
+        node_id: social-function-008
+        video_asset_id: social-function-008
+        video_uri: /digital-human/scale-assessment-v1/social-function-008.webm
+        question_text: 个人生活自理
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-009
+        order: 9
+        node_id: social-function-009
+        video_asset_id: social-function-009
+        video_uri: /digital-human/scale-assessment-v1/social-function-009.webm
+        question_text: 对外界的兴趣和关心
+        subtitle_text: null
+        response_required: true
+      - question_key: social-function-010
+        order: 10
+        node_id: social-function-010
+        video_asset_id: social-function-010
+        video_uri: /digital-human/scale-assessment-v1/social-function-010.webm
+        question_text: 责任心和计划性
+        subtitle_text: null
+        response_required: true

@@ -152,6 +152,7 @@ export type ConsultationTurnMultimodalBundle = {
   turn_id?: string | null;
   session_id?: string | null;
   flow_run_id?: string | null;
+  origin_flow_type?: string | null;
   stage_id?: string | null;
   question_key?: string | null;
   generated_at?: string | null;
@@ -205,6 +206,7 @@ export type ConsultationSession = {
   multimodal_live?: ConsultationMultimodalLive;
   multimodal_live_updated_at?: string | null;
   current_turn_bundle?: ConsultationTurnMultimodalBundle | null;
+  visual_pipeline?: VisualPipelineStatus | null;
   subtitle_history?: ConsultationSubtitleHistoryEntry[];
   created_at?: string;
   updated_at?: string;
@@ -217,6 +219,14 @@ export type AssessmentOption = {
   label: string;
 };
 
+export type AssessmentCatalogScaleItem = {
+  id: string;
+  index: number;
+  text: string;
+  question_text?: string | null;
+  video_uri?: string | null;
+};
+
 export type AssessmentCatalogItem = {
   slug: string;
   code: string;
@@ -225,7 +235,18 @@ export type AssessmentCatalogItem = {
   mode: string;
   timeframe?: string | null;
   item_count: number;
+  stage_intro_text?: string | null;
+  stage_intro_video_uri?: string | null;
   answer_options: AssessmentOption[];
+  items: AssessmentCatalogScaleItem[];
+};
+
+export type VisualPipelineStatus = {
+  state_store: "redis_hot" | "postgres_cold" | "persisted_only";
+  live_state_source: "redis" | "postgres" | "snapshot";
+  turn_bundle_source: "redis" | "postgres" | "database" | "snapshot";
+  degraded: boolean;
+  fallback_reason?: string | null;
 };
 
 export type AssessmentItem = {
@@ -251,6 +272,7 @@ export type AssessmentSession = {
   user_id: string;
   encounter_session_id?: string | null;
   source_consultation_flow_run_id?: string | null;
+  multimodal_session_id?: string | null;
   status: string;
   required_scales: string[];
   selected_scales: string[];

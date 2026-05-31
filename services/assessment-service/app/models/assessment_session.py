@@ -24,6 +24,11 @@ class AssessmentSession(Base):
         nullable=True,
         index=True,
     )
+    multimodal_session_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="created")
     required_scales: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     selected_scales: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)

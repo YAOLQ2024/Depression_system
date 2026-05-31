@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import uuid
 
-from sqlalchemy import DateTime, JSON, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -12,6 +12,16 @@ from app.database import Base
 class MultimodalSession(Base):
     __tablename__ = "multimodal_sessions"
     __table_args__ = (
+        CheckConstraint(
+            "(scope_type <> 'encounter') OR "
+            "(encounter_session_id IS NOT NULL AND encounter_session_id = scope_id)",
+            name="ck_multimodal_sessions_encounter_scope_consistency",
+        ),
+        UniqueConstraint(
+            "scope_type",
+            "scope_id",
+            name="uq_multimodal_sessions_scope",
+        ),
         UniqueConstraint(
             "flow_type",
             "flow_run_id",
@@ -29,6 +39,8 @@ class MultimodalSession(Base):
         nullable=True,
         index=True,
     )
+    scope_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    scope_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     flow_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     flow_run_id: Mapped[str] = mapped_column(
         String(36),

@@ -21,6 +21,11 @@ class MultimodalVisualFrame(Base):
     )
     turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     flow_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    origin_flow_type: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
     stage_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     question_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     sample_index: Mapped[int | None] = mapped_column(nullable=True)

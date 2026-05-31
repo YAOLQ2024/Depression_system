@@ -81,11 +81,14 @@ services:
       context: ../../services/assessment-service
     environment:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
       WORKFLOW_RESOURCES_DIR: /app/workflow-resources
       ACTIVE_SCALE_SET: v1
     depends_on:
       postgres:
         condition: service_healthy
+      multimodal-service:
+        condition: service_started
     volumes:
       - ../../packages/workflow-resources:/app/workflow-resources:ro
     healthcheck:

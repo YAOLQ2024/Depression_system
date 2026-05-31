@@ -8,32 +8,27 @@ import { CameraPreview } from "../components/CameraPreview";
 import { ConsultationProgress } from "../components/ConsultationProgress";
 import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
+import { FlowCompletionState } from "../components/FlowCompletionState";
 import { FloatingControlBar } from "../components/FloatingControlBar";
 import { ConsultationLayout } from "../layouts";
-import {
-  describeMediaAccessError,
-  getActiveMicrophoneFeedback,
-  getInitialMediaFeedback,
-  getMicrophoneCompletedFeedback,
-  getReadyMediaFeedback,
-  getUnsupportedMediaFeedback,
-  type MediaDeviceFeedback,
-} from "../lib/mediaDeviceFeedback";
+import { buildRecordingFilename, formatDuration, sleep } from "../lib/mediaCapture";
+import { useMultimodalAudioSubmission } from "../lib/useMultimodalAudioSubmission";
+import { useAudioRecording, type RecordingCompletedPayload } from "../lib/useAudioRecording";
+import { useCamera } from "../lib/useCamera";
+import { useJsonEventStream } from "../lib/useJsonEventStream";
+import { useMultimodalSession } from "../lib/useMultimodalSession";
 import { useTimedToast } from "../lib/useTimedToast";
+import { useVisualCapture } from "../lib/useVisualCapture";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
 import {
-  getMultimodalAudioTurn,
-  warmupMultimodalSession,
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
 import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
 import type { ConsultationMultimodalLive, ConsultationSession, ConsultationSubtitleHistoryEntry } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
-const RECORDING_MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/ogg", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 const LIVE_REFRESH_INTERVAL_MS = 5000;
-const VISUAL_CAPTURE_INTERVAL_MS = 1500;
 
 declare global {
   interface Window {
@@ -71,58 +66,6 @@ function formatSubtitleHistoryLine(entry: ConsultationSubtitleHistoryEntry) {
   return `${speakerLabel}：${entry.text.trim()}`;
 }
 
-function pickSupportedRecordingMimeType() {
-  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
-    return "";
-  }
-
-  return RECORDING_MIME_CANDIDATES.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "";
-}
-
-async function captureVideoFrame(videoElement: HTMLVideoElement, mimeType = "image/jpeg") {
-  if (!videoElement.videoWidth || !videoElement.videoHeight) {
-    return null;
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = videoElement.videoWidth;
-  canvas.height = videoElement.videoHeight;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return null;
-  }
-  context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-  return new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), mimeType, 0.85);
-  });
-}
-
-function formatDuration(durationMs: number) {
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
-
-function resolveRecordingExtension(mimeType: string) {
-  if (mimeType.includes("mp4")) {
-    return "mp4";
-  }
-  if (mimeType.includes("ogg")) {
-    return "ogg";
-  }
-  return "webm";
-}
-
-function normalizeAudioMimeType(mimeType: string) {
-  return mimeType.split(";", 1)[0]?.trim().toLowerCase() || "audio/webm";
-}
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 type LocalRecordingSnapshot = {
   promptKey: string;
   durationMs: number;
@@ -139,49 +82,188 @@ export default function ConsultationPage() {
   const consultation = state.consultation;
 
   const [isOpen, setIsOpen] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [videoError, setVideoError] = useState("");
   const [isCompletingSystemQuestion, setIsCompletingSystemQuestion] = useState(false);
-  const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [answerWindowOpenedAt, setAnswerWindowOpenedAt] = useState<string | null>(null);
   const [lastRecording, setLastRecording] = useState<LocalRecordingSnapshot | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
-  const [cameraError, setCameraError] = useState("");
-  const [cameraFeedback, setCameraFeedback] = useState<MediaDeviceFeedback>(() => getInitialMediaFeedback("camera"));
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [isLiveStreamActive, setIsLiveStreamActive] = useState(false);
-  const [microphoneFeedback, setMicrophoneFeedback] = useState<MediaDeviceFeedback>(() =>
-    getInitialMediaFeedback("microphone"),
-  );
+  const { cameraReady, cameraStream, cameraError, cameraFeedback } = useCamera({ enabled: true });
   const [subtitleUserTranscript, setSubtitleUserTranscript] = useState<string | null>(null);
-  const [multimodalSessionId, setMultimodalSessionId] = useState<string | null>(
-    consultation?.multimodal_session_id ?? null,
-  );
+  const isUnmountingRef = useRef(false);
   const { toast, pushToast } = useTimedToast();
+  const { submitRecordedAudio } = useMultimodalAudioSubmission();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const cameraStreamRef = useRef<MediaStream | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordingStartedAtRef = useRef<Date | null>(null);
-  const answerWindowPromptKeyRef = useRef<string | null>(null);
   const lastRecordingUrlRef = useRef<string | null>(null);
-  const isUnmountingRef = useRef(false);
-  const frameIndexRef = useRef(0);
-  const captureInFlightRef = useRef(false);
+  const answerWindowPromptKeyRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
-  const liveStreamRef = useRef<EventSource | null>(null);
-  const liveStreamActiveRef = useRef(false);
-  const warmedUpMultimodalSessionIdsRef = useRef<Set<string>>(new Set());
+  const completeTransitionTimerRef = useRef<number | null>(null);
+  const pendingSystemAdvanceQuestionKeyRef = useRef<string | null>(null);
+  const pendingSystemAdvancePromiseRef = useRef<Promise<ConsultationSession | null> | null>(null);
+  const pendingSystemAdvanceResultRef = useRef<ConsultationSession | null>(null);
+
+  const currentQuestionKey = consultation?.current_question_key ?? null;
+  const currentTurnId = consultation?.current_turn_id ?? null;
+  const {
+    ensureSession: ensureMultimodalSession,
+  } = useMultimodalSession({
+    linkedSessionId: consultation?.multimodal_session_id ?? null,
+    resolveSessionId: async () => {
+      const refreshedConsultation = await actions.refreshConsultation();
+      return refreshedConsultation?.multimodal_session_id || null;
+    },
+    missingSessionMessage: "当前问诊会话缺少多模态会话绑定，请刷新页面后重试。",
+  });
+
+  const handleAudioRecordingComplete = useEffectEvent(
+    async (payload: RecordingCompletedPayload) => {
+      const { blob, mimeType, startedAt, completedAt } = payload;
+
+      const objectUrl = URL.createObjectURL(blob);
+      if (lastRecordingUrlRef.current) {
+        URL.revokeObjectURL(lastRecordingUrlRef.current);
+      }
+      lastRecordingUrlRef.current = objectUrl;
+      setLastRecording({
+        promptKey: currentQuestionKey || "current",
+        durationMs: completedAt.getTime() - startedAt.getTime(),
+        startedAt: startedAt.toISOString(),
+        completedAt: completedAt.toISOString(),
+        mimeType,
+        sizeBytes: blob.size,
+        objectUrl,
+      });
+
+      // Upload + transcribe + submit
+      setIsSubmittingResponse(true);
+      try {
+        if (!consultation || !currentQuestionKey) {
+          pushToast("当前题目缺少转写所需上下文，请刷新后重试。", "error");
+          return;
+        }
+        const consultationTurnId = consultation.current_turn_id || null;
+        if (!consultationTurnId) {
+          throw new Error("当前回答窗口缺少 turn_id，请刷新后重试。");
+        }
+        const submittedAudio = await submitRecordedAudio({
+          payload,
+          context: {
+            consultation,
+            currentQuestionKey,
+            consultationTurnId,
+          },
+          ensureSession: ensureMultimodalSession,
+          emptyRecordingMessage: "本轮录音内容为空，浏览器没有采集到有效音频，请重新录音。",
+          emptyTranscriptMessage: "Dolphin 未返回有效转写文本，请重试。",
+          uploadAudioTurn: async ({
+            sessionId,
+            blob: audioBlob,
+            resolvedMimeType,
+            durationMs,
+            startedAtIso,
+            completedAtIso,
+            context,
+          }) =>
+            uploadMultimodalAudioTurn(sessionId, {
+              flow_run_id: context.consultation.session_id,
+              question_key: context.currentQuestionKey,
+              stage_id:
+                context.consultation.current_stage_id ||
+                context.consultation.current_question_item?.stage_id ||
+                "unknown",
+              node_id:
+                context.consultation.current_node_id ||
+                context.consultation.current_question_item?.node_id ||
+                "unknown",
+              duration_ms: durationMs,
+              response_started_at: startedAtIso,
+              response_completed_at: completedAtIso,
+              mime_type: resolvedMimeType,
+              turn_id: context.consultationTurnId,
+              audio_file: audioBlob,
+              filename: buildRecordingFilename(context.currentQuestionKey, resolvedMimeType),
+            }),
+        });
+        setSubtitleUserTranscript(submittedAudio.transcriptText);
+
+        await actions.submitConsultationTurn({
+          input_type: "speech",
+          turn_id: consultationTurnId,
+          raw_input: submittedAudio.transcriptText,
+          audio_uri: submittedAudio.transcriptReadyAudioTurn.audio_uri,
+          transcript_text: submittedAudio.transcriptText,
+          transcript_source: "dolphin_final",
+          response_started_at: submittedAudio.startedAtIso,
+          response_completed_at: submittedAudio.completedAtIso,
+        });
+        await captureSupplementalFrame(consultationTurnId);
+        if (submittedAudio.transcriptReadyAudioTurn.processing_status === "completed") {
+          await refreshLiveSnapshot();
+        } else {
+          void waitForCompletedAudioTurn(
+            submittedAudio.sessionId,
+            submittedAudio.uploadedAudioTurn.audio_turn_id,
+          ).then(async (completedAudioTurn) => {
+            if (completedAudioTurn?.processing_status === "completed") {
+              await refreshLiveSnapshot();
+            }
+          }).catch(() => {});
+        }
+        pushToast("转写成功", "success", { durationMs: 1800 });
+      } catch (caught) {
+        pushToast(
+          caught instanceof Error ? caught.message : "语音提交失败，请重新录音。",
+          "error",
+        );
+      } finally {
+        setIsSubmittingResponse(false);
+      }
+    },
+  );
+
+  const {
+    isRecording,
+    recordingElapsedMs,
+    microphoneFeedback,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useAudioRecording({
+    onRecordingComplete: handleAudioRecordingComplete,
+    onError: (msg: string) => pushToast(msg, "error"),
+    isUnmountingRef,
+  });
+
+  const { captureNow: captureSupplementalFrame } = useVisualCapture<string | null>({
+    enabled:
+      cameraReady &&
+      !!currentQuestionKey &&
+      !!consultation &&
+      ["waiting_user_input", "recording_response", "processing_response", "running"].includes(
+        consultation.status,
+      ),
+    cameraStream,
+    videoRef: cameraVideoRef,
+    uploadFn: async ({ blob, sampleIndex, startedAt, endedAt, context }) => {
+      const imageFile = new File([blob], `capture-${sampleIndex}.jpg`, {
+        type: blob.type || "image/jpeg",
+      });
+      await actions.submitConsultationVisualCapture({
+        question_key: currentQuestionKey!,
+        turn_id: context ?? currentTurnId ?? null,
+        sample_started_at: startedAt,
+        sample_ended_at: endedAt,
+        sample_index: sampleIndex,
+        mime_type: imageFile.type || "image/jpeg",
+        image_file: imageFile,
+      });
+    },
+  });
 
   const playableVideoUri = useMemo(() => resolvePlayableVideoUri(consultation), [consultation]);
   const promptText = useMemo(() => resolvePromptText(consultation), [consultation]);
-  const currentQuestionKey = consultation?.current_question_key ?? null;
-  const currentTurnId = consultation?.current_turn_id ?? null;
   const responseWindowStatusText = useMemo(() => {
     if (!consultation?.current_question_item?.response_required) {
       return "";
@@ -290,6 +372,7 @@ export default function ConsultationPage() {
       consultation.current_question_item &&
       consultation.current_question_item.response_required === false,
   );
+  const canEnterAssessment = consultation?.status === "handoff_ready";
 
   const pushStoreToast = useEffectEvent((message: string, tone: "success" | "warning" | "error") => {
     pushToast(message, tone);
@@ -298,6 +381,17 @@ export default function ConsultationPage() {
 
   const applyLiveSnapshot = useEffectEvent((live: ConsultationMultimodalLive) => {
     actions.applyConsultationMultimodalLive(live);
+  });
+
+  const {
+    isActive: isLiveStreamActive,
+    activeRef: liveStreamActiveRef,
+  } = useJsonEventStream<ConsultationMultimodalLive>({
+    url:
+      consultation?.session_id && typeof window !== "undefined"
+        ? getConsultationMultimodalLiveStreamUrl(consultation.session_id)
+        : null,
+    onMessage: applyLiveSnapshot,
   });
 
   const refreshLiveSnapshot = useEffectEvent(async () => {
@@ -351,7 +445,6 @@ export default function ConsultationPage() {
       if (answerWindowPromptKeyRef.current !== currentQuestionKey) {
         answerWindowPromptKeyRef.current = currentQuestionKey;
         setAnswerWindowOpenedAt(new Date().toISOString());
-        setRecordingElapsedMs(0);
       }
       return;
     }
@@ -359,34 +452,15 @@ export default function ConsultationPage() {
     if (!isRecording) {
       answerWindowPromptKeyRef.current = currentQuestionKey;
       setAnswerWindowOpenedAt(null);
-      setRecordingElapsedMs(0);
     }
   }, [consultation?.status, currentQuestionKey, consultation?.current_turn_id, isRecording]);
 
   useEffect(() => {
-    if (consultation?.multimodal_session_id) {
-      setMultimodalSessionId(consultation.multimodal_session_id);
-    }
-  }, [consultation?.multimodal_session_id]);
-
-  useEffect(() => {
     setSubtitleUserTranscript(null);
+    pendingSystemAdvanceQuestionKeyRef.current = null;
+    pendingSystemAdvancePromiseRef.current = null;
+    pendingSystemAdvanceResultRef.current = null;
   }, [currentQuestionKey]);
-
-  useEffect(() => {
-    if (!isRecording) {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      if (!recordingStartedAtRef.current) {
-        return;
-      }
-      setRecordingElapsedMs(Date.now() - recordingStartedAtRef.current.getTime());
-    }, 250);
-
-    return () => window.clearInterval(timer);
-  }, [isRecording]);
 
   useEffect(() => {
     if (!consultation) {
@@ -405,133 +479,17 @@ export default function ConsultationPage() {
   }, [consultation?.session_id, isLiveStreamActive]);
 
   useEffect(() => {
-    if (!consultation?.session_id || typeof window === "undefined" || typeof EventSource === "undefined") {
-      liveStreamActiveRef.current = false;
-      setIsLiveStreamActive(false);
-      liveStreamRef.current?.close();
-      liveStreamRef.current = null;
-      return;
-    }
-
-    const eventSource = new EventSource(
-      getConsultationMultimodalLiveStreamUrl(consultation.session_id),
-      { withCredentials: true },
-    );
-    liveStreamRef.current = eventSource;
-
-    const handleOpen = () => {
-      liveStreamActiveRef.current = true;
-      setIsLiveStreamActive(true);
-    };
-    const handleError = () => {
-      liveStreamActiveRef.current = false;
-      setIsLiveStreamActive(false);
-    };
-    const handleLiveSnapshot = (event: MessageEvent<string>) => {
-      try {
-        const live = JSON.parse(event.data) as ConsultationMultimodalLive;
-        applyLiveSnapshot(live);
-      } catch {
-        liveStreamActiveRef.current = false;
-        setIsLiveStreamActive(false);
-      }
-    };
-
-    eventSource.addEventListener("open", handleOpen);
-    eventSource.addEventListener("error", handleError);
-    eventSource.addEventListener("live_snapshot", handleLiveSnapshot as EventListener);
-
-    return () => {
-      liveStreamActiveRef.current = false;
-      setIsLiveStreamActive(false);
-      eventSource.removeEventListener("open", handleOpen);
-      eventSource.removeEventListener("error", handleError);
-      eventSource.removeEventListener("live_snapshot", handleLiveSnapshot as EventListener);
-      eventSource.close();
-      if (liveStreamRef.current === eventSource) {
-        liveStreamRef.current = null;
-      }
-    };
-  }, [consultation?.session_id]);
-
-  useEffect(() => {
-    if (!consultation || !currentQuestionKey || !cameraReady) {
-      return;
-    }
-    if (!["waiting_user_input", "recording_response", "processing_response", "running"].includes(consultation.status)) {
-      return;
-    }
-
-    void submitCameraCaptures();
-    const timer = window.setInterval(() => {
-      void submitCameraCaptures();
-    }, VISUAL_CAPTURE_INTERVAL_MS);
-
-    return () => window.clearInterval(timer);
-  }, [cameraReady, consultation?.status, currentQuestionKey]);
-
-  useEffect(() => {
     return () => {
       isUnmountingRef.current = true;
-      liveStreamActiveRef.current = false;
-      liveStreamRef.current?.close();
-      liveStreamRef.current = null;
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      pendingSystemAdvanceQuestionKeyRef.current = null;
+      pendingSystemAdvancePromiseRef.current = null;
+      pendingSystemAdvanceResultRef.current = null;
+      if (completeTransitionTimerRef.current) {
+        window.clearTimeout(completeTransitionTimerRef.current);
+      }
       if (lastRecordingUrlRef.current) {
         URL.revokeObjectURL(lastRecordingUrlRef.current);
       }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      const unsupported = getUnsupportedMediaFeedback("camera");
-      setCameraError(unsupported.detail);
-      setCameraFeedback(unsupported);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function setupCamera() {
-      try {
-        setCameraFeedback(getInitialMediaFeedback("camera"));
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-            width: { ideal: 960 },
-            height: { ideal: 720 },
-          },
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        cameraStreamRef.current = stream;
-        setCameraStream(stream);
-        setCameraReady(true);
-        setCameraError("");
-        setCameraFeedback(getReadyMediaFeedback("camera", "画面采集中，可持续上传表情与姿态帧。"));
-      } catch (caught) {
-        if (!cancelled) {
-          const feedback = describeMediaAccessError("camera", caught);
-          setCameraReady(false);
-          setCameraStream(null);
-          setCameraError(feedback.detail);
-          setCameraFeedback(feedback);
-        }
-      }
-    }
-
-    void setupCamera();
-
-    return () => {
-      cancelled = true;
-      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
-      cameraStreamRef.current = null;
-      setCameraStream(null);
-      setCameraReady(false);
     };
   }, []);
 
@@ -558,26 +516,6 @@ export default function ConsultationPage() {
         });
     }
   }, [consultation?.current_question_key, playableVideoUri]);
-
-  const warmupMultimodalRuntime = useEffectEvent(async (sessionId: string) => {
-    if (!sessionId || warmedUpMultimodalSessionIdsRef.current.has(sessionId)) {
-      return;
-    }
-    warmedUpMultimodalSessionIdsRef.current.add(sessionId);
-    try {
-      await warmupMultimodalSession(sessionId);
-    } catch {
-      warmedUpMultimodalSessionIdsRef.current.delete(sessionId);
-    }
-  });
-
-  useEffect(() => {
-    const sessionId = multimodalSessionId || consultation?.multimodal_session_id || null;
-    if (!sessionId) {
-      return;
-    }
-    void warmupMultimodalRuntime(sessionId);
-  }, [consultation?.multimodal_session_id, multimodalSessionId, warmupMultimodalRuntime]);
 
   async function handlePlayCurrentVideo() {
     const videoElement = videoRef.current;
@@ -606,14 +544,41 @@ export default function ConsultationPage() {
       return;
     }
 
-    setIsCompletingSystemQuestion(true);
+    completeTransitionTimerRef.current = window.setTimeout(() => {
+      setIsCompletingSystemQuestion(true);
+      completeTransitionTimerRef.current = null;
+    }, 240);
 
     try {
-      const updated = await actions.completeConsultationSystemQuestionItem(currentQuestionKey);
+      let updated = pendingSystemAdvanceResultRef.current;
+      const hasPrefetchedAdvance =
+        pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey &&
+        pendingSystemAdvancePromiseRef.current;
+
+      if (!updated && hasPrefetchedAdvance) {
+        try {
+          updated = await pendingSystemAdvancePromiseRef.current;
+        } catch {
+          updated = null;
+        }
+      }
+
+      if (updated) {
+        updated = actions.applyCompletedConsultationSystemQuestion(updated);
+      } else {
+        updated = await actions.completeConsultationSystemQuestionItem(currentQuestionKey);
+      }
       if (!updated) {
         pushToast("问候视频已结束，但自动推进失败。请在右侧看板中点击刷新。", "warning");
       }
     } finally {
+      pendingSystemAdvanceQuestionKeyRef.current = null;
+      pendingSystemAdvancePromiseRef.current = null;
+      pendingSystemAdvanceResultRef.current = null;
+      if (completeTransitionTimerRef.current) {
+        window.clearTimeout(completeTransitionTimerRef.current);
+        completeTransitionTimerRef.current = null;
+      }
       setIsCompletingSystemQuestion(false);
     }
   }
@@ -623,98 +588,11 @@ export default function ConsultationPage() {
     await refreshLiveSnapshot();
   }
 
-  function cleanupRecorderResources() {
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.current = null;
-    mediaRecorderRef.current = null;
-    audioChunksRef.current = [];
-  }
-
-  async function ensureMultimodalSession() {
-    if (!consultation) {
-      throw new Error("当前没有可用的问诊会话，无法创建多模态会话。");
-    }
-
-    const existingSessionId = multimodalSessionId || consultation.multimodal_session_id;
-    if (existingSessionId) {
-      setMultimodalSessionId(existingSessionId);
-      void warmupMultimodalRuntime(existingSessionId);
-      return existingSessionId;
-    }
-
-    const refreshedConsultation = await actions.refreshConsultation();
-    const refreshedSessionId = refreshedConsultation?.multimodal_session_id || null;
-    if (!refreshedSessionId) {
-      throw new Error("当前问诊会话缺少多模态会话绑定，请刷新页面后重试。");
-    }
-
-    setMultimodalSessionId(refreshedSessionId);
-    void warmupMultimodalRuntime(refreshedSessionId);
-    return refreshedSessionId;
-  }
-  async function submitCameraCaptures(turnId?: string | null) {
-    if (!currentQuestionKey || !cameraVideoRef.current || captureInFlightRef.current) {
-      return;
-    }
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-      return;
-    }
-    if (!cameraReady) {
-      return;
-    }
-
-    captureInFlightRef.current = true;
-    const startedAt = new Date().toISOString();
-
-    try {
-      const blob = await captureVideoFrame(cameraVideoRef.current);
-      if (!blob) {
-        return;
-      }
-
-      frameIndexRef.current += 1;
-      const frameIndex = frameIndexRef.current;
-      const endedAt = new Date().toISOString();
-      const imageFile = new File([blob], `capture-${frameIndex}.jpg`, { type: blob.type || "image/jpeg" });
-      const payload = {
-        question_key: currentQuestionKey,
-        turn_id: turnId || currentTurnId || null,
-        sample_started_at: startedAt,
-        sample_ended_at: endedAt,
-        sample_index: frameIndex,
-        mime_type: imageFile.type || "image/jpeg",
-        image_file: imageFile,
-      };
-
-      await actions.submitConsultationVisualCapture(payload);
-    } finally {
-      captureInFlightRef.current = false;
-    }
-  }
-
-  async function waitForTranscriptReadyAudioTurn(
-    sessionId: string,
-    audioTurnId: string,
-  ) {
-    for (let attempt = 0; attempt < 90; attempt += 1) {
-      const audioTurn = await getMultimodalAudioTurn(sessionId, audioTurnId);
-      const transcriptText = audioTurn.transcript_text?.trim() || "";
-      if (transcriptText) {
-        return audioTurn;
-      }
-      if (audioTurn.processing_status === "failed") {
-        throw new Error(audioTurn.error_message || "Dolphin 语音转写失败");
-      }
-      await sleep(200);
-    }
-
-    throw new Error("Dolphin 语音转写超时，请重试。");
-  }
-
   async function waitForCompletedAudioTurn(
     sessionId: string,
     audioTurnId: string,
   ) {
+    const { getMultimodalAudioTurn } = await import("../services/api/multimodal.api");
     for (let attempt = 0; attempt < 180; attempt += 1) {
       const audioTurn = await getMultimodalAudioTurn(sessionId, audioTurnId);
       if (audioTurn.processing_status === "completed" || audioTurn.processing_status === "failed") {
@@ -724,202 +602,6 @@ export default function ConsultationPage() {
     }
 
     return null;
-  }
-
-  async function startBrowserRecording() {
-    if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      const feedback = getUnsupportedMediaFeedback("microphone");
-      setMicrophoneFeedback(feedback);
-      pushToast(feedback.detail, "error");
-      return;
-    }
-
-    if (typeof MediaRecorder === "undefined") {
-      const feedback = getUnsupportedMediaFeedback("microphone");
-      setMicrophoneFeedback(feedback);
-      pushToast(feedback.detail, "error");
-      return;
-    }
-
-    try {
-      setMicrophoneFeedback({
-        title: "正在检测麦克风",
-        detail: "浏览器正在申请麦克风权限并初始化录音设备。",
-        tone: "pending",
-      });
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = pickSupportedRecordingMimeType();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      const startedAt = new Date();
-
-      if (lastRecordingUrlRef.current) {
-        URL.revokeObjectURL(lastRecordingUrlRef.current);
-        lastRecordingUrlRef.current = null;
-      }
-      setLastRecording(null);
-      setSubtitleUserTranscript(null);
-      audioChunksRef.current = [];
-      mediaStreamRef.current = stream;
-      mediaRecorderRef.current = recorder;
-      recordingStartedAtRef.current = startedAt;
-      setRecordingElapsedMs(0);
-      setIsRecording(true);
-      setMicrophoneFeedback(getActiveMicrophoneFeedback());
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onerror = () => {
-        cleanupRecorderResources();
-        recordingStartedAtRef.current = null;
-        setIsRecording(false);
-        setRecordingElapsedMs(0);
-        setMicrophoneFeedback({
-          title: "麦克风采集失败",
-          detail: "录音过程中出现错误，请检查设备占用或浏览器权限后重试。",
-          tone: "error",
-        });
-        pushToast("浏览器录音过程中出现错误，请重试。", "error");
-      };
-
-      recorder.onstop = async () => {
-        if (isUnmountingRef.current) {
-          cleanupRecorderResources();
-          recordingStartedAtRef.current = null;
-          return;
-        }
-
-        const completedAt = new Date();
-        const responseStartedAt = recordingStartedAtRef.current || completedAt;
-        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        const objectUrl = URL.createObjectURL(blob);
-
-        if (lastRecordingUrlRef.current) {
-          URL.revokeObjectURL(lastRecordingUrlRef.current);
-        }
-        lastRecordingUrlRef.current = objectUrl;
-        setLastRecording({
-          promptKey: currentQuestionKey || "current",
-          durationMs: completedAt.getTime() - responseStartedAt.getTime(),
-          startedAt: responseStartedAt.toISOString(),
-          completedAt: completedAt.toISOString(),
-          mimeType: recorder.mimeType || "audio/webm",
-          sizeBytes: blob.size,
-          objectUrl,
-        });
-        cleanupRecorderResources();
-        recordingStartedAtRef.current = null;
-        setIsRecording(false);
-        setRecordingElapsedMs(0);
-        setIsSubmittingResponse(true);
-        setMicrophoneFeedback(getMicrophoneCompletedFeedback());
-
-        try {
-          if (!consultation || !currentQuestionKey) {
-            pushToast("当前题目缺少转写所需上下文，请刷新后重试。", "error");
-            return;
-          }
-
-          if (blob.size <= 0) {
-            pushToast("本轮录音内容为空，浏览器没有采集到有效音频，请重新录音。", "error");
-            return;
-          }
-
-          const ensuredMultimodalSessionId = await ensureMultimodalSession();
-          const resolvedMimeType = normalizeAudioMimeType(recorder.mimeType || blob.type || "audio/webm");
-          const consultationTurnId = consultation.current_turn_id || null;
-          if (!consultationTurnId) {
-            throw new Error("当前回答窗口缺少 turn_id，请刷新后重试。");
-          }
-          const uploadedAudioTurn = await uploadMultimodalAudioTurn(ensuredMultimodalSessionId, {
-            flow_run_id: consultation.session_id,
-            question_key: currentQuestionKey,
-            stage_id: consultation.current_stage_id || consultation.current_question_item?.stage_id || "unknown",
-            node_id: consultation.current_node_id || consultation.current_question_item?.node_id || "unknown",
-            duration_ms: completedAt.getTime() - responseStartedAt.getTime(),
-            response_started_at: responseStartedAt.toISOString(),
-            response_completed_at: completedAt.toISOString(),
-            mime_type: resolvedMimeType,
-            turn_id: consultationTurnId,
-            audio_file: blob,
-            filename: `${currentQuestionKey}.${resolveRecordingExtension(resolvedMimeType)}`,
-          });
-
-          const transcriptReadyAudioTurn =
-            (uploadedAudioTurn.transcript_text?.trim() || "").length > 0
-              ? uploadedAudioTurn
-              : await waitForTranscriptReadyAudioTurn(
-                  ensuredMultimodalSessionId,
-                  uploadedAudioTurn.audio_turn_id,
-                );
-          const finalizedTranscript = transcriptReadyAudioTurn.transcript_text?.trim() || "";
-          if (!finalizedTranscript) {
-            throw new Error("Dolphin 未返回有效转写文本，请重试。");
-          }
-          const resolvedTranscript = finalizedTranscript;
-          const resolvedTranscriptSource = "dolphin_final";
-          setSubtitleUserTranscript(resolvedTranscript);
-
-          await actions.submitConsultationTurn({
-            input_type: "speech",
-            turn_id: consultationTurnId,
-            raw_input: resolvedTranscript,
-            audio_uri: transcriptReadyAudioTurn.audio_uri,
-            transcript_text: resolvedTranscript,
-            transcript_source: resolvedTranscriptSource,
-            response_started_at: responseStartedAt.toISOString(),
-            response_completed_at: completedAt.toISOString(),
-          });
-          await submitCameraCaptures(consultationTurnId);
-          if (transcriptReadyAudioTurn.processing_status === "completed") {
-            await refreshLiveSnapshot();
-          } else {
-            void waitForCompletedAudioTurn(
-              ensuredMultimodalSessionId,
-              uploadedAudioTurn.audio_turn_id,
-            ).then(async (completedAudioTurn) => {
-              if (completedAudioTurn?.processing_status === "completed") {
-                await refreshLiveSnapshot();
-              }
-            }).catch(() => {});
-          }
-          pushToast("本轮语音回答已完成，Dolphin 最终转写已返回。多模态结果会继续补齐到看板。", "success");
-        } catch (caught) {
-          pushToast(
-            caught instanceof Error ? caught.message : "语音提交失败，请重新录音。",
-            "error",
-          );
-        } finally {
-          setIsSubmittingResponse(false);
-        }
-      };
-
-      recorder.start();
-    } catch (caught) {
-      const feedback = describeMediaAccessError("microphone", caught);
-      cleanupRecorderResources();
-      recordingStartedAtRef.current = null;
-      setIsRecording(false);
-      setRecordingElapsedMs(0);
-      setMicrophoneFeedback(feedback);
-      pushToast(feedback.detail, "error");
-    }
-  }
-
-  function stopBrowserRecording() {
-    const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state === "inactive") {
-      cleanupRecorderResources();
-      recordingStartedAtRef.current = null;
-      setIsRecording(false);
-      setRecordingElapsedMs(0);
-      return;
-    }
-
-    recorder.stop();
   }
 
   async function handleToggleRecord() {
@@ -932,7 +614,7 @@ export default function ConsultationPage() {
     }
 
     if (isRecording) {
-      stopBrowserRecording();
+      stopRecording();
       return;
     }
 
@@ -941,7 +623,7 @@ export default function ConsultationPage() {
       return;
     }
 
-    await startBrowserRecording();
+    await startRecording();
   }
 
   async function handleEnd() {
@@ -949,11 +631,56 @@ export default function ConsultationPage() {
       return;
     }
 
+    if (!canEnterAssessment) {
+      pushToast(
+        consultation.status === "paused_for_human_review"
+          ? "当前问诊正在等待人工复核，暂时不能进入量表评估。"
+          : "当前问诊尚未完成，暂时不能进入量表评估。",
+        "warning",
+      );
+      return;
+    }
+
     const createdAssessment = await actions.handleStartAssessment();
     if (!createdAssessment) {
-      pushToast("测试模式：量表会话未创建成功，先进入量表页面。", "warning");
+      pushToast("量表会话创建失败，请稍后重试。", "warning");
+      return;
     }
-    navigate(APP_PATHS.assessment, { state: { sessionId: consultation.session_id } });
+    navigate(APP_PATHS.assessment, { state: { sessionId: createdAssessment.session_id } });
+  }
+
+  function handleVideoTimeUpdate() {
+    const videoElement = videoRef.current;
+    if (
+      !videoElement ||
+      !currentQuestionKey ||
+      !canAutoCompleteSystemPrompt ||
+      isCompletingSystemQuestion ||
+      pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey
+    ) {
+      return;
+    }
+
+    const remainingSeconds = videoElement.duration - videoElement.currentTime;
+    if (!Number.isFinite(remainingSeconds) || remainingSeconds > 0.9) {
+      return;
+    }
+
+    pendingSystemAdvanceQuestionKeyRef.current = currentQuestionKey;
+    pendingSystemAdvancePromiseRef.current = actions
+      .prefetchConsultationSystemQuestionItem(currentQuestionKey)
+      .then((prefetchedConsultation) => {
+        if (pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey) {
+          pendingSystemAdvanceResultRef.current = prefetchedConsultation;
+        }
+        return prefetchedConsultation;
+      })
+      .catch((caught) => {
+        if (pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey) {
+          pendingSystemAdvanceResultRef.current = null;
+        }
+        throw caught;
+      });
   }
 
   if (!consultation) {
@@ -972,6 +699,28 @@ export default function ConsultationPage() {
             </button>
           </div>
         </div>
+      </ConsultationLayout>
+    );
+  }
+
+  if (consultation.status === "handoff_ready" || consultation.status === "paused_for_human_review") {
+    return (
+      <ConsultationLayout backgroundImage="/4K.png" title="智能评估">
+        <div className="absolute inset-x-0 top-0 z-50 pointer-events-none">
+          <div className="pointer-events-auto">
+            <ConsultationProgress currentStageOrder={STAGE_LABELS.length} steps={STAGE_LABELS} />
+          </div>
+        </div>
+        <FlowCompletionState
+          title={consultation.status === "paused_for_human_review" ? "问诊等待人工复核" : "问诊流程已完成"}
+          description={
+            consultation.status === "paused_for_human_review"
+              ? "当前问诊需要人工复核，请等待进一步处理。"
+              : "请点击下方按钮进入量表评估阶段。"
+          }
+          actionLabel={consultation.status === "handoff_ready" ? "进入量表评估" : undefined}
+          onAction={consultation.status === "handoff_ready" ? handleEnd : undefined}
+        />
       </ConsultationLayout>
     );
   }
@@ -1001,6 +750,7 @@ export default function ConsultationPage() {
                   className="h-[min(84vh,920px)] w-auto max-w-[82vw] object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
                   playsInline
                   preload="auto"
+                  onTimeUpdate={handleVideoTimeUpdate}
                   onEnded={handleVideoEnded}
                   onError={() => {
                     setVideoError("当前视频资源加载失败，请稍后重试。");
@@ -1055,8 +805,9 @@ export default function ConsultationPage() {
               onToggleRecord={handleToggleRecord}
               onEnd={handleEnd}
               recordDisabled={(!isRecording && consultation.status !== "waiting_user_input") || isSubmittingResponse || state.loading}
-              endDisabled={isRecording || isSubmittingResponse}
+              endDisabled={isRecording || isSubmittingResponse || !canEnterAssessment}
               recordLabel={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
+              endLabel={canEnterAssessment ? "进入量表评估" : "完成问诊后进入量表"}
             />
           </div>
 
@@ -1099,21 +850,23 @@ export default function ConsultationPage() {
               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-500/5 to-transparent pointer-events-none"></div>
               <div className="w-full h-full flex flex-col overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent relative z-10">
                 <div className="w-full h-full min-h-0">
-                  <ConsultationStatusPanel
-                    consultation={consultation}
-                    onRefresh={handleRefresh}
-                    refreshing={state.loading}
-                    isRecording={isRecording}
-                    liveTransport={isLiveStreamActive ? "SSE" : "HTTP"}
-                    cameraStream={cameraStream}
-                    cameraReady={cameraReady}
-                    cameraError={cameraError}
-                    cameraStatusTitle={cameraFeedback.title}
-                    cameraStatusTone={cameraFeedback.tone}
-                    microphoneStatusText={microphoneFeedback.title}
-                    transcriptPending={isRecording || isSubmittingResponse}
-                    className="h-full"
-                  />
+                  {isOpen ? (
+                    <ConsultationStatusPanel
+                      consultation={consultation}
+                      onRefresh={handleRefresh}
+                      refreshing={state.loading}
+                      isRecording={isRecording}
+                      liveTransport={isLiveStreamActive ? "SSE" : "HTTP"}
+                      cameraStream={cameraStream}
+                      cameraReady={cameraReady}
+                      cameraError={cameraError}
+                      cameraStatusTitle={cameraFeedback.title}
+                      cameraStatusTone={cameraFeedback.tone}
+                      microphoneStatusText={microphoneFeedback.title}
+                      transcriptPending={isRecording || isSubmittingResponse}
+                      className="h-full"
+                    />
+                  ) : null}
                 </div>
               </div>
             </div>

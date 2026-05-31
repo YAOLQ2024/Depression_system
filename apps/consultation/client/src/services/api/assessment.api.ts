@@ -1,7 +1,9 @@
-import { apiRequest } from "./client";
+import { apiRequest, buildApiUrl } from "./client";
 import type {
   AssessmentCatalogResponse,
   AssessmentSessionResponse,
+  ConsultationMultimodalLiveResponse,
+  ConsultationTurnMultimodalBundleResponse,
   CreateAssessmentSessionPayload,
   SubmitAssessmentAnswerPayload,
 } from "./contracts";
@@ -31,5 +33,27 @@ export async function submitAssessmentAnswer(sessionId: string, payload: SubmitA
     method: "POST",
     body: JSON.stringify(payload),
   });
-  return data.assessment_session;
+  return data;
+}
+
+export async function getAssessmentMultimodalLive(sessionId: string) {
+  return apiRequest<ConsultationMultimodalLiveResponse>(
+    `/assessment/sessions/${sessionId}/multimodal/live`,
+    {
+      method: "GET",
+    },
+  );
+}
+
+export function getAssessmentMultimodalLiveStreamUrl(sessionId: string) {
+  return buildApiUrl(`/assessment/sessions/${sessionId}/multimodal/live/stream`);
+}
+
+export async function getAssessmentTurnMultimodalBundle(sessionId: string, turnId: string) {
+  return apiRequest<ConsultationTurnMultimodalBundleResponse>(
+    `/assessment/sessions/${sessionId}/turns/${turnId}/multimodal/bundle`,
+    {
+      method: "GET",
+    },
+  );
 }
