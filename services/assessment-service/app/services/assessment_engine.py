@@ -20,6 +20,12 @@ from app.services.assessment_multimodal_bridge import (
     refresh_multimodal_live_snapshot,
     stream_assessment_multimodal_live as stream_assessment_multimodal_live_upstream,
 )
+from app.services.scale_scoring import (
+    ScaleScoringError,
+    build_normalized_score,
+    build_score_details,
+    compute_scale_scoring,
+)
 from app.services.scale_loader import ScaleDefinition, ScaleLoaderError, get_scale_loader
 
 
@@ -83,6 +89,10 @@ def _require_acting_user_id(acting_user_id: str | None) -> str:
 
 def _translate_loader_error(exc: ScaleLoaderError) -> AssessmentServiceError:
     return AssessmentServiceError(str(exc), code=5001, status_code=500)
+
+
+def _translate_scoring_error(exc: ScaleScoringError) -> AssessmentServiceError:
+    return AssessmentServiceError(str(exc), code=5002, status_code=500)
 
 
 def _normalize_scale_sequence(payload: CreateAssessmentSessionRequest) -> list[str]:
@@ -281,14 +291,33 @@ def _build_current_item(scale_definition: ScaleDefinition, item_index: int) -> d
     }
 
 
-def _serialize_result(result_record: AssessmentResult) -> dict[str, Any]:
+def _serialize_result(
+    scale_definition: ScaleDefinition,
+    answers: list[AssessmentAnswer],
+    result_record: AssessmentResult,
+) -> dict[str, Any]:
+    normalized_score = build_normalized_score(
+        scale_definition,
+        answers,
+        raw_score=result_record.raw_score,
+        derived_score=result_record.derived_score,
+    )
+    score_details = build_score_details(
+        scale_definition,
+        answers,
+        raw_score=result_record.raw_score,
+        derived_score=result_record.derived_score,
+        normalized_score=normalized_score,
+    )
     return {
         "scale_slug": result_record.scale_slug,
         "raw_score": result_record.raw_score,
         "derived_score": result_record.derived_score,
+        "normalized_score": normalized_score,
         "interpretation_level": result_record.interpretation_level,
         "interpretation_label": result_record.interpretation_label,
         "risk_flags": list(result_record.risk_flags or []),
+        "score_details": score_details,
         "completed_at": result_record.completed_at.isoformat(),
     }
 
@@ -329,16 +358,39 @@ def _serialize_accepted_answer(
 
 
 def _serialize_session(db_session: Session, session_record: AssessmentSession) -> dict[str, Any]:
+    scale_loader = get_scale_loader()
     results = db_session.scalars(
         select(AssessmentResult)
         .where(AssessmentResult.session_id == session_record.id)
         .order_by(AssessmentResult.completed_at.asc())
     ).all()
+    answers = db_session.scalars(
+        select(AssessmentAnswer)
+        .where(AssessmentAnswer.session_id == session_record.id)
+        .order_by(AssessmentAnswer.scale_slug.asc(), AssessmentAnswer.item_index.asc())
+    ).all()
+    answers_by_scale: dict[str, list[AssessmentAnswer]] = {}
+    for answer in answers:
+        answers_by_scale.setdefault(answer.scale_slug, []).append(answer)
 
     current_item = None
     if session_record.current_scale_slug and session_record.status != "completed":
         current_scale = _get_current_scale_or_raise(session_record)
         current_item = _build_current_item(current_scale, session_record.current_item_index)
+
+    try:
+        serialized_results = [
+            _serialize_result(
+                scale_loader.load_scale(result_record.scale_slug),
+                answers_by_scale.get(result_record.scale_slug, []),
+                result_record,
+            )
+            for result_record in results
+        ]
+    except ScaleLoaderError as exc:
+        raise _translate_loader_error(exc) from exc
+    except ScaleScoringError as exc:
+        raise _translate_scoring_error(exc) from exc
 
     return {
         "session_id": session_record.id,
@@ -357,7 +409,7 @@ def _serialize_session(db_session: Session, session_record: AssessmentSession) -
         "scale_handoff_payload": _ensure_json_dict(session_record.scale_handoff_payload),
         "capture_context": _ensure_json_dict(session_record.capture_context),
         "aggregate_payload": _ensure_json_dict(session_record.aggregate_payload),
-        "results": [_serialize_result(result_record) for result_record in results],
+        "results": serialized_results,
         "created_at": session_record.created_at.isoformat(),
         "updated_at": session_record.updated_at.isoformat(),
         "started_at": session_record.started_at.isoformat() if session_record.started_at else None,
@@ -538,66 +590,6 @@ def _normalize_option(
     )
 
 
-def _resolve_interpretation(scale_definition: ScaleDefinition, derived_score: int) -> tuple[str | None, str | None]:
-    for rule in scale_definition.scoring.get("severity_rules") or []:
-        minimum = int(rule["min"])
-        maximum = int(rule["max"])
-        if minimum <= derived_score <= maximum:
-            return str(rule.get("level")), str(rule.get("label"))
-    return None, None
-
-
-def _score_scale(scale_definition: ScaleDefinition, answers: list[AssessmentAnswer]) -> tuple[int, int]:
-    score_method = scale_definition.scoring.get("method")
-    raw_score = sum(answer.score_value for answer in answers)
-
-    if score_method == "sum":
-        return raw_score, raw_score
-
-    if score_method == "standard_score":
-        reverse_items = set(scale_definition.scoring.get("reverse_scored_items") or [])
-        normalized_scores: list[int] = []
-        option_scores = [option.score for option in scale_definition.answer_options]
-        minimum_score = min(option_scores)
-        maximum_score = max(option_scores)
-        for answer in answers:
-            if answer.item_id in reverse_items:
-                normalized_scores.append(maximum_score + minimum_score - answer.score_value)
-            else:
-                normalized_scores.append(answer.score_value)
-        raw_score = sum(normalized_scores)
-        return raw_score, int(raw_score * 1.25)
-
-    if score_method == "sum_excluding_not_applicable":
-        na_value = int(scale_definition.scoring.get("na_value", 9))
-        filtered_scores = [answer.score_value for answer in answers if answer.score_value != na_value]
-        raw_score = sum(filtered_scores)
-        return raw_score, raw_score
-
-    raise AssessmentServiceError(f"unsupported scoring method: {score_method}", code=5002, status_code=500)
-
-
-def _build_risk_flags(scale_definition: ScaleDefinition, answers: list[AssessmentAnswer]) -> list[dict[str, Any]]:
-    answers_by_item = {answer.item_id: answer for answer in answers}
-    flags: list[dict[str, Any]] = []
-    for flag_definition in scale_definition.risk_flags:
-        item_id = str(flag_definition.get("item_id") or "")
-        answer = answers_by_item.get(item_id)
-        if not answer:
-            continue
-        minimum_score = int(flag_definition.get("min_score", 0))
-        if answer.score_value >= minimum_score:
-            flags.append(
-                {
-                    "flag": flag_definition.get("flag"),
-                    "label": flag_definition.get("label"),
-                    "item_id": answer.item_id,
-                    "score_value": answer.score_value,
-                }
-            )
-    return flags
-
-
 def _store_scale_result(db_session: Session, session_record: AssessmentSession, scale_definition: ScaleDefinition) -> AssessmentResult:
     answers = db_session.scalars(
         select(AssessmentAnswer)
@@ -611,9 +603,10 @@ def _store_scale_result(db_session: Session, session_record: AssessmentSession, 
         raise AssessmentServiceError("scale answers are incomplete", code=4009)
 
     resolved_answers = list(answers)
-    raw_score, derived_score = _score_scale(scale_definition, resolved_answers)
-    interpretation_level, interpretation_label = _resolve_interpretation(scale_definition, derived_score)
-    risk_flags = _build_risk_flags(scale_definition, resolved_answers)
+    try:
+        scoring = compute_scale_scoring(scale_definition, resolved_answers)
+    except ScaleScoringError as exc:
+        raise _translate_scoring_error(exc) from exc
     now = _now()
 
     existing_result = db_session.scalar(
@@ -624,11 +617,11 @@ def _store_scale_result(db_session: Session, session_record: AssessmentSession, 
     )
     if existing_result:
         result_record = existing_result
-        result_record.raw_score = raw_score
-        result_record.derived_score = derived_score
-        result_record.interpretation_level = interpretation_level
-        result_record.interpretation_label = interpretation_label
-        result_record.risk_flags = risk_flags
+        result_record.raw_score = scoring.raw_score
+        result_record.derived_score = scoring.derived_score
+        result_record.interpretation_level = scoring.interpretation_level
+        result_record.interpretation_label = scoring.interpretation_label
+        result_record.risk_flags = scoring.risk_flags
         result_record.completed_at = now
         result_record.updated_at = now
         return result_record
@@ -637,11 +630,11 @@ def _store_scale_result(db_session: Session, session_record: AssessmentSession, 
         id=str(uuid.uuid4()),
         session_id=session_record.id,
         scale_slug=scale_definition.slug,
-        raw_score=raw_score,
-        derived_score=derived_score,
-        interpretation_level=interpretation_level,
-        interpretation_label=interpretation_label,
-        risk_flags=risk_flags,
+        raw_score=scoring.raw_score,
+        derived_score=scoring.derived_score,
+        interpretation_level=scoring.interpretation_level,
+        interpretation_label=scoring.interpretation_label,
+        risk_flags=scoring.risk_flags,
         completed_at=now,
         created_at=now,
         updated_at=now,
@@ -651,11 +644,49 @@ def _store_scale_result(db_session: Session, session_record: AssessmentSession, 
 
 
 def _build_aggregate_payload(db_session: Session, session_record: AssessmentSession) -> dict[str, Any]:
+    scale_loader = get_scale_loader()
     results = db_session.scalars(
         select(AssessmentResult)
         .where(AssessmentResult.session_id == session_record.id)
         .order_by(AssessmentResult.completed_at.asc())
     ).all()
+    answers = db_session.scalars(
+        select(AssessmentAnswer)
+        .where(AssessmentAnswer.session_id == session_record.id)
+        .order_by(AssessmentAnswer.scale_slug.asc(), AssessmentAnswer.item_index.asc())
+    ).all()
+    answers_by_scale: dict[str, list[AssessmentAnswer]] = {}
+    for answer in answers:
+        answers_by_scale.setdefault(answer.scale_slug, []).append(answer)
+    try:
+        serialized_results = [
+            _serialize_result(
+                scale_loader.load_scale(result_record.scale_slug),
+                answers_by_scale.get(result_record.scale_slug, []),
+                result_record,
+            )
+            for result_record in results
+        ]
+    except ScaleLoaderError as exc:
+        raise _translate_loader_error(exc) from exc
+    except ScaleScoringError as exc:
+        raise _translate_scoring_error(exc) from exc
+    scale_result_map = {
+        result_payload["scale_slug"]: result_payload for result_payload in serialized_results
+    }
+    normalized_scores = {
+        result_payload["scale_slug"]: result_payload.get("normalized_score")
+        for result_payload in serialized_results
+    }
+    flattened_risk_flags: list[dict[str, Any]] = []
+    for result_payload in serialized_results:
+        for flag_payload in result_payload.get("risk_flags") or []:
+            flattened_risk_flags.append(
+                {
+                    "scale_slug": result_payload["scale_slug"],
+                    **dict(flag_payload),
+                }
+            )
     return {
         "assessment_session_id": session_record.id,
         "encounter_session_id": session_record.encounter_session_id,
@@ -663,7 +694,10 @@ def _build_aggregate_payload(db_session: Session, session_record: AssessmentSess
             session_record.source_consultation_flow_run_id
         ),
         "scale_count": len(results),
-        "scale_results": [_serialize_result(result_record) for result_record in results],
+        "scale_results": serialized_results,
+        "scale_result_map": scale_result_map,
+        "normalized_scores": normalized_scores,
+        "flattened_risk_flags": flattened_risk_flags,
         "source_handoff": _ensure_json_dict(session_record.scale_handoff_payload),
     }
 

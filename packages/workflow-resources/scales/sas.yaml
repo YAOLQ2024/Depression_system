@@ -44,7 +44,14 @@ scoring:
   method: standard_score
   raw_score_formula: sum(item_scores)
   standard_score_formula: int(raw_score * 1.25)
+  raw_score_range: [20, 80]
+  derived_score_range: [25, 100]
   verification_status: needs_reverse_item_review
+  normalized_output:
+    method: linear
+    source_score: derived_score
+    minimum: 25
+    maximum: 100
   severity_rules:
     - min: 0
       max: 49

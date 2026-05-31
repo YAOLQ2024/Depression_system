@@ -57,9 +57,11 @@
 - `scale_slug`
 - `raw_score`
 - `derived_score`
+- `normalized_score`
 - `interpretation_level`
 - `interpretation_label`
 - `risk_flags`
+- `score_details`
 - `completed_at`
 
 ## 4. 配置资源

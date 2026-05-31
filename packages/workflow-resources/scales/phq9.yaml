@@ -50,6 +50,11 @@ items:
 scoring:
   method: sum
   score_range: [0, 27]
+  normalized_output:
+    method: linear
+    source_score: derived_score
+    minimum: 0
+    maximum: 27
   severity_rules:
     - min: 0
       max: 4
