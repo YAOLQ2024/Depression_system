@@ -48,11 +48,20 @@ def _ensure_multimodal_session_binding(
 ) -> str:
     if session_record.multimodal_session_id:
         return session_record.multimodal_session_id
+    encounter_session_id = str(session_record.encounter_session_id or "").strip()
+    if not encounter_session_id:
+        raise ConsultationServiceError(
+            "consultation encounter_session_id is required before binding multimodal session",
+            code=4095,
+            status_code=409,
+        )
 
     multimodal_data = _extract_upstream_data(
         create_upstream_multimodal_session(
             user_id=acting_user_id,
-            encounter_session_id=session_record.encounter_session_id,
+            encounter_session_id=encounter_session_id,
+            scope_type="encounter",
+            scope_id=encounter_session_id,
             flow_type="consultation",
             flow_run_id=session_record.id,
         ),

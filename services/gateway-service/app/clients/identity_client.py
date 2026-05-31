@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from urllib import error, request
 
+from fastapi.encoders import jsonable_encoder
+
 from app.config import get_settings
 
 
@@ -19,7 +21,10 @@ def _forward_json_request_to_base_url(
     data = None
     headers = {"Accept": "application/json"}
     if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        data = json.dumps(
+            jsonable_encoder(payload),
+            ensure_ascii=False,
+        ).encode("utf-8")
         headers["Content-Type"] = "application/json; charset=utf-8"
     if session_token:
         headers["Authorization"] = f"Bearer {session_token}"

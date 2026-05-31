@@ -23,6 +23,11 @@ class MultimodalAudioTurn(Base):
         nullable=False,
         index=True,
     )
+    origin_flow_type: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
     turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     stage_id: Mapped[str] = mapped_column(String(128), nullable=False)
     node_id: Mapped[str] = mapped_column(String(128), nullable=False)

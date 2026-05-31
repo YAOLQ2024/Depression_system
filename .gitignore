@@ -30,3 +30,6 @@ docs/superpowers/
 refer/
 
 tmp/
+
+**/test/
+**/tests/

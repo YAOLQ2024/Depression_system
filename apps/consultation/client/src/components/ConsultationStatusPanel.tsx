@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Activity, AudioLines, BrainCircuit, RefreshCw, ScanFace, Sparkles } from "lucide-react";
+import { Activity, AlertTriangle, AudioLines, BrainCircuit, RefreshCw, ScanFace, Sparkles } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, YAxis } from "recharts";
 
 import type { MediaDeviceStatusTone } from "../lib/mediaDeviceFeedback";
@@ -337,6 +337,7 @@ export function ConsultationStatusPanel({
   const snapshot = resolveLiveData(consultation);
   const currentTurnFaceBundle = readBundleFaceSummary(consultation.current_turn_bundle);
   const currentTurnPoseBundle = readBundlePoseSummary(consultation.current_turn_bundle);
+  const visualPipeline = consultation.visual_pipeline || null;
   const stageOrder = consultation.current_stage?.stage_order ?? consultation.current_question_item?.stage_order ?? 1;
   const eegSeries = buildEegSeries(stageOrder);
   const faceLabels =
@@ -365,6 +366,18 @@ export function ConsultationStatusPanel({
           </button>
         </div>
       </div>
+
+      {visualPipeline?.degraded ? (
+        <div className="mx-4 mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100 shadow-[0_8px_24px_rgba(245,158,11,0.12)]">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4 text-amber-300" />
+            视觉热路径已降级
+          </div>
+          <p className="mt-1 text-amber-50/90">
+            当前帧已切换为数据库直写，实时关键帧聚合可能延迟。
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex-1 flex flex-col gap-[3px] p-[3px]">
         <SectionCard title="表情检测" rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}>

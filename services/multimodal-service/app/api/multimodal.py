@@ -69,6 +69,16 @@ def _translate_error(
     )
 
 
+def _require_acting_user_id(x_mcs_user_id: str | None) -> str:
+    acting_user_id = str(x_mcs_user_id or "").strip()
+    if acting_user_id:
+        return acting_user_id
+    raise HTTPException(
+        status_code=401,
+        detail=error_response(message="missing acting user id", code=4013),
+    )
+
+
 def _parse_optional_int(value: Any, *, field_name: str) -> int | None:
     if value in (None, "", "null"):
         return None
@@ -105,8 +115,9 @@ def post_multimodal_session(
     payload: CreateMultimodalSessionRequest,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
-        session_payload = create_or_get_multimodal_session(payload, x_mcs_user_id)
+        session_payload = create_or_get_multimodal_session(payload, acting_user_id)
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response(
@@ -117,8 +128,9 @@ def post_multimodal_session(
 
 @router.get("/sessions/{session_id}")
 def get_session(session_id: str, x_mcs_user_id: str | None = Header(default=None)):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
-        session_payload = get_multimodal_session(session_id, acting_user_id=x_mcs_user_id)
+        session_payload = get_multimodal_session(session_id, acting_user_id=acting_user_id)
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response({"multimodal_session": session_payload})
@@ -130,11 +142,12 @@ def post_warmup(
     payload: WarmupMultimodalSessionRequest,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
         session_payload = warmup_multimodal_session(
             session_id,
             payload,
-            acting_user_id=x_mcs_user_id,
+            acting_user_id=acting_user_id,
         )
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
@@ -150,6 +163,7 @@ async def post_audio_turn(
     request: Request,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
         content_type = (request.headers.get("content-type") or "").lower()
         if "multipart/form-data" in content_type:
@@ -163,6 +177,7 @@ async def post_audio_turn(
             audio_turn = await create_audio_turn(
                 multimodal_session_id=session_id,
                 flow_run_id=str(form.get("flow_run_id") or ""),
+                origin_flow_type=str(form.get("origin_flow_type") or "") or None,
                 question_key=str(form.get("question_key") or ""),
                 stage_id=str(form.get("stage_id") or ""),
                 node_id=str(form.get("node_id") or ""),
@@ -178,6 +193,7 @@ async def post_audio_turn(
                 mime_type=str(form.get("mime_type") or ""),
                 turn_id=str(form.get("turn_id") or "") or None,
                 audio_file=audio_file,
+                acting_user_id=acting_user_id,
             )
             return success_response(
                 {"audio_turn": audio_turn},
@@ -188,7 +204,7 @@ async def post_audio_turn(
         result = submit_audio_turn(
             session_id,
             payload,
-            acting_user_id=x_mcs_user_id,
+            acting_user_id=acting_user_id,
         )
         return success_response(result, message="audio turn accepted")
     except (SessionServiceError, StoreServiceError) as exc:
@@ -196,9 +212,18 @@ async def post_audio_turn(
 
 
 @router.get("/sessions/{session_id}/audio-turns/{audio_turn_id}")
-def get_audio_turn_status(session_id: str, audio_turn_id: str):
+def get_audio_turn_status(
+    session_id: str,
+    audio_turn_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
-        audio_turn = get_audio_turn(session_id, audio_turn_id)
+        audio_turn = get_audio_turn(
+            session_id,
+            audio_turn_id,
+            acting_user_id=acting_user_id,
+        )
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response(
@@ -211,6 +236,7 @@ def get_audio_turn_status(session_id: str, audio_turn_id: str):
 async def post_visual_capture(
     session_id: str,
     flow_run_id: str = Form(...),
+    origin_flow_type: str | None = Form(default=None),
     question_key: str = Form(...),
     stage_id: str | None = Form(default=None),
     turn_id: str | None = Form(default=None),
@@ -221,9 +247,11 @@ async def post_visual_capture(
     image_file: UploadFile = File(...),
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     image_bytes = await _read_upload_bytes(image_file)
     payload = SubmitFrameCaptureRequest(
         flow_run_id=flow_run_id,
+        origin_flow_type=origin_flow_type,
         question_key=question_key,
         stage_id=stage_id,
         turn_id=turn_id,
@@ -236,7 +264,7 @@ async def post_visual_capture(
         frame_id=f"visual-{sample_index}",
     )
     try:
-        result = submit_visual_capture(session_id, payload, acting_user_id=x_mcs_user_id)
+        result = submit_visual_capture(session_id, payload, acting_user_id=acting_user_id)
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response(result, message="visual capture accepted")
@@ -244,8 +272,9 @@ async def post_visual_capture(
 
 @router.get("/sessions/{session_id}/live")
 def get_live(session_id: str, x_mcs_user_id: str | None = Header(default=None)):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
-        result = get_multimodal_live(session_id, acting_user_id=x_mcs_user_id)
+        result = get_multimodal_live(session_id, acting_user_id=acting_user_id)
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
     return success_response(result)
@@ -257,10 +286,11 @@ async def get_live_stream(
     request: Request,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
         initial_snapshot = get_multimodal_live(
             session_id,
-            acting_user_id=x_mcs_user_id,
+            acting_user_id=acting_user_id,
         )
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
@@ -271,7 +301,7 @@ async def get_live_stream(
             initial_snapshot=initial_snapshot,
             snapshot_loader=lambda: get_multimodal_live(
                 session_id,
-                acting_user_id=x_mcs_user_id,
+                acting_user_id=acting_user_id,
             ),
             disconnect_checker=request.is_disconnected,
         ):
@@ -294,11 +324,12 @@ def get_turn_bundle(
     turn_id: str,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
         result = get_multimodal_turn_bundle(
             session_id,
             turn_id,
-            acting_user_id=x_mcs_user_id,
+            acting_user_id=acting_user_id,
         )
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
@@ -311,11 +342,12 @@ def post_finalize_turn(
     turn_id: str,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
         result = finalize_multimodal_turn(
             session_id,
             turn_id,
-            acting_user_id=x_mcs_user_id,
+            acting_user_id=acting_user_id,
         )
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
@@ -328,11 +360,12 @@ def post_recover_turn_hot_state(
     turn_id: str,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
         result = recover_multimodal_turn_hot_state(
             session_id,
             turn_id,
-            acting_user_id=x_mcs_user_id,
+            acting_user_id=acting_user_id,
         )
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc
@@ -345,11 +378,12 @@ def post_clear_pose_turn_runtime(
     turn_id: str,
     x_mcs_user_id: str | None = Header(default=None),
 ):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
     try:
         result = clear_pose_turn_runtime_state(
             session_id,
             turn_id,
-            acting_user_id=x_mcs_user_id,
+            acting_user_id=acting_user_id,
         )
     except (SessionServiceError, StoreServiceError) as exc:
         raise _translate_error(exc) from exc

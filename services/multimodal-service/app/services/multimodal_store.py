@@ -30,6 +30,12 @@ from app.services.audio_processing import (
     resolve_mime_type,
     write_source_audio_file,
 )
+from app.services.multimodal_session_registry import (
+    create_or_reuse_session_record,
+)
+from app.services.multimodal_session_scope import (
+    session_allows_flow_run,
+)
 from app.services.object_storage import ensure_multimodal_bucket, upload_audio_object
 
 
@@ -53,6 +59,25 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _ensure_store_session_access(
+    session_record: MultimodalSession,
+    acting_user_id: str | None,
+) -> None:
+    if not acting_user_id:
+        raise MultimodalServiceError(
+            "missing acting user id",
+            code=4013,
+            status_code=401,
+        )
+    session_user_id = str(getattr(session_record, "user_id", None) or "").strip()
+    if session_user_id and session_user_id != str(acting_user_id).strip():
+        raise MultimodalServiceError(
+            "multimodal session access denied",
+            code=4031,
+            status_code=403,
+        )
+
+
 def _serialize_stage_context(stage_context: dict | None) -> dict:
     return stage_context or {}
 
@@ -69,6 +94,8 @@ def _serialize_session(record: MultimodalSession) -> dict:
         "id": record.id,
         "session_id": record.id,
         "encounter_session_id": record.encounter_session_id,
+        "scope_type": record.scope_type,
+        "scope_id": record.scope_id,
         "flow_type": record.flow_type,
         "flow_run_id": record.flow_run_id,
         "user_id": record.user_id,
@@ -94,6 +121,7 @@ def _serialize_audio_turn(record: MultimodalAudioTurn) -> dict:
         "audio_turn_id": record.id,
         "session_id": record.multimodal_session_id,
         "flow_run_id": record.flow_run_id,
+        "origin_flow_type": record.origin_flow_type,
         "question_key": record.question_key,
         "processing_status": record.processing_status,
         "audio_uri": record.audio_uri,
@@ -322,7 +350,9 @@ def _remove_active_future(audio_turn_id: str) -> None:
 def _run_transcription_job(
     audio_turn_id: str,
     multimodal_session_id: str,
+    acting_user_id: str | None,
     flow_run_id: str,
+    origin_flow_type: str | None,
     turn_id: str,
     stage_id: str,
     question_key: str,
@@ -374,6 +404,7 @@ def _run_transcription_job(
             payload=SubmitAudioTurnRequest(
                 turn_id=turn_id,
                 flow_run_id=flow_run_id,
+                origin_flow_type=origin_flow_type,
                 question_key=question_key,
                 stage_id=stage_id,
                 original_audio_uri=original_audio_uri,
@@ -385,6 +416,7 @@ def _run_transcription_job(
                 frame_id=audio_turn_id,
             ),
             audio_emotion_wav_path=wav_path,
+            acting_user_id=acting_user_id,
         )
         _complete_audio_turn(
             audio_turn_id=audio_turn_id,
@@ -411,7 +443,9 @@ def _run_transcription_job(
 def _submit_transcription_job(
     audio_turn_id: str,
     multimodal_session_id: str,
+    acting_user_id: str | None,
     flow_run_id: str,
+    origin_flow_type: str | None,
     turn_id: str,
     stage_id: str,
     question_key: str,
@@ -426,7 +460,9 @@ def _submit_transcription_job(
         _run_transcription_job,
         audio_turn_id,
         multimodal_session_id,
+        acting_user_id,
         flow_run_id,
+        origin_flow_type,
         turn_id,
         stage_id,
         question_key,
@@ -446,6 +482,12 @@ def create_or_get_multimodal_session(
     payload: CreateMultimodalSessionRequest,
     acting_user_id: str | None,
 ) -> dict:
+    if acting_user_id and payload.user_id and payload.user_id != acting_user_id:
+        raise MultimodalServiceError(
+            "multimodal session user mismatch",
+            code=4032,
+            status_code=403,
+        )
     effective_user_id = acting_user_id or payload.user_id
     stage_context = (
         payload.stage_context.model_dump() if payload.stage_context else {}
@@ -453,55 +495,26 @@ def create_or_get_multimodal_session(
     enabled_modalities = _default_modalities(payload.enabled_modalities)
 
     with get_db_session() as db_session:
-        existing = db_session.execute(
-            select(MultimodalSession).where(
-                MultimodalSession.flow_type == payload.flow_type,
-                MultimodalSession.flow_run_id == payload.flow_run_id,
-            )
-        ).scalar_one_or_none()
-        if existing:
-            now = _now()
-            existing.user_id = effective_user_id or existing.user_id
-            existing.encounter_session_id = (
-                payload.encounter_session_id or existing.encounter_session_id
-            )
-            existing.flow_type = payload.flow_type or existing.flow_type
-            existing.flow_run_id = payload.flow_run_id or existing.flow_run_id
-            existing.stage_context = stage_context or existing.stage_context or {}
-            existing.enabled_modalities = enabled_modalities
-            existing.live_state_payload = existing.live_state_payload or {}
-            existing.notes = payload.notes if payload.notes is not None else existing.notes
-            existing.status = "ready"
-            existing.started_at = existing.started_at or existing.created_at or now
-            existing.created_at = existing.created_at or existing.started_at or now
-            existing.updated_at = now
-            db_session.flush()
-            db_session.refresh(existing)
-            return _serialize_session(existing)
-
-        now = _now()
-        record = MultimodalSession(
-            id=str(uuid.uuid4()),
-            encounter_session_id=payload.encounter_session_id,
-            flow_type=payload.flow_type,
-            flow_run_id=payload.flow_run_id,
-            user_id=effective_user_id,
+        record = create_or_reuse_session_record(
+            db_session,
+            payload=payload,
+            effective_user_id=effective_user_id,
             stage_context=stage_context,
-            status="ready",
             enabled_modalities=enabled_modalities,
-            live_state_payload={},
-            notes=payload.notes,
-            started_at=now,
-            created_at=now,
-            updated_at=now,
+            now_factory=_now,
+            create_status="ready",
+            status_on_update="ready",
+            fallback_flow_run_id_factory=lambda _session_id: str(uuid.uuid4()),
         )
-        db_session.add(record)
-        db_session.flush()
-        db_session.refresh(record)
         return _serialize_session(record)
 
 
-def get_audio_turn(multimodal_session_id: str, audio_turn_id: str) -> dict:
+def get_audio_turn(
+    multimodal_session_id: str,
+    audio_turn_id: str,
+    *,
+    acting_user_id: str | None,
+) -> dict:
     with get_db_session() as db_session:
         record = db_session.get(MultimodalAudioTurn, audio_turn_id)
         if not record or record.multimodal_session_id != multimodal_session_id:
@@ -510,12 +523,21 @@ def get_audio_turn(multimodal_session_id: str, audio_turn_id: str) -> dict:
                 code=4042,
                 status_code=404,
             )
+        session_record = db_session.get(MultimodalSession, multimodal_session_id)
+        if session_record is None:
+            raise MultimodalServiceError(
+                "multimodal session not found",
+                code=4041,
+                status_code=404,
+            )
+        _ensure_store_session_access(session_record, acting_user_id)
         return _serialize_audio_turn(record)
 
 
 async def create_audio_turn(
     multimodal_session_id: str,
     flow_run_id: str,
+    origin_flow_type: str | None,
     question_key: str,
     stage_id: str,
     node_id: str,
@@ -525,6 +547,7 @@ async def create_audio_turn(
     mime_type: str,
     turn_id: str | None,
     audio_file: UploadFile,
+    acting_user_id: str | None,
 ) -> dict:
     _validate_audio_turn_fields(
         flow_run_id=flow_run_id,
@@ -551,12 +574,19 @@ async def create_audio_turn(
                 code=4041,
                 status_code=404,
             )
-        if session_record.flow_run_id != flow_run_id:
+        _ensure_store_session_access(session_record, acting_user_id)
+        if not session_allows_flow_run(session_record, flow_run_id):
             raise MultimodalServiceError(
                 "flow run mismatch",
                 code=4091,
                 status_code=409,
             )
+        resolved_origin_flow_type = (
+            str(origin_flow_type or "").strip()
+            or str(getattr(session_record, "flow_type", None) or "").strip()
+            or "consultation"
+        )
+        effective_acting_user_id = str(acting_user_id or session_record.user_id or "").strip() or None
 
     file_bytes = await audio_file.read()
     if not file_bytes:
@@ -616,6 +646,7 @@ async def create_audio_turn(
                 id=audio_turn_id,
                 multimodal_session_id=multimodal_session_id,
                 flow_run_id=flow_run_id,
+                origin_flow_type=resolved_origin_flow_type,
                 turn_id=effective_turn_id,
                 stage_id=stage_id,
                 node_id=node_id,
@@ -644,7 +675,9 @@ async def create_audio_turn(
         future = _submit_transcription_job(
             audio_turn_id,
             multimodal_session_id,
+            effective_acting_user_id,
             flow_run_id,
+            resolved_origin_flow_type,
             effective_turn_id,
             stage_id,
             question_key,
@@ -661,7 +694,11 @@ async def create_audio_turn(
             loop = asyncio.get_running_loop()
             deadline = loop.time() + timeout_seconds
             while True:
-                current_turn = get_audio_turn(multimodal_session_id, audio_turn_id)
+                current_turn = get_audio_turn(
+                    multimodal_session_id,
+                    audio_turn_id,
+                    acting_user_id=acting_user_id,
+                )
                 if current_turn["processing_status"] in {
                     "transcript_ready",
                     "analyzing",

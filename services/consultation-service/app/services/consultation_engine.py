@@ -223,6 +223,8 @@ def create_consultation_session(
         create_upstream_multimodal_session(
             user_id=payload.user_id,
             encounter_session_id=encounter_session_id,
+            scope_type="encounter",
+            scope_id=encounter_session_id,
             flow_type="consultation",
             flow_run_id=consultation_session_id,
         ),

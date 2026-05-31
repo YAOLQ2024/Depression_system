@@ -4,6 +4,20 @@ declare global {
   }
 }
 
+export class ApiRequestError extends Error {
+  status: number;
+  code?: number | null;
+  detail?: unknown;
+
+  constructor(message: string, options: { status: number; code?: number | null; detail?: unknown }) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = options.status;
+    this.code = options.code;
+    this.detail = options.detail;
+  }
+}
+
 export type SessionPersistenceMode = "local" | "session";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
@@ -154,7 +168,11 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
       payload.message ||
       validationMessage ||
       `Request failed (${response.status})`;
-    throw new Error(message);
+    throw new ApiRequestError(message, {
+      status: response.status,
+      code: payload.code,
+      detail,
+    });
   }
 
   return (payload.data || {}) as T;

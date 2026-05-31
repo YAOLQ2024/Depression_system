@@ -24,7 +24,7 @@ export function DraggableMessagePanel({ lines, title = "AI 数字人医生" }: D
       dragListener={false}
       dragMomentum={false}
       style={{ x: 0, y: 0 }}
-      className="w-[240px] sm:w-[280px] min-w-[200px] min-h-[120px] max-w-[80vw] max-h-[80vh] resize bg-slate-900/10 backdrop-blur-md border border-indigo-400/60 rounded-3xl p-[clamp(16px,4cqw,20px)] shadow-[0_0_30px_rgba(99,102,241,0.6),inset_0_0_15px_rgba(165,180,252,0.4)] flex flex-col pointer-events-auto relative overflow-hidden ring-1 ring-indigo-400/30 text-left touch-none"
+      className="w-[240px] sm:w-[280px] min-w-[200px] h-[288px] min-h-[188px] max-w-[80vw] max-h-[80vh] resize bg-slate-900/10 backdrop-blur-md border border-indigo-400/60 rounded-3xl p-[clamp(16px,4cqw,20px)] shadow-[0_0_30px_rgba(99,102,241,0.6),inset_0_0_15px_rgba(165,180,252,0.4)] flex flex-col pointer-events-auto relative overflow-hidden ring-1 ring-indigo-400/30 text-left touch-none"
     >
       <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-400/10 to-transparent pointer-events-none"></div>
       

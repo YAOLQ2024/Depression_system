@@ -43,10 +43,16 @@
 - `stage_order`
 - `question_items`
 
+可选字段：
+
+- `stage_intro_text`
+- `stage_intro_video_uri`
+
 约束：
 
 - `stage_order` 在一个 workflow 内必须唯一
 - `stages` 的逻辑顺序以 `stage_order` 为准
+- `stage_intro_*` 用于在进入某个量表阶段时先播报一段引导视频，不占用实际题目序号
 
 ## question_items 字段
 

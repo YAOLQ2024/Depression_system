@@ -6,6 +6,7 @@ import type {
   ConsultationSession,
   ConsultationTurnMultimodalBundle,
   UserRecord,
+  VisualPipelineStatus,
 } from "../../types";
 
 export type AuthLoginRequest = {
@@ -110,6 +111,7 @@ export type ConsultationVisualCaptureResponse = {
   face_result?: ConsultationFrameCaptureResponse | null;
   pose_result?: ConsultationFrameCaptureResponse | null;
   turn_bundle?: ConsultationTurnMultimodalBundle | null;
+  visual_pipeline?: VisualPipelineStatus | null;
   multimodal_session?: Record<string, unknown> | null;
 };
 
@@ -119,18 +121,61 @@ export type ConsultationTurnMultimodalBundleResponse = ConsultationTurnMultimoda
 
 export type AssessmentSessionResponse = {
   assessment_session: AssessmentSession;
+  accepted_answer?: AssessmentAcceptedAnswer | null;
+};
+
+export type AssessmentAcceptedAnswer = {
+  answer_id: string;
+  session_id: string;
+  scale_slug: string;
+  item_id: string;
+  item_index: number;
+  question_key?: string | null;
+  turn_id?: string | null;
+  answer_source?: string | null;
+  selected_option_label?: string | null;
+  selected_option_score?: number | null;
+  transcript_text?: string | null;
+  transcript_source?: string | null;
+  audio_uri?: string | null;
+  original_audio_uri?: string | null;
+  normalized_wav_uri?: string | null;
+  response_started_at?: string | null;
+  response_completed_at?: string | null;
+  capture_timestamp?: string | null;
+  normalization_source?: string | null;
+  created_at?: string | null;
 };
 
 export type CreateAssessmentSessionPayload = {
   encounter_session_id?: string | null;
   source_consultation_flow_run_id?: string | null;
+  multimodal_session_id?: string | null;
   scale_handoff_payload?: Record<string, unknown>;
 };
 
 export type SubmitAssessmentAnswerPayload = {
   item_id?: string | null;
-  selected_option_score: number;
+  selected_option_score?: number | null;
+  selected_option_label?: string | null;
+  question_key?: string | null;
+  turn_id?: string | null;
+  answer_source?: string | null;
   raw_input?: string | null;
+  transcript_text?: string | null;
+  transcript_source?:
+    | "dolphin_final"
+    | "manual_input"
+    | "click_selection"
+    | "recognition_failure"
+    | null;
+  audio_uri?: string | null;
+  original_audio_uri?: string | null;
+  normalized_wav_uri?: string | null;
+  multimodal_session_id?: string | null;
+  response_started_at?: string | null;
+  response_completed_at?: string | null;
+  capture_timestamp?: string | null;
 };
 
 export type BootstrapResponse = BootstrapPayload;

@@ -183,6 +183,8 @@ def create_multimodal_session(
     encounter_session_id: str | None = None,
     flow_type: str,
     flow_run_id: str,
+    scope_type: str | None = None,
+    scope_id: str | None = None,
 ) -> dict:
     return _forward_multimodal_request(
         "POST",
@@ -190,6 +192,8 @@ def create_multimodal_session(
         {
             "user_id": user_id,
             "encounter_session_id": encounter_session_id,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
             "flow_type": flow_type,
             "flow_run_id": flow_run_id,
             "enabled_modalities": ["text", "audio", "face", "pose"],

@@ -38,7 +38,6 @@ export function ConsultationProgress({
               </div>
               <span className="text-[10px] sm:text-xs md:text-sm tracking-wide font-bold drop-shadow-sm whitespace-nowrap">{step}</span>
             </div>
-            {/* Dashed line connector */}
             {idx < steps.length - 1 && (
               <div className="flex-1 border-t-[1.5px] md:border-t-[2px] border-dashed border-slate-300/80 mx-1 sm:mx-2 md:mx-4"></div>
             )}

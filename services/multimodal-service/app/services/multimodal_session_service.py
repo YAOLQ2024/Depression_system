@@ -48,6 +48,12 @@ from app.services.audio_processing import (
     write_source_audio_file,
 )
 from app.services.multimodal_live_stream import publish_multimodal_live_snapshot
+from app.services.multimodal_session_registry import (
+    create_or_reuse_session_record,
+)
+from app.services.multimodal_session_scope import (
+    session_allows_flow_run,
+)
 from app.services.object_storage import download_object_bytes, parse_s3_uri, upload_object_to_bucket
 from app.services.visual_key_frame_selector import (
     VisualKeyFrameSelectorInput,
@@ -398,6 +404,7 @@ def _normalize_speech_result(raw_result: dict[str, Any], payload: SubmitAudioTur
         "status": "ready",
         "question_key": payload.question_key,
         "flow_run_id": payload.flow_run_id,
+        "origin_flow_type": payload.origin_flow_type,
         "turn_id": payload.turn_id,
         "primary_label": raw_result.get("label"),
         "primary_score": float(raw_result.get("score") or 0.0),
@@ -422,6 +429,7 @@ def _normalize_text_result(raw_result: dict[str, Any], payload: SubmitAudioTurnR
         "status": "ready",
         "question_key": payload.question_key,
         "flow_run_id": payload.flow_run_id,
+        "origin_flow_type": payload.origin_flow_type,
         "turn_id": payload.turn_id,
         "primary_label": raw_result.get("label"),
         "primary_score": float(raw_result.get("score") or 0.0),
@@ -443,6 +451,7 @@ def _normalize_face_result(raw_result: dict[str, Any], payload: SubmitFrameCaptu
         "processing_status": processing_status,
         "question_key": payload.question_key,
         "flow_run_id": payload.flow_run_id,
+        "origin_flow_type": payload.origin_flow_type,
         "turn_id": payload.turn_id,
         "primary_label": raw_result.get("dominant_emotion_zh"),
         "primary_score": float(raw_result.get("confidence") or 0.0),
@@ -470,6 +479,7 @@ def _build_failed_face_result(
         "processing_status": "failed",
         "question_key": payload.question_key,
         "flow_run_id": payload.flow_run_id,
+        "origin_flow_type": payload.origin_flow_type,
         "turn_id": payload.turn_id,
         "primary_label": None,
         "primary_score": None,
@@ -573,11 +583,13 @@ def _record_visual_frame(
     capture_payload: dict[str, Any],
     captured_at: datetime | None,
     storage_uri: str | None,
+    origin_flow_type: str | None = None,
 ) -> MultimodalVisualFrame:
     row = MultimodalVisualFrame(
         session_id=session_id,
         turn_id=turn_id,
         flow_run_id=flow_run_id,
+        origin_flow_type=origin_flow_type,
         stage_id=stage_id,
         question_key=question_key,
         sample_index=sample_index,
@@ -597,6 +609,7 @@ def _record_visual_frame(
 def _build_frame_capture_payload(payload: SubmitFrameCaptureRequest) -> dict[str, Any]:
     return {
         "flow_run_id": payload.flow_run_id,
+        "origin_flow_type": payload.origin_flow_type,
         "question_key": payload.question_key,
         "mime_type": payload.mime_type,
         "image_format": payload.image_format,
@@ -662,6 +675,23 @@ def _build_visual_frame_response(
     }
 
 
+def _build_visual_pipeline_status(
+    *,
+    state_store: str,
+    live_state_source: str,
+    turn_bundle_source: str,
+    degraded: bool,
+    fallback_reason: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "state_store": state_store,
+        "live_state_source": live_state_source,
+        "turn_bundle_source": turn_bundle_source,
+        "degraded": degraded,
+        "fallback_reason": fallback_reason,
+    }
+
+
 def _build_visual_capture_response(
     *,
     visual_frame: MultimodalVisualFrame,
@@ -671,6 +701,7 @@ def _build_visual_capture_response(
     face_response: dict[str, Any],
     pose_response: dict[str, Any],
     turn_bundle: dict[str, Any] | None,
+    visual_pipeline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "visual_frame": _build_visual_frame_response(
@@ -686,6 +717,7 @@ def _build_visual_capture_response(
         "face_result": face_response,
         "pose_result": pose_response,
         "turn_bundle": turn_bundle,
+        "visual_pipeline": visual_pipeline,
         "multimodal_session": _snapshot(session),
     }
 
@@ -713,6 +745,8 @@ def _find_existing_visual_capture_response(
     session: MultimodalSession,
     payload: SubmitFrameCaptureRequest,
 ) -> dict[str, Any] | None:
+    if not hasattr(db_session, "execute"):
+        return None
     visual_frame = db_session.execute(
         select(MultimodalVisualFrame).where(
             MultimodalVisualFrame.session_id == session.id,
@@ -807,6 +841,12 @@ def _find_existing_visual_capture_response(
             turn_bundle=turn_bundle,
         ),
         turn_bundle=turn_bundle,
+        visual_pipeline=_build_visual_pipeline_status(
+            state_store="persisted_only",
+            live_state_source="snapshot",
+            turn_bundle_source="database" if turn_bundle else "snapshot",
+            degraded=False,
+        ),
     )
 
 
@@ -819,6 +859,7 @@ def _build_current_turn_bundle_from_redis(
     stage_id: str | None,
     question_key: str,
     redis_turn_aggregate: dict[str, Any] | None,
+    origin_flow_type: str | None = None,
 ) -> dict[str, Any] | None:
     if not turn_id or redis_turn_aggregate is None:
         return None
@@ -827,6 +868,7 @@ def _build_current_turn_bundle_from_redis(
         session_id,
         turn_id,
         flow_run_id=flow_run_id,
+        origin_flow_type=origin_flow_type,
         stage_id=stage_id,
         question_key=question_key,
         face_summary=(redis_turn_aggregate or {}).get("face_features"),
@@ -950,6 +992,7 @@ def _build_hot_path_visual_capture_response(
     face_result: dict[str, Any],
     pose_result: dict[str, Any],
     turn_bundle: dict[str, Any] | None,
+    visual_pipeline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     visual_frame_ref = SimpleNamespace(
         id=f"redis-vf-{session.id}-{payload.turn_id or 'unbound'}-{payload.sample_index}",
@@ -1001,6 +1044,7 @@ def _build_hot_path_visual_capture_response(
             turn_bundle=turn_bundle,
         ),
         "turn_bundle": turn_bundle,
+        "visual_pipeline": visual_pipeline,
         "multimodal_session": session_snapshot,
     }
 
@@ -1127,6 +1171,7 @@ def _record_frame_capture_result(
         session_id=session_id,
         turn_id=payload.turn_id,
         flow_run_id=payload.flow_run_id,
+        origin_flow_type=payload.origin_flow_type,
         stage_id=payload.stage_id,
         question_key=payload.question_key,
         modality=modality,
@@ -1148,6 +1193,7 @@ def _record_frame_capture_result(
         session_id=session_id,
         turn_id=payload.turn_id,
         flow_run_id=payload.flow_run_id,
+        origin_flow_type=payload.origin_flow_type,
         stage_id=payload.stage_id,
         question_key=payload.question_key,
         modality=modality,
@@ -1206,6 +1252,7 @@ def _submit_face_capture_with_session(
             session.id,
             payload.turn_id,
             flow_run_id=payload.flow_run_id,
+            origin_flow_type=payload.origin_flow_type,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
         )
@@ -1258,6 +1305,7 @@ def _submit_pose_capture_with_session(
             session.id,
             payload.turn_id,
             flow_run_id=payload.flow_run_id,
+            origin_flow_type=payload.origin_flow_type,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
         )
@@ -1293,6 +1341,7 @@ def _normalize_pose_result(raw_result: dict[str, Any], payload: SubmitFrameCaptu
         "processing_status": "processing" if is_collecting else "completed",
         "question_key": payload.question_key,
         "flow_run_id": payload.flow_run_id,
+        "origin_flow_type": payload.origin_flow_type,
         "turn_id": payload.turn_id,
         "primary_label": None if is_collecting else label,
         "primary_score": None if is_collecting else float(raw_result.get("score") or 0.0),
@@ -1320,6 +1369,7 @@ def _build_failed_pose_result(
         "processing_status": "failed",
         "question_key": payload.question_key,
         "flow_run_id": payload.flow_run_id,
+        "origin_flow_type": payload.origin_flow_type,
         "turn_id": payload.turn_id,
         "primary_label": None,
         "primary_score": None,
@@ -1502,7 +1552,10 @@ def _transcribe_audio_payload(wav_path: Path) -> dict[str, Any]:
 
 
 def _ensure_session_access(session: MultimodalSession, acting_user_id: str | None) -> None:
-    if acting_user_id and session.user_id != acting_user_id:
+    if not acting_user_id:
+        raise MultimodalServiceError("missing acting user id", 4013, 401)
+    session_user_id = str(getattr(session, "user_id", None) or "").strip()
+    if session_user_id and session_user_id != acting_user_id:
         raise MultimodalServiceError("multimodal session access denied", 4031, 403)
 
 
@@ -1520,12 +1573,27 @@ def _stage_context_payload(session: MultimodalSession) -> dict[str, Any]:
     return dict(session.stage_context or {})
 
 
+def _resolve_origin_flow_type(
+    session: MultimodalSession,
+    candidate: str | None,
+) -> str:
+    return (
+        str(candidate or "").strip()
+        or str(getattr(session, "flow_type", None) or "").strip()
+        or "consultation"
+    )
+
+
 def _snapshot(session: MultimodalSession) -> dict[str, Any]:
+    started_at = session.started_at or session.created_at
+    created_at = session.created_at or started_at
     return {
         "id": session.id,
         "session_id": session.id,
         "user_id": session.user_id,
         "encounter_session_id": session.encounter_session_id,
+        "scope_type": session.scope_type,
+        "scope_id": session.scope_id,
         "flow_type": session.flow_type,
         "flow_run_id": session.flow_run_id,
         "status": session.status,
@@ -1533,11 +1601,15 @@ def _snapshot(session: MultimodalSession) -> dict[str, Any]:
         "enabled_modalities": list(session.enabled_modalities or []),
         "live_state_payload": dict(session.live_state_payload or {}),
         "notes": session.notes,
-        "started_at": session.started_at,
-        "created_at": session.created_at,
-        "updated_at": session.updated_at,
-        "warmed_up_at": session.warmed_up_at,
-        "completed_at": session.completed_at,
+        "started_at": started_at.isoformat() if started_at else None,
+        "created_at": created_at.isoformat() if created_at else None,
+        "updated_at": session.updated_at.isoformat(),
+        "warmed_up_at": (
+            session.warmed_up_at.isoformat() if session.warmed_up_at else None
+        ),
+        "completed_at": (
+            session.completed_at.isoformat() if session.completed_at else None
+        ),
     }
 
 
@@ -1564,52 +1636,20 @@ def create_multimodal_session(
 
     effective_user_id = acting_user_id or payload.user_id
     stage_context = payload.stage_context.model_dump() if payload.stage_context else {}
-    now = _utcnow()
     with get_db_session() as db_session:
-        existing = db_session.execute(
-            select(MultimodalSession).where(
-                MultimodalSession.flow_type == payload.flow_type,
-                MultimodalSession.flow_run_id == payload.flow_run_id,
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            if acting_user_id:
-                _ensure_session_access(existing, acting_user_id)
-            existing.user_id = effective_user_id or existing.user_id
-            existing.encounter_session_id = (
-                payload.encounter_session_id or existing.encounter_session_id
-            )
-            existing.flow_type = payload.flow_type or existing.flow_type
-            existing.flow_run_id = payload.flow_run_id or existing.flow_run_id
-            existing.stage_context = stage_context or dict(existing.stage_context or {})
-            existing.enabled_modalities = _normalize_modalities(payload.enabled_modalities)
-            existing.live_state_payload = existing.live_state_payload or {}
-            existing.notes = payload.notes if payload.notes is not None else existing.notes
-            existing.started_at = existing.started_at or existing.created_at or now
-            existing.created_at = existing.created_at or existing.started_at or now
-            existing.updated_at = now
-            db_session.add(existing)
-            db_session.flush()
-            db_session.refresh(existing)
-            return _snapshot(existing)
-
-        session = MultimodalSession(
-            user_id=effective_user_id,
-            encounter_session_id=payload.encounter_session_id,
-            flow_type=payload.flow_type,
-            flow_run_id=payload.flow_run_id,
+        session = create_or_reuse_session_record(
+            db_session,
+            payload=payload,
+            effective_user_id=effective_user_id,
             stage_context=stage_context,
-            status="created",
             enabled_modalities=_normalize_modalities(payload.enabled_modalities),
-            live_state_payload={},
-            notes=payload.notes,
-            started_at=now,
-            created_at=now,
-            updated_at=now,
+            now_factory=_utcnow,
+            create_status="created",
+            status_on_update=None,
+            fallback_flow_run_id_factory=lambda session_id: session_id,
+            acting_user_id=acting_user_id,
+            access_validator=_ensure_session_access,
         )
-        db_session.add(session)
-        db_session.flush()
-        db_session.refresh(session)
         return _snapshot(session)
 
 
@@ -1672,11 +1712,13 @@ def _record_capture(
     sample_ended_at: datetime | None,
     capture_payload: dict[str, Any],
     captured_at: datetime | None,
+    origin_flow_type: str | None = None,
 ) -> MultimodalCapture:
     row = MultimodalCapture(
         session_id=session_id,
         turn_id=turn_id,
         flow_run_id=flow_run_id,
+        origin_flow_type=origin_flow_type,
         stage_id=stage_id,
         question_key=question_key,
         sample_index=sample_index,
@@ -1709,11 +1751,13 @@ def _record_inference_result(
     sample_id: str | None,
     inference_payload: dict[str, Any],
     captured_at: datetime | None,
+    origin_flow_type: str | None = None,
 ) -> MultimodalInferenceResult:
     row = MultimodalInferenceResult(
         session_id=session_id,
         turn_id=turn_id,
         flow_run_id=flow_run_id,
+        origin_flow_type=origin_flow_type,
         stage_id=stage_id,
         question_key=question_key,
         sample_id=sample_id,
@@ -1774,6 +1818,7 @@ def _build_turn_bundle_payload(
     turn_id: str,
     *,
     flow_run_id: str | None = None,
+    origin_flow_type: str | None = None,
     stage_id: str | None = None,
     question_key: str | None = None,
     face_summary: dict[str, Any] | None = None,
@@ -1825,6 +1870,7 @@ def _build_turn_bundle_payload(
         "turn_id": turn_id,
         "session_id": session_id,
         "flow_run_id": flow_run_id,
+        "origin_flow_type": origin_flow_type,
         "stage_id": stage_id,
         "question_key": question_key or _resolve_question_key(results_by_modality),
         "generated_at": _isoformat(_utcnow()),
@@ -1852,6 +1898,7 @@ def _upsert_turn_bundle(
     turn_id: str,
     *,
     flow_run_id: str | None = None,
+    origin_flow_type: str | None = None,
     stage_id: str | None = None,
     question_key: str | None = None,
     face_summary: dict[str, Any] | None = None,
@@ -1864,6 +1911,7 @@ def _upsert_turn_bundle(
         session_id,
         turn_id,
         flow_run_id=flow_run_id,
+        origin_flow_type=origin_flow_type,
         stage_id=stage_id,
         question_key=question_key,
         face_summary=face_summary,
@@ -1884,6 +1932,7 @@ def _upsert_turn_bundle(
             session_id=session_id,
             turn_id=turn_id,
             flow_run_id=flow_run_id,
+            origin_flow_type=origin_flow_type,
             stage_id=stage_id,
             question_key=question_key,
             bundle_payload=bundle_payload,
@@ -1894,6 +1943,7 @@ def _upsert_turn_bundle(
     else:
         row.turn_id = turn_id
         row.flow_run_id = flow_run_id
+        row.origin_flow_type = origin_flow_type
         row.stage_id = stage_id
         row.question_key = question_key or row.question_key
         row.bundle_payload = bundle_payload
@@ -2035,10 +2085,19 @@ def _persist_selected_visual_key_frames(
             },
             captured_at=sample_ended_at,
             storage_uri=frame_payload.get("storage_uri"),
+            origin_flow_type=(
+                str(frame_payload.get("origin_flow_type") or "").strip() or None
+            ),
         )
 
         face_result = dict(frame_payload.get("face_result") or {})
         pose_result = dict(frame_payload.get("pose_result") or {})
+        resolved_origin_flow_type = (
+            str(frame_payload.get("origin_flow_type") or "").strip()
+            or str(face_result.get("origin_flow_type") or "").strip()
+            or str(pose_result.get("origin_flow_type") or "").strip()
+            or None
+        )
         if face_summary:
             face_result["sample_count"] = face_summary.get("sample_count")
             face_result["valid_sample_count"] = face_summary.get("valid_sample_count")
@@ -2071,6 +2130,7 @@ def _persist_selected_visual_key_frames(
                 "selection_strategy_version": strategy_version,
             },
             captured_at=sample_ended_at,
+            origin_flow_type=resolved_origin_flow_type,
         )
         face_capture.storage_uri = frame_payload.get("storage_uri")
         db_session.add(face_capture)
@@ -2087,6 +2147,7 @@ def _persist_selected_visual_key_frames(
             sample_id=face_capture.id,
             inference_payload=face_result,
             captured_at=sample_ended_at,
+            origin_flow_type=resolved_origin_flow_type,
         )
 
         pose_capture = _record_capture(
@@ -2114,6 +2175,7 @@ def _persist_selected_visual_key_frames(
                 "selection_strategy_version": strategy_version,
             },
             captured_at=sample_ended_at,
+            origin_flow_type=resolved_origin_flow_type,
         )
         pose_capture.storage_uri = frame_payload.get("storage_uri")
         db_session.add(pose_capture)
@@ -2130,6 +2192,7 @@ def _persist_selected_visual_key_frames(
             sample_id=pose_capture.id,
             inference_payload=pose_result,
             captured_at=sample_ended_at,
+            origin_flow_type=resolved_origin_flow_type,
         )
 
         persisted_key_frames.append(
@@ -2156,6 +2219,16 @@ def submit_audio_turn(
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
+        if not session_allows_flow_run(session, payload.flow_run_id):
+            raise MultimodalServiceError("flow run mismatch", 4091, 409)
+        resolved_origin_flow_type = _resolve_origin_flow_type(
+            session,
+            payload.origin_flow_type,
+        )
+        if payload.origin_flow_type != resolved_origin_flow_type:
+            payload = payload.model_copy(
+                update={"origin_flow_type": resolved_origin_flow_type}
+            )
 
         captured_at = payload.captured_at or _utcnow()
         resolved_normalized_wav_uri = payload.normalized_wav_uri
@@ -2212,6 +2285,7 @@ def submit_audio_turn(
             session_id=session.id,
             turn_id=payload.turn_id,
             flow_run_id=payload.flow_run_id,
+            origin_flow_type=payload.origin_flow_type,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
             modality="audio",
@@ -2222,6 +2296,7 @@ def submit_audio_turn(
             sample_ended_at=payload.captured_at,
             capture_payload={
                 "flow_run_id": payload.flow_run_id,
+                "origin_flow_type": payload.origin_flow_type,
                 "question_key": payload.question_key,
                 "audio_format": resolved_audio_format,
                 "audio_uri": payload.original_audio_uri,
@@ -2297,6 +2372,7 @@ def submit_audio_turn(
             session_id=session.id,
             turn_id=payload.turn_id,
             flow_run_id=payload.flow_run_id,
+            origin_flow_type=payload.origin_flow_type,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
             modality="speech",
@@ -2328,6 +2404,7 @@ def submit_audio_turn(
                 session_id=session.id,
                 turn_id=payload.turn_id,
                 flow_run_id=payload.flow_run_id,
+                origin_flow_type=payload.origin_flow_type,
                 stage_id=payload.stage_id,
                 question_key=payload.question_key,
                 modality="text",
@@ -2346,6 +2423,7 @@ def submit_audio_turn(
             session.id,
             payload.turn_id,
             flow_run_id=payload.flow_run_id,
+            origin_flow_type=payload.origin_flow_type,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
         )
@@ -2431,6 +2509,16 @@ def submit_visual_capture(
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
+        if not session_allows_flow_run(session, payload.flow_run_id):
+            raise MultimodalServiceError("flow run mismatch", 4091, 409)
+        resolved_origin_flow_type = _resolve_origin_flow_type(
+            session,
+            payload.origin_flow_type,
+        )
+        if payload.origin_flow_type != resolved_origin_flow_type:
+            payload = payload.model_copy(
+                update={"origin_flow_type": resolved_origin_flow_type}
+            )
 
         existing_response = _find_existing_visual_capture_response(
             db_session,
@@ -2529,6 +2617,7 @@ def submit_visual_capture(
             session_id=session.id,
             turn_id=payload.turn_id,
             flow_run_id=payload.flow_run_id,
+            origin_flow_type=payload.origin_flow_type,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
             redis_turn_aggregate=redis_turn_aggregate,
@@ -2566,6 +2655,12 @@ def submit_visual_capture(
                 face_result=face_result,
                 pose_result=pose_result,
                 turn_bundle=turn_bundle,
+                visual_pipeline=_build_visual_pipeline_status(
+                    state_store="redis_hot",
+                    live_state_source="redis",
+                    turn_bundle_source="redis" if turn_bundle else "snapshot",
+                    degraded=False,
+                ),
             )
             _log_visual_capture_timing(
                 session_id=session.id,
@@ -2605,6 +2700,7 @@ def submit_visual_capture(
             session_id=session.id,
             turn_id=payload.turn_id,
             flow_run_id=payload.flow_run_id,
+            origin_flow_type=payload.origin_flow_type,
             stage_id=payload.stage_id,
             question_key=payload.question_key,
             sample_index=payload.sample_index,
@@ -2643,6 +2739,7 @@ def submit_visual_capture(
                 session.id,
                 payload.turn_id,
                 flow_run_id=payload.flow_run_id,
+                origin_flow_type=payload.origin_flow_type,
                 stage_id=payload.stage_id,
                 question_key=payload.question_key,
                 face_summary=(redis_turn_aggregate or {}).get("face_features"),
@@ -2695,6 +2792,13 @@ def submit_visual_capture(
             face_response=face_response,
             pose_response=pose_response,
             turn_bundle=turn_bundle,
+            visual_pipeline=_build_visual_pipeline_status(
+                state_store="postgres_cold",
+                live_state_source="postgres",
+                turn_bundle_source="postgres" if turn_bundle else "snapshot",
+                degraded=True,
+                fallback_reason="redis_unavailable",
+            ),
         )
         _log_visual_capture_timing(
             session_id=session.id,
@@ -2911,6 +3015,7 @@ def finalize_multimodal_turn(
         redis_turn_aggregate = read_visual_turn_aggregate_payload(session.id, turn_id)
         redis_turn_state = read_visual_turn_state_payload(session.id, turn_id)
         flow_run_id = None
+        origin_flow_type = None
         stage_id = None
         question_key = None
         face_summary = None
@@ -2923,6 +3028,9 @@ def finalize_multimodal_turn(
         if redis_turn_aggregate is not None:
             flow_run_id = (
                 str(redis_turn_aggregate.get("flow_run_id") or session.flow_run_id or "") or None
+            )
+            origin_flow_type = (
+                str(redis_turn_aggregate.get("origin_flow_type") or "").strip() or None
             )
             stage_id = str(redis_turn_aggregate.get("stage_id") or "").strip() or None
             question_key = str(redis_turn_aggregate.get("question_key") or "").strip() or None
@@ -2953,6 +3061,16 @@ def finalize_multimodal_turn(
             frame_payloads_by_index = {
                 int(payload.get("sample_index") or 0): dict(payload) for payload in frame_payloads
             }
+            if not origin_flow_type:
+                for payload in frame_payloads:
+                    origin_flow_type = (
+                        str(payload.get("origin_flow_type") or "").strip()
+                        or str((payload.get("face_result") or {}).get("origin_flow_type") or "").strip()
+                        or str((payload.get("pose_result") or {}).get("origin_flow_type") or "").strip()
+                        or None
+                    )
+                    if origin_flow_type:
+                        break
             persisted_key_frames = _persist_selected_visual_key_frames(
                 db_session,
                 session_id=session.id,
@@ -2993,6 +3111,7 @@ def finalize_multimodal_turn(
             session.id,
             turn_id,
             flow_run_id=flow_run_id,
+            origin_flow_type=origin_flow_type,
             stage_id=stage_id,
             question_key=question_key,
             face_summary=face_summary,

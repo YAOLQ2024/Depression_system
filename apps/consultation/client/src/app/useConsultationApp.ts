@@ -7,6 +7,7 @@ import {
   hasSessionToken,
   setSessionPersistencePreference,
   setSessionToken,
+  ApiRequestError,
 } from "../services/api/client";
 import type { AuthLoginPayload, AuthRegisterPayload } from "../features/auth/AuthPage";
 import { resolveHomeEntryLabel, resolveHomeEntryPath, resolvePostLoginPath, resolveResumePath } from "../routes";
@@ -24,10 +25,12 @@ import {
   submitConsultationTurn as submitConsultationTurnRequest,
 } from "../services/api/consultation.api";
 import type {
+  AssessmentAcceptedAnswer,
   ConsultationMultimodalCapturePayload,
   ConsultationFrameCaptureResponse,
   ConsultationVisualCaptureResponse,
   SubmitConsultationTurnPayload,
+  SubmitAssessmentAnswerPayload,
   UpdateUserProfilePayload,
 } from "../services/api/contracts";
 import { getCurrentUser, updateCurrentUserProfile } from "../services/api/user.api";
@@ -101,6 +104,7 @@ export function useConsultationApp() {
 
   function mergeConsultationWithCurrentTurnBundle(nextConsultation: ConsultationSession) {
     const currentBundle = consultation?.current_turn_bundle || null;
+    const currentVisualPipeline = consultation?.visual_pipeline || null;
     if (
       currentBundle &&
       currentBundle.turn_id &&
@@ -110,11 +114,13 @@ export function useConsultationApp() {
       return {
         ...nextConsultation,
         current_turn_bundle: currentBundle,
+        visual_pipeline: currentVisualPipeline,
       };
     }
     return {
       ...nextConsultation,
       current_turn_bundle: null,
+      visual_pipeline: currentVisualPipeline,
     };
   }
 
@@ -415,11 +421,11 @@ export function useConsultationApp() {
 
       setConsultation(mergeConsultationWithCurrentTurnBundle(updatedConsultation));
       if (updatedConsultation.status === "handoff_ready") {
-        setMessage("规则问诊已完成，当前可以进入量表问诊。");
+        setMessage("可以进入量表评估");
       } else if (updatedConsultation.status === "paused_for_human_review") {
         setError("系统已触发高风险人工复核，标准问诊主链已暂停。");
       } else {
-        setMessage("本轮输入已提交。");
+        setMessage("");
       }
       setConsultationInput("");
     } catch (caught) {
@@ -579,6 +585,12 @@ export function useConsultationApp() {
           current_turn_bundle: response.turn_bundle,
         };
       }
+      if (response.visual_pipeline) {
+        next = {
+          ...next,
+          visual_pipeline: response.visual_pipeline,
+        };
+      }
       return next;
     });
   }
@@ -607,25 +619,54 @@ export function useConsultationApp() {
     }
 
     resetFeedback();
-    setLoading(true);
 
     try {
-      const updatedConsultation = await completeConsultationQuestionItem(consultation.session_id, questionKey);
-      setConsultation(mergeConsultationWithCurrentTurnBundle(updatedConsultation));
-      if (updatedConsultation.status === "waiting_user_input") {
-        setMessage("系统问候已播放完成，已进入当前题目的回答窗口。");
-      } else if (updatedConsultation.status === "handoff_ready") {
-        setMessage("数字人问诊已完成，可以进入量表评估。");
-      } else {
-        setMessage("系统问题项已自动推进。");
-      }
-      return updatedConsultation;
+      const updatedConsultation = await completeConsultationQuestionItem(
+        consultation.session_id,
+        questionKey,
+      );
+      return applyCompletedConsultationSystemQuestion(updatedConsultation);
     } catch (caught) {
+      if (caught instanceof ApiRequestError && caught.status === 409) {
+        try {
+          const refreshedConsultation = await getConsultationSession(consultation.session_id);
+          if (
+            refreshedConsultation.current_question_key !== consultation.current_question_key ||
+            refreshedConsultation.status !== consultation.status
+          ) {
+            return applyCompletedConsultationSystemQuestion(refreshedConsultation);
+          }
+        } catch {
+          // Fall through to the regular error path below.
+        }
+      }
       setError(caught instanceof Error ? caught.message : "系统问题项推进失败");
       return null;
-    } finally {
-      setLoading(false);
     }
+  }
+
+  function applyCompletedConsultationSystemQuestion(updatedConsultation: ConsultationSession) {
+    setConsultation(mergeConsultationWithCurrentTurnBundle(updatedConsultation));
+    setError("");
+    if (updatedConsultation.status === "waiting_user_input") {
+      setMessage("");
+    } else if (updatedConsultation.status === "handoff_ready") {
+      setMessage("问诊已完成");
+    } else if (updatedConsultation.status === "paused_for_human_review") {
+      setMessage("");
+      setError("系统已触发高风险人工复核，标准问诊主链已暂停。");
+    } else {
+      setMessage("");
+    }
+    return updatedConsultation;
+  }
+
+  async function prefetchConsultationSystemQuestionItem(questionKey: string) {
+    if (!consultation) {
+      return null;
+    }
+
+    return completeConsultationQuestionItem(consultation.session_id, questionKey);
   }
 
   async function handleStartAssessment() {
@@ -634,12 +675,23 @@ export function useConsultationApp() {
     }
 
     resetFeedback();
+
+    if (consultation.status !== "handoff_ready") {
+      setError(
+        consultation.status === "paused_for_human_review"
+          ? "当前问诊正在等待人工复核，暂时不能进入量表评估。"
+          : "当前问诊尚未完成，暂时不能进入量表评估。",
+      );
+      return null;
+    }
+
     setLoading(true);
 
     try {
       const assessmentSession = await createAssessmentSession({
         encounter_session_id: consultation.encounter_session_id || null,
         source_consultation_flow_run_id: consultation.session_id,
+        multimodal_session_id: consultation.multimodal_session_id || null,
         scale_handoff_payload: consultation.scale_handoff_payload || {},
       });
       setAssessment(assessmentSession);
@@ -665,11 +717,12 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
-      const updatedAssessment = await submitAssessmentAnswer(assessment.session_id, {
+      const response = await submitAssessmentAnswer(assessment.session_id, {
         item_id: assessment.current_item?.item_id,
         selected_option_score: selectedAssessmentScore,
         raw_input: assessmentRawInput || null,
       });
+      const updatedAssessment = response.assessment_session;
 
       setAssessment(updatedAssessment);
       saveAssessmentSessionId(updatedAssessment.session_id);
@@ -680,6 +733,32 @@ export function useConsultationApp() {
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "提交量表答案失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function applyAssessmentSession(nextAssessment: AssessmentSession) {
+    setAssessment(nextAssessment);
+    saveAssessmentSessionId(nextAssessment.session_id);
+  }
+
+  async function submitAssessmentAnswerDetailed(payload: SubmitAssessmentAnswerPayload): Promise<{
+    assessment_session: AssessmentSession;
+    accepted_answer?: AssessmentAcceptedAnswer | null;
+  }> {
+    if (!assessment) {
+      throw new Error("当前没有可提交的量表会话。");
+    }
+
+    resetFeedback();
+    setLoading(true);
+
+    try {
+      return await submitAssessmentAnswer(assessment.session_id, payload);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "提交量表答案失败");
+      throw caught;
     } finally {
       setLoading(false);
     }
@@ -763,8 +842,12 @@ export function useConsultationApp() {
       getConsultationTurnBundle,
       submitConsultationVisualCapture,
       completeConsultationSystemQuestionItem,
+      applyCompletedConsultationSystemQuestion,
+      prefetchConsultationSystemQuestionItem,
       handleStartAssessment,
       handleSubmitAssessment,
+      applyAssessmentSession,
+      submitAssessmentAnswerDetailed,
       refreshAssessment,
       handleLogout,
     },
