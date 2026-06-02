@@ -50,21 +50,30 @@
 
 已实现：
 
-- 只有健康检查占位
+- 风险规则装载器
+- `risk_evaluation` / `risk_trigger` 持久化模型与迁移
+- `POST /api/v1/risk/evaluations`
+- `GET /api/v1/risk/evaluations/{evaluation_id}`
+- `GET /api/v1/risk/evaluations/{evaluation_id}/explanations`
+- Gateway 风险评估转发接口
+- 高风险硬触发逻辑
+- 量表聚合 + 多模态辅助的抑郁分层逻辑
+- 干预入口 payload 生成
+- `missing_inputs` / `pending_integrations` 联调标记
 
 待实现：
 
-- 风险评估输入模型
-- 风险规则装载器
-- 硬触发与分层逻辑
-- 风险结果持久化
-- 给后续阶段的结构化输出
+- 人工复核工作流真正落库与覆盖逻辑
+- EEG 正式模态接入
+- 多模态最终特征包正式接口接入
+- 规则版本切换与后台配置化管理
 
 已知限制：
 
-- 当前风险规则文件只固定了原则和输入，还没有细化数值阈值
-- 没有人工复核工作流接口
-- 没有针对不同风险等级的版本化解释模板
+- 当前风险规则文件已固化初版权重与分层带，但仍需要临床联调校准阈值
+- 人工复核接口目前只做了预留，返回 `501`
+- 多模态当前先消费显式 `multimodal_feature_bundle` 或 `live snapshot`，尚未接入最终 bundle
+- EEG 模态尚未提供可稳定消费的统一输出
 
 ## 6. 非目标
 
