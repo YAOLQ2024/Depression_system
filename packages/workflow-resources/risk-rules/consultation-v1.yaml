@@ -35,3 +35,119 @@ aggregation_notes:
   - 临床决策需要综合问诊结构化信息、量表结果和多模态辅助特征
   - 高风险排查结果可以先于量表聚合结果触发安全升级
   - 当前文件先固定输入和原则，具体数值阈值在 Phase C 和 Phase D 联调时校准
+aggregation:
+  assessment_weight: 0.80
+  multimodal_weight: 0.20
+  scale_weights:
+    phq9: 0.40
+    sds: 0.30
+    sas: 0.15
+    social-function: 0.15
+  multimodal_weights:
+    eeg: 0.20
+    text: 0.20
+    speech: 0.20
+    face: 0.30
+    pose: 0.10
+  depression_severity_bands:
+    - min: 0
+      max: 24.99
+      level: minimal
+      label: 无或极轻度抑郁倾向
+    - min: 25
+      max: 49.99
+      level: mild
+      label: 轻度抑郁倾向
+    - min: 50
+      max: 69.99
+      level: moderate
+      label: 中度抑郁倾向
+    - min: 70
+      max: 84.99
+      level: moderately_severe
+      label: 中重度抑郁倾向
+    - min: 85
+      max: 100
+      level: severe
+      label: 重度抑郁倾向
+  depression_risk_mapping:
+    minimal: low
+    mild: low
+    moderate: medium
+    moderately_severe: high
+    severe: high
+negative_label_sets:
+  text:
+    - negative
+    - 消极
+    - 悲伤
+    - 抑郁
+    - 焦虑
+  speech:
+    - sad
+    - ang
+    - 悲伤
+    - 难过
+    - 愤怒
+  face:
+    - sad
+    - angry
+    - disgust
+    - fear
+    - 悲伤
+    - 难过
+    - 愤怒
+    - 厌恶
+    - 恐惧
+  pose:
+    - sad
+    - ang
+    - 悲伤
+    - 难过
+    - 愤怒
+safety_rules:
+  self_harm_keywords:
+    - 自杀
+    - 想死
+    - 不想活了
+    - 结束生命
+    - 轻生
+    - 自残
+    - 伤害自己
+    - 活着没意思
+recommendation_templates:
+  referral:
+    low:
+      - 当前未见明确急性安全风险，如症状持续或加重，建议尽快完成精神心理专科评估。
+    medium:
+      - 建议近期预约精神科或心理科门诊，结合量表结果与临床访谈做进一步评估。
+    high:
+      - 建议尽快由精神科或心理危机干预团队进一步评估，并通知家属或可信支持者陪同。
+    urgent:
+      - 建议立即停止普通流程，尽快转入急诊或危机干预通道，并安排现场或家属陪护。
+  lifestyle:
+    low:
+      - 保持规律作息，避免连续熬夜和长期独处。
+      - 记录近一周情绪、睡眠和食欲变化，便于后续复诊时对照。
+    medium:
+      - 先保证睡眠与进食节律，减少明显加重情绪波动的刺激因素。
+      - 主动联系家人、朋友或老师，建立稳定支持联系。
+    high:
+      - 尽量避免独处，优先确保身边有可联系、可到场的支持者。
+      - 暂时移除可能用于自伤的危险物品，并减少高压情境暴露。
+    urgent:
+      - 立即寻求线下陪伴与医疗支持，不建议单独停留。
+      - 在专业人员接手前，优先保障环境安全与持续陪护。
+intervention_mapping:
+  low:
+    intensity: low
+    allow_auto_intervention: true
+  medium:
+    intensity: medium
+    allow_auto_intervention: true
+  high:
+    intensity: high
+    allow_auto_intervention: false
+  urgent:
+    intensity: high
+    allow_auto_intervention: false
