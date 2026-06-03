@@ -431,11 +431,20 @@ def preview_system_question_item_completion(
                 "consultation session forbidden", code=4032, status_code=403
             )
 
-        node = _resolve_system_question_item_completion_context(
-            session_record,
-            question_key=question_key,
-            bundle=bundle,
-        )
+        try:
+            node = _resolve_system_question_item_completion_context(
+                session_record,
+                question_key=question_key,
+                bundle=bundle,
+            )
+        except ConsultationServiceError as exc:
+            if exc.status_code != 409:
+                raise
+            # Preview is best-effort. If the formal completion has already
+            # advanced the session, return the latest real session snapshot
+            # instead of surfacing a stale conflict back to the browser.
+            _sync_playlist_state(session_record, bundle)
+            return _serialize_session(session_record, bundle)
         _apply_system_question_item_completion_transition(
             session_record,
             node=node,
