@@ -116,6 +116,11 @@ services:
         condition: service_started
       multimodal-service:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     ports:
       - "8014:8000"
 
@@ -205,6 +210,7 @@ services:
       IDENTITY_SERVICE_URL: http://identity-service:8000
       CONSULTATION_SERVICE_URL: http://consultation-service:8000
       ASSESSMENT_SERVICE_URL: http://assessment-service:8000
+      RISK_SERVICE_URL: http://risk-service:8000
       MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
       WORKFLOW_RESOURCES_DIR: /app/workflow-resources
       CORS_ORIGINS: http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001
@@ -219,6 +225,8 @@ services:
       consultation-service:
         condition: service_healthy
       assessment-service:
+        condition: service_healthy
+      risk-service:
         condition: service_healthy
       multimodal-service:
         condition: service_healthy
