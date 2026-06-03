@@ -17,9 +17,25 @@ import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
 import { FlowCompletionState } from "../components/FlowCompletionState";
 import { FloatingControlBar } from "../components/FloatingControlBar";
+import {
+  SeamlessVideoPlayer,
+  type SeamlessVideoErrorEvent,
+  type SeamlessVideoPlayerHandle,
+  type SeamlessVideoTimeUpdateEvent,
+} from "../components/video";
 import { ConsultationLayout } from "../layouts";
+import {
+  buildAssessmentCurrentVideoNode,
+  createAssessmentVideoNodeTransitionAdapter,
+  isAssessmentStageIntroVideoNode,
+  resolveMissingVideoNodeFallback,
+  useVideoNodeTransitionController,
+} from "../features/video-node";
 import { buildRecordingFilename, formatDuration } from "../lib/mediaCapture";
-import { buildScaleAssessmentPreviewStages } from "../lib/scaleAssessmentPlaylist";
+import {
+  buildScaleAssessmentPreviewStages,
+  type ScaleAssessmentPreviewStage,
+} from "../lib/scaleAssessmentPlaylist";
 import { useMultimodalAudioSubmission } from "../lib/useMultimodalAudioSubmission";
 import { useAudioRecording, type RecordingCompletedPayload } from "../lib/useAudioRecording";
 import { useCamera } from "../lib/useCamera";
@@ -42,6 +58,7 @@ import {
 } from "../services/api/multimodal.api";
 import type {
   AssessmentOption,
+  AssessmentSession,
   ConsultationMultimodalLive,
   ConsultationSession,
   ConsultationTurnMultimodalBundle,
@@ -154,6 +171,48 @@ function mergeVisualCaptureLive(
   return next;
 }
 
+function buildAssessmentVideoNodeFromSession({
+  assessmentSession,
+  previewStages,
+  playedStageIntros,
+}: {
+  assessmentSession: AssessmentSession | null;
+  previewStages: ScaleAssessmentPreviewStage[];
+  playedStageIntros: Record<string, boolean>;
+}) {
+  const currentScaleSlug = assessmentSession?.current_scale_slug || null;
+  const currentItem = assessmentSession?.current_item || null;
+  if (!assessmentSession || !currentScaleSlug || !currentItem) {
+    return null;
+  }
+
+  const currentStage = previewStages.find((stage) => stage.slug === currentScaleSlug) || null;
+  if (!currentStage) {
+    return null;
+  }
+
+  const currentQuestionOrder = currentItem.index || assessmentSession.current_item_index || 1;
+  const currentQuestionKey = `${currentScaleSlug}-${padQuestionNumber(currentQuestionOrder)}`;
+  const currentQuestion =
+    currentStage.questions.find((question) => question.questionKey === currentQuestionKey) ||
+    currentStage.questions.find((question) => question.order === currentQuestionOrder) ||
+    null;
+  const hasPendingStageIntro = Boolean(
+    currentStage.introText &&
+      currentStage.introVideoUri &&
+      currentQuestionOrder === 1 &&
+      !playedStageIntros[currentStage.slug],
+  );
+
+  return buildAssessmentCurrentVideoNode({
+    currentStage,
+    currentQuestion,
+    currentQuestionKey,
+    currentItem,
+    hasPendingStageIntro,
+  });
+}
+
 export default function ScaleQuestionnairePage() {
   const navigate = useNavigate();
   const { state, actions } = useConsultationAppContext();
@@ -179,7 +238,7 @@ export default function ScaleQuestionnairePage() {
   const isUnmountingRef = useRef(false);
   const { submitRecordedAudio } = useMultimodalAudioSubmission();
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerRef = useRef<SeamlessVideoPlayerHandle | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const lastRecordingUrlRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
@@ -244,14 +303,66 @@ export default function ScaleQuestionnairePage() {
       currentQuestionOrder === 1 &&
       !playedStageIntros[currentStage.slug],
   );
-  const currentPromptText =
-    hasPendingStageIntro && currentStage?.introText ? currentStage.introText : currentQuestionText;
-  const currentVideoAssetId =
-    hasPendingStageIntro && currentStage ? `${currentStage.slug}-000` : currentQuestion?.videoAssetId || currentQuestionKey;
-  const currentVideoUri =
-    hasPendingStageIntro && currentStage?.introVideoUri
-      ? currentStage.introVideoUri
-      : currentQuestion?.videoUri || null;
+  const assessmentCurrentVideoNode = useMemo(
+    () =>
+      buildAssessmentCurrentVideoNode({
+        currentStage,
+        currentQuestion,
+        currentQuestionKey,
+        currentItem,
+        hasPendingStageIntro,
+      }),
+    [currentItem, currentQuestion, currentQuestionKey, currentStage, hasPendingStageIntro],
+  );
+  const currentQuestionVideoNode = useMemo(
+    () =>
+      buildAssessmentCurrentVideoNode({
+        currentStage,
+        currentQuestion,
+        currentQuestionKey,
+        currentItem,
+        hasPendingStageIntro: false,
+      }),
+    [currentItem, currentQuestion, currentQuestionKey, currentStage],
+  );
+  const assessmentTransitionAdapter = createAssessmentVideoNodeTransitionAdapter({
+    currentNode: assessmentCurrentVideoNode,
+    previewLocalNextNode: (videoNode) => {
+      if (!isAssessmentStageIntroVideoNode(videoNode)) {
+        return null;
+      }
+
+      return currentQuestionVideoNode;
+    },
+    deriveNextNodeFromAssessmentSession: (assessmentSession) =>
+      buildAssessmentVideoNodeFromSession({
+        assessmentSession,
+        previewStages,
+        playedStageIntros,
+      }),
+  });
+  const {
+    state: videoTransitionState,
+    currentClip,
+    preloadClip,
+    requestPreview,
+    primeNextNodeFromResult,
+    markReadyClip,
+    markDisplayedClip,
+    handleClipLoadError,
+  } = useVideoNodeTransitionController({
+    adapter: assessmentTransitionAdapter,
+  });
+  const currentVideoNode = assessmentCurrentVideoNode;
+  const isCurrentVideoStageIntro = isAssessmentStageIntroVideoNode(currentVideoNode);
+  const missingVideoFallback = useMemo(
+    () => resolveMissingVideoNodeFallback(currentVideoNode),
+    [currentVideoNode],
+  );
+  const currentPromptText = currentVideoNode?.displayText || currentQuestionText;
+  const currentVideoAssetId = currentVideoNode?.videoAssetId || currentQuestionKey;
+  const currentVideoUri = currentVideoNode?.videoUri || null;
+  const playableVideoUri = currentClip?.src ?? null;
   const currentTurnId = currentQuestionKey;
   const isAssessmentCompleted = assessment?.status === "completed";
 
@@ -433,26 +544,44 @@ export default function ScaleQuestionnairePage() {
   }, [currentQuestionKey, resetCaptureCount]);
 
   useEffect(() => {
+    if (videoTransitionState.previewError) {
+      pushToast(`下一段量表视频预热失败，切换时会回退到常规加载。${videoTransitionState.previewError}`, "warning");
+    }
+  }, [pushToast, videoTransitionState.previewError]);
+
+  useEffect(() => {
+    if (videoTransitionState.transitionReason === "commit_mismatch") {
+      pushToast("预热结果与正式答题推进结果不一致，已按正式结果重新切换。", "warning");
+    }
+  }, [pushToast, videoTransitionState.transitionReason]);
+
+  useEffect(() => {
     setPlaybackBlocked(false);
     setVideoError("");
     setVideoFinished(false);
+  }, [currentClip?.clipKey]);
 
-    if (!currentVideoUri) {
+  useEffect(() => {
+    if (!missingVideoFallback.isMissingVideo || !currentVideoNode) {
       return;
     }
 
-    const videoElement = videoRef.current;
-    if (!videoElement) {
+    if (missingVideoFallback.behavior === "local_skip" && currentStage?.slug) {
+      setPlayedStageIntros((current) =>
+        current[currentStage.slug] ? current : { ...current, [currentStage.slug]: true },
+      );
       return;
     }
 
-    const playPromise = videoElement.play();
-    if (playPromise) {
-      void playPromise.catch(() => {
-        setPlaybackBlocked(true);
-      });
+    if (missingVideoFallback.behavior === "allow_response") {
+      setVideoFinished((current) => (current ? current : true));
     }
-  }, [currentQuestionKey, currentVideoUri]);
+  }, [
+    currentStage?.slug,
+    currentVideoNode,
+    missingVideoFallback.behavior,
+    missingVideoFallback.isMissingVideo,
+  ]);
 
   async function refreshAssessmentMultimodalArtifacts() {
     if (!assessment?.session_id || !currentTurnId || liveRefreshInFlightRef.current) {
@@ -515,27 +644,71 @@ export default function ScaleQuestionnairePage() {
   }, [assessment?.session_id, currentTurnId, ensureMultimodalSession, isAssessmentCompleted]);
 
   async function handlePlayCurrentVideo() {
-    const videoElement = videoRef.current;
-    if (!videoElement) {
+    const player = playerRef.current;
+    if (!player) {
       return;
     }
 
     setPlaybackBlocked(false);
     setVideoError("");
     setVideoFinished(false);
-    videoElement.currentTime = 0;
+    const displayedVideo = player.getDisplayedVideoElement();
+    if (displayedVideo) {
+      displayedVideo.currentTime = 0;
+    }
 
     try {
-      await videoElement.play();
+      await player.playDisplayed();
     } catch {
       setPlaybackBlocked(true);
       pushToast("浏览器阻止了自动播放，请点击数字人区域中央的播放按钮继续。", "warning");
     }
   }
 
+  async function handleVideoEnded() {
+    if (!currentVideoNode) {
+      return;
+    }
+
+    if (isAssessmentStageIntroVideoNode(currentVideoNode) && currentStage?.slug) {
+      await requestPreview();
+      setPlayedStageIntros((current) => ({ ...current, [currentStage.slug]: true }));
+      return;
+    }
+
+    if (!videoFinished) {
+      setVideoFinished(true);
+    }
+  }
+
+  function handleVideoTimeUpdate(event: SeamlessVideoTimeUpdateEvent) {
+    if (!isCurrentVideoStageIntro) {
+      return;
+    }
+
+    const remainingSeconds = event.video.duration - event.video.currentTime;
+    if (!Number.isFinite(remainingSeconds) || remainingSeconds > 0.9) {
+      return;
+    }
+
+    void requestPreview();
+  }
+
+  function handleVideoError(event: SeamlessVideoErrorEvent) {
+    const clipKey = event.clip?.clipKey ?? null;
+    const scope = handleClipLoadError(clipKey);
+    if (scope === "prefetched") {
+      pushToast("后台预热视频加载失败，提交答案后会按正式结果重新加载下一题。", "warning");
+      return;
+    }
+
+    setVideoError("当前视频资源加载失败，请稍后重试。");
+    setPlaybackBlocked(false);
+  }
+
   async function applyAcceptedAnswer(
     response: {
-      assessment_session: typeof assessment;
+      assessment_session: AssessmentSession | null;
       accepted_answer?: AssessmentAcceptedAnswer | null;
     },
     mode: "voice" | "click",
@@ -546,6 +719,10 @@ export default function ScaleQuestionnairePage() {
       if (acceptedAnswer.transcript_text?.trim()) {
         setSubtitleUserTranscript(acceptedAnswer.transcript_text.trim());
       }
+    }
+
+    if (response.assessment_session) {
+      primeNextNodeFromResult(response.assessment_session);
     }
 
     setIsAdvancingAfterConfirmation(true);
@@ -608,7 +785,10 @@ export default function ScaleQuestionnairePage() {
     }
 
       if (!videoFinished) {
-        pushToast(hasPendingStageIntro ? "请先听完当前阶段的引导视频。" : "请先听完当前题目的视频播报，再开始语音回答。", "warning");
+        pushToast(
+          isCurrentVideoStageIntro ? "请先听完当前阶段的引导视频。" : "请先听完当前题目的视频播报，再开始语音回答。",
+          "warning",
+        );
         return;
       }
 
@@ -647,8 +827,10 @@ export default function ScaleQuestionnairePage() {
       lines.push("用户：（Dolphin 正在转写并匹配当前量表选项）");
     } else if (isRecording) {
       lines.push(`用户：（录音中 ${formatDuration(recordingElapsedMs)}）`);
+    } else if (missingVideoFallback.isMissingVideo) {
+      lines.push(`系统：${missingVideoFallback.description}`);
     } else if (!videoFinished) {
-      lines.push(hasPendingStageIntro ? "系统：请先听完当前阶段的引导视频。" : "系统：请先听完当前题目的视频播报。");
+      lines.push(isCurrentVideoStageIntro ? "系统：请先听完当前阶段的引导视频。" : "系统：请先听完当前题目的视频播报。");
     } else if (isAdvancingAfterConfirmation && activeAcceptedLabel) {
       lines.push(`系统：已确认选项「${activeAcceptedLabel}」，正在进入下一题。`);
     } else {
@@ -660,11 +842,13 @@ export default function ScaleQuestionnairePage() {
     activeAcceptedLabel,
     assessment,
     currentPromptText,
-    hasPendingStageIntro,
+    isCurrentVideoStageIntro,
     isAdvancingAfterConfirmation,
     isAssessmentCompleted,
     isRecording,
     isSubmittingAnswer,
+    missingVideoFallback.description,
+    missingVideoFallback.isMissingVideo,
     recordingElapsedMs,
     subtitleUserTranscript,
     videoFinished,
@@ -674,11 +858,11 @@ export default function ScaleQuestionnairePage() {
     if (!currentStage || !currentItem || isAssessmentCompleted) {
       return isAssessmentCompleted ? "量表流程已完成" : "";
     }
-    if (hasPendingStageIntro) {
+    if (isCurrentVideoStageIntro) {
       return `${currentStage.stageLabel} · 阶段引导`;
     }
     return `${currentStage.stageLabel} · ${formatStageQuestionCounter(currentItem.index, currentStageQuestionCount)}`;
-  }, [currentItem, currentStage, currentStageQuestionCount, hasPendingStageIntro, isAssessmentCompleted]);
+  }, [currentItem, currentStage, currentStageQuestionCount, isAssessmentCompleted, isCurrentVideoStageIntro]);
 
   const responseWindowStatusText = useMemo(() => {
     if (isAssessmentCompleted) {
@@ -699,8 +883,11 @@ export default function ScaleQuestionnairePage() {
     if (isRecording) {
       return `录音中 ${formatDuration(recordingElapsedMs)}，结束录音后会自动转写并匹配量表选项。`;
     }
+    if (missingVideoFallback.isMissingVideo) {
+      return missingVideoFallback.description;
+    }
     if (!videoFinished) {
-      return hasPendingStageIntro
+      return isCurrentVideoStageIntro
         ? `正在播报 ${currentStage.stageLabel} 的阶段引导，请先听完再开始答题。`
         : `正在播报 ${currentStage.stageLabel} 第 ${currentItem.index} 题。`;
     }
@@ -709,18 +896,20 @@ export default function ScaleQuestionnairePage() {
     assessment,
     currentItem,
     currentStage,
-    hasPendingStageIntro,
+    isCurrentVideoStageIntro,
     isAdvancingAfterConfirmation,
     isAssessmentCompleted,
     isRecording,
     isSubmittingAnswer,
+    missingVideoFallback.description,
+    missingVideoFallback.isMissingVideo,
     recordingElapsedMs,
     videoError,
     videoFinished,
   ]);
 
   const synthesizedConsultation = useMemo<ConsultationSession | null>(() => {
-    if (!assessment || !currentStage || !currentQuestionKey || isAssessmentCompleted) {
+    if (!assessment || !currentStage || !currentQuestionKey || !currentVideoNode || isAssessmentCompleted) {
       return null;
     }
 
@@ -730,13 +919,13 @@ export default function ScaleQuestionnairePage() {
       user_id: assessment.user_id,
       workflow_id: "scale-assessment-v1",
       current_stage_id: currentStage.slug,
-      current_node_id: currentQuestionKey,
-      current_question_key: currentQuestionKey,
+      current_node_id: currentVideoNode.nodeKey,
+      current_question_key: currentVideoNode.questionKey || currentQuestionKey,
       current_question_order: currentItem?.index || 1,
       current_question_video_asset_id: currentVideoAssetId,
       current_question_video_uri: currentVideoUri,
       current_question_text: currentPromptText,
-      current_question_subtitle_text: currentPromptText,
+      current_question_subtitle_text: currentVideoNode.subtitleText,
       current_stage: {
         stage_id: currentStage.slug,
         stage_label: currentStage.stageLabel,
@@ -752,17 +941,17 @@ export default function ScaleQuestionnairePage() {
             : "waiting_system_completion",
       current_turn_id: currentTurnId,
       current_question_item: {
-        question_key: currentQuestionKey,
+        question_key: currentVideoNode.questionKey || currentQuestionKey,
         stage_id: currentStage.slug,
         stage_label: currentStage.stageLabel,
         stage_order: currentStage.stageOrder,
         order: currentItem?.index || 1,
-        node_id: currentQuestionKey,
+        node_id: currentVideoNode.nodeKey,
         video_asset_id: currentVideoAssetId,
         video_uri: currentVideoUri,
         question_text: currentPromptText,
-        subtitle_text: currentPromptText,
-        response_required: true,
+        subtitle_text: currentVideoNode.subtitleText,
+        response_required: currentVideoNode.responseRequired,
       },
       current_prompt: currentPromptText,
       required_scales: assessment.required_scales,
@@ -785,6 +974,7 @@ export default function ScaleQuestionnairePage() {
     currentStage,
     currentQuestionKey,
     currentItem,
+    currentVideoNode,
     currentVideoUri,
     currentPromptText,
     currentVideoAssetId,
@@ -869,29 +1059,38 @@ export default function ScaleQuestionnairePage() {
           }}
         >
           <div className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none">
-            {currentVideoUri ? (
+            {playableVideoUri ? (
               <div className="relative flex w-full items-end justify-center">
-                <video
-                  ref={videoRef}
-                  key={currentVideoUri}
-                  src={currentVideoUri}
-                  className="h-[min(84vh,920px)] w-auto max-w-[82vw] object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
-                  playsInline
-                  preload="auto"
-                  onEnded={() => {
-                    if (!videoFinished) {
-                      if (hasPendingStageIntro && currentStage?.slug) {
-                        setPlayedStageIntros((current) => ({ ...current, [currentStage.slug]: true }));
-                        return;
-                      }
-                      setVideoFinished(true);
-                    }
-                  }}
-                  onError={() => {
-                    setVideoError("当前视频资源加载失败，请稍后重试。");
-                    setPlaybackBlocked(false);
-                  }}
-                />
+                <div className="relative h-[min(84vh,920px)] w-[min(82vw,980px)]">
+                  <SeamlessVideoPlayer
+                    ref={playerRef}
+                    currentClip={currentClip}
+                    preloadClip={preloadClip}
+                    className="h-full w-full"
+                    layerClassName="flex items-end justify-center"
+                    videoClassName="h-full w-full object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
+                    onClipReady={(clip) => {
+                      markReadyClip(clip.clipKey);
+                      setVideoError("");
+                    }}
+                    onDisplayedClipChange={(clip) => {
+                      markDisplayedClip(clip?.clipKey ?? null);
+                    }}
+                    onEnded={() => {
+                      void handleVideoEnded();
+                    }}
+                    onPlaybackBlocked={() => {
+                      setPlaybackBlocked(true);
+                      pushToast("浏览器阻止了自动播放，请点击数字人区域中央的播放按钮继续。", "warning");
+                    }}
+                    onPlaybackStarted={() => {
+                      setPlaybackBlocked(false);
+                      setVideoError("");
+                    }}
+                    onTimeUpdate={handleVideoTimeUpdate}
+                    onVideoError={handleVideoError}
+                  />
+                </div>
                 {playbackBlocked ? (
                   <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-auto">
                     <button
@@ -905,14 +1104,18 @@ export default function ScaleQuestionnairePage() {
                 ) : null}
               </div>
             ) : (
-              <div className="mb-28 flex min-h-[48vh] w-full max-w-[820px] flex-col items-center justify-center gap-4 rounded-[2rem] border border-white/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.68),rgba(15,23,42,0.42))] px-8 text-center text-white backdrop-blur-md">
+              <div className="pointer-events-auto mb-28 flex min-h-[48vh] w-full max-w-[820px] flex-col items-center justify-center gap-4 rounded-[2rem] border border-white/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.68),rgba(15,23,42,0.42))] px-8 text-center text-white backdrop-blur-md">
                 <div className="flex h-20 w-20 items-center justify-center rounded-full border border-white/15 bg-white/8">
                   <VideoOff className="h-8 w-8 text-sky-100/80" />
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xl font-medium">当前题目的数字人视频尚未接入</p>
+                  <p className="text-xl font-medium">
+                    {missingVideoFallback.isMissingVideo ? missingVideoFallback.title : "当前题目的数字人视频尚未接入"}
+                  </p>
                   <p className="max-w-2xl text-sm leading-7 text-slate-200/80">
-                    请通过左侧量表区域点击选项作答，或等待视频资源就绪。
+                    {missingVideoFallback.isMissingVideo
+                      ? missingVideoFallback.description
+                      : "请通过左侧量表区域点击选项作答，或等待视频资源就绪。"}
                   </p>
                 </div>
               </div>
@@ -993,13 +1196,13 @@ export default function ScaleQuestionnairePage() {
                       {currentStage.stageLabel || "量表"}
                     </span>
                     <span className="text-sm font-medium text-white/60">
-                      {hasPendingStageIntro ? "引导" : `${currentItem?.index || 1}/${currentStageQuestionCount}`}
+                      {isCurrentVideoStageIntro ? "引导" : `${currentItem?.index || 1}/${currentStageQuestionCount}`}
                     </span>
                   </div>
                   <p
                     className={cn(
                       "text-white/92",
-                      hasPendingStageIntro ? "text-[1rem] leading-8" : "text-[1.22rem] font-semibold leading-10",
+                      isCurrentVideoStageIntro ? "text-[1rem] leading-8" : "text-[1.22rem] font-semibold leading-10",
                     )}
                   >
                     {currentPromptText || "题目加载中..."}
@@ -1007,7 +1210,7 @@ export default function ScaleQuestionnairePage() {
                 </div>
               )}
 
-              {hasPendingStageIntro ? (
+              {isCurrentVideoStageIntro ? (
                 <div className="rounded-2xl border border-sky-300/20 bg-sky-400/8 px-4 py-3 text-sm leading-7 text-sky-50/88">
                   当前正在播放本阶段引导语，播放结束后会自动显示本题选项。
                 </div>

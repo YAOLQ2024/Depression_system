@@ -51,6 +51,17 @@ export async function completeConsultationQuestionItem(sessionId: string, questi
   return data.consultation;
 }
 
+export async function previewConsultationQuestionItemCompletion(sessionId: string, questionKey: string) {
+  const data = await apiRequest<ConsultationResponse>(
+    `/consultations/${sessionId}/question-items/${questionKey}/preview-complete`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+  return data.consultation;
+}
+
 export async function getConsultationMultimodalLive(sessionId: string) {
   return apiRequest<ConsultationMultimodalLiveResponse>(`/consultations/${sessionId}/multimodal/live`, {
     method: "GET",

@@ -20,6 +20,7 @@ import {
   getConsultationMultimodalLive,
   getConsultationSession,
   getConsultationTurnMultimodalBundle,
+  previewConsultationQuestionItemCompletion,
   startConsultationSession,
   submitConsultationVisualCapture as submitConsultationVisualCaptureRequest,
   submitConsultationTurn as submitConsultationTurnRequest,
@@ -666,7 +667,24 @@ export function useConsultationApp() {
       return null;
     }
 
-    return completeConsultationQuestionItem(consultation.session_id, questionKey);
+    try {
+      return await previewConsultationQuestionItemCompletion(consultation.session_id, questionKey);
+    } catch (caught) {
+      if (caught instanceof ApiRequestError && caught.status === 409) {
+        try {
+          const refreshedConsultation = await getConsultationSession(consultation.session_id);
+          if (
+            refreshedConsultation.current_question_key !== consultation.current_question_key ||
+            refreshedConsultation.status !== consultation.status
+          ) {
+            return refreshedConsultation;
+          }
+        } catch {
+          // Fall through to the regular error path below.
+        }
+      }
+      throw caught;
+    }
   }
 
   async function handleStartAssessment() {

@@ -354,6 +354,101 @@ def start_consultation_session(
         return _serialize_session(session_record, bundle)
 
 
+def _resolve_system_question_item_completion_context(
+    session_record: ConsultationSession,
+    *,
+    question_key: str,
+    bundle: WorkflowBundle,
+):
+    if (
+        session_record.status != "waiting_system_completion"
+        or not session_record.current_stage_id
+        or not session_record.current_node_id
+    ):
+        raise ConsultationServiceError(
+            "consultation session is not waiting for system completion",
+            code=4093,
+            status_code=409,
+        )
+
+    stage = bundle.stage_scripts[session_record.current_stage_id]
+    node = stage.nodes[session_record.current_node_id]
+    current_question_item = _resolve_current_question_item_object(
+        session_record, bundle
+    )
+    if (
+        not current_question_item
+        or current_question_item.question_key != question_key
+    ):
+        raise ConsultationServiceError(
+            "system question item mismatch", code=4008, status_code=409
+        )
+    if current_question_item.response_required:
+        raise ConsultationServiceError(
+            "question item requires user response and cannot be "
+            "auto-completed",
+            code=4094,
+            status_code=409,
+        )
+    if node.type != "speak_then_complete":
+        raise ConsultationServiceError(
+            "current node does not support system completion",
+            code=4095,
+            status_code=409,
+        )
+
+    return node
+
+
+def _apply_system_question_item_completion_transition(
+    session_record: ConsultationSession,
+    *,
+    node,
+    bundle: WorkflowBundle,
+) -> None:
+    session_record.status = "running"
+    session_record.updated_at = _now()
+    engine_state = _ensure_json_dict(session_record.engine_state)
+    engine_state["last_branch_taken"] = "system_complete"
+    session_record.engine_state = engine_state
+
+    _move_to_target(session_record, node.payload.get("next"), bundle)
+    _auto_advance(session_record, bundle)
+    _sync_playlist_state(session_record, bundle)
+
+
+def preview_system_question_item_completion(
+    session_id: str,
+    question_key: str,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    bundle = get_workflow_loader().load_bundle()
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        if session_record.user_id != acting_user_id:
+            raise ConsultationServiceError(
+                "consultation session forbidden", code=4032, status_code=403
+            )
+
+        node = _resolve_system_question_item_completion_context(
+            session_record,
+            question_key=question_key,
+            bundle=bundle,
+        )
+        _apply_system_question_item_completion_transition(
+            session_record,
+            node=node,
+            bundle=bundle,
+        )
+        preview_payload = _serialize_session(session_record, bundle)
+
+        # Step 4 preview must not persist any state changes or create the next
+        # formal session snapshot in the database.
+        db_session.rollback()
+        return preview_payload
+
+
 def complete_system_question_item(
     session_id: str,
     question_key: str,
@@ -367,52 +462,16 @@ def complete_system_question_item(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
-        if (
-            session_record.status != "waiting_system_completion"
-            or not session_record.current_stage_id
-            or not session_record.current_node_id
-        ):
-            raise ConsultationServiceError(
-                "consultation session is not waiting for system completion",
-                code=4093,
-                status_code=409,
-            )
-
-        stage = bundle.stage_scripts[session_record.current_stage_id]
-        node = stage.nodes[session_record.current_node_id]
-        current_question_item = _resolve_current_question_item_object(
-            session_record, bundle
+        node = _resolve_system_question_item_completion_context(
+            session_record,
+            question_key=question_key,
+            bundle=bundle,
         )
-        if (
-            not current_question_item
-            or current_question_item.question_key != question_key
-        ):
-            raise ConsultationServiceError(
-                "system question item mismatch", code=4008, status_code=409
-            )
-        if current_question_item.response_required:
-            raise ConsultationServiceError(
-                "question item requires user response and cannot be "
-                "auto-completed",
-                code=4094,
-                status_code=409,
-            )
-        if node.type != "speak_then_complete":
-            raise ConsultationServiceError(
-                "current node does not support system completion",
-                code=4095,
-                status_code=409,
-            )
-
-        session_record.status = "running"
-        session_record.updated_at = _now()
-        engine_state = _ensure_json_dict(session_record.engine_state)
-        engine_state["last_branch_taken"] = "system_complete"
-        session_record.engine_state = engine_state
-
-        _move_to_target(session_record, node.payload.get("next"), bundle)
-        _auto_advance(session_record, bundle)
-        _sync_playlist_state(session_record, bundle)
+        _apply_system_question_item_completion_transition(
+            session_record,
+            node=node,
+            bundle=bundle,
+        )
         db_session.flush()
         db_session.refresh(session_record)
         return _serialize_session(session_record, bundle)

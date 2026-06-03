@@ -14,6 +14,7 @@ from app.services.consultation_engine import (
     get_consultation_multimodal_live,
     get_consultation_session,
     get_consultation_turn_multimodal_bundle,
+    preview_system_question_item_completion,
     start_consultation_session,
     stream_consultation_multimodal_live,
     submit_consultation_visual_capture,
@@ -93,6 +94,26 @@ def post_system_question_item_complete(
     return success_response(
         {"consultation": session_payload},
         message="system question item completed",
+    )
+
+
+@router.post("/consultations/{session_id}/question-items/{question_key}/preview-complete")
+def post_system_question_item_preview_complete(
+    session_id: str,
+    question_key: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        session_payload = preview_system_question_item_completion(
+            session_id,
+            question_key=question_key,
+            acting_user_id=x_mcs_user_id,
+        )
+    except ConsultationServiceError as exc:
+        raise _translate_error(exc) from exc
+    return success_response(
+        {"consultation": session_payload},
+        message="system question item preview generated",
     )
 
 

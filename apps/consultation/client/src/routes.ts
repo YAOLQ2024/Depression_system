@@ -9,6 +9,7 @@ export const APP_PATHS = {
   assessment: "/scale-questionnaire",
   result: "/result",
   intervention: "/intervention",
+  seamlessVideoDemo: "/labs/seamless-video-player",
 } as const;
 
 type ResolveAppPathArgs = {
