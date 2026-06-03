@@ -10,7 +10,20 @@ import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
 import { FlowCompletionState } from "../components/FlowCompletionState";
 import { FloatingControlBar } from "../components/FloatingControlBar";
+import {
+  SeamlessVideoPlayer,
+  type SeamlessVideoClip,
+  type SeamlessVideoErrorEvent,
+  type SeamlessVideoPlayerHandle,
+  type SeamlessVideoTimeUpdateEvent,
+} from "../components/video";
 import { ConsultationLayout } from "../layouts";
+import {
+  buildConsultationCurrentVideoNode,
+  createConsultationVideoNodeTransitionAdapter,
+  resolveMissingVideoNodeFallback,
+  useVideoNodeTransitionController,
+} from "../features/video-node";
 import { buildRecordingFilename, formatDuration, sleep } from "../lib/mediaCapture";
 import { useMultimodalAudioSubmission } from "../lib/useMultimodalAudioSubmission";
 import { useAudioRecording, type RecordingCompletedPayload } from "../lib/useAudioRecording";
@@ -25,7 +38,7 @@ import {
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
 import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
-import type { ConsultationMultimodalLive, ConsultationSession, ConsultationSubtitleHistoryEntry } from "../types";
+import type { ConsultationMultimodalLive, ConsultationSubtitleHistoryEntry } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
 const LIVE_REFRESH_INTERVAL_MS = 5000;
@@ -34,31 +47,6 @@ declare global {
   interface Window {
     webkitAudioContext?: typeof AudioContext;
   }
-}
-
-function resolvePlayableVideoUri(session: ConsultationSession | null) {
-  const candidate = session?.current_question_video_uri ?? "";
-  const normalized = candidate.trim();
-
-  if (!normalized || normalized.toUpperCase() === "TBD") {
-    return null;
-  }
-
-  return normalized;
-}
-
-function resolvePromptText(session: ConsultationSession | null) {
-  const questionText = session?.current_question_text?.trim();
-  if (questionText) {
-    return questionText;
-  }
-
-  const stageLabel = session?.current_stage?.stage_label || session?.current_question_item?.stage_label;
-  if (stageLabel) {
-    return `当前处于“${stageLabel}”阶段，题目文案待加载。`;
-  }
-
-  return "当前题目内容待加载。";
 }
 
 function formatSubtitleHistoryLine(entry: ConsultationSubtitleHistoryEntry) {
@@ -85,7 +73,6 @@ export default function ConsultationPage() {
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [videoError, setVideoError] = useState("");
-  const [isCompletingSystemQuestion, setIsCompletingSystemQuestion] = useState(false);
   const [answerWindowOpenedAt, setAnswerWindowOpenedAt] = useState<string | null>(null);
   const [lastRecording, setLastRecording] = useState<LocalRecordingSnapshot | null>(null);
   const { cameraReady, cameraStream, cameraError, cameraFeedback } = useCamera({ enabled: true });
@@ -94,15 +81,13 @@ export default function ConsultationPage() {
   const { toast, pushToast } = useTimedToast();
   const { submitRecordedAudio } = useMultimodalAudioSubmission();
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerRef = useRef<SeamlessVideoPlayerHandle | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const lastRecordingUrlRef = useRef<string | null>(null);
   const answerWindowPromptKeyRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
-  const completeTransitionTimerRef = useRef<number | null>(null);
-  const pendingSystemAdvanceQuestionKeyRef = useRef<string | null>(null);
-  const pendingSystemAdvancePromiseRef = useRef<Promise<ConsultationSession | null> | null>(null);
-  const pendingSystemAdvanceResultRef = useRef<ConsultationSession | null>(null);
+  const consultationStatusRef = useRef<string | null>(consultation?.status ?? null);
+  const currentQuestionItemRef = useRef(consultation?.current_question_item ?? null);
 
   const currentQuestionKey = consultation?.current_question_key ?? null;
   const currentTurnId = consultation?.current_turn_id ?? null;
@@ -156,7 +141,7 @@ export default function ConsultationPage() {
           },
           ensureSession: ensureMultimodalSession,
           emptyRecordingMessage: "本轮录音内容为空，浏览器没有采集到有效音频，请重新录音。",
-          emptyTranscriptMessage: "Dolphin 未返回有效转写文本，请重试。",
+          emptyTranscriptMessage: "未识别到有效语音，请靠近麦克风并完整说一句后重试。",
           uploadAudioTurn: async ({
             sessionId,
             blob: audioBlob,
@@ -262,10 +247,38 @@ export default function ConsultationPage() {
     },
   });
 
-  const playableVideoUri = useMemo(() => resolvePlayableVideoUri(consultation), [consultation]);
-  const promptText = useMemo(() => resolvePromptText(consultation), [consultation]);
+  const consultationCurrentVideoNode = useMemo(
+    () => buildConsultationCurrentVideoNode(consultation),
+    [consultation],
+  );
+  const consultationTransitionAdapter = useMemo(
+    () => createConsultationVideoNodeTransitionAdapter({ consultation, actions }),
+    [actions, consultation],
+  );
+  const {
+    state: videoTransitionState,
+    currentClip,
+    preloadClip,
+    requestPreview,
+    commitCurrentNode,
+    markReadyClip,
+    markDisplayedClip,
+    handleClipLoadError,
+  } = useVideoNodeTransitionController({
+    adapter: consultationTransitionAdapter,
+  });
+  const currentVideoNode = videoTransitionState.currentNode ?? consultationCurrentVideoNode;
+  const playableVideoUri = currentClip?.src ?? null;
+  const currentVideoNodeRef = useRef(currentVideoNode);
+  const currentClipKeyRef = useRef<string | null>(currentClip?.clipKey ?? null);
+  const pendingCommitRef = useRef(videoTransitionState.pendingCommit);
+  const missingVideoFallback = useMemo(
+    () => resolveMissingVideoNodeFallback(currentVideoNode),
+    [currentVideoNode],
+  );
+  const promptText = currentVideoNode?.displayText ?? "";
   const responseWindowStatusText = useMemo(() => {
-    if (!consultation?.current_question_item?.response_required) {
+    if (!currentVideoNode?.responseRequired) {
       return "";
     }
     if (isSubmittingResponse) {
@@ -274,7 +287,7 @@ export default function ConsultationPage() {
     if (isRecording) {
       return `本地录音中 ${formatDuration(recordingElapsedMs)}，停止后进入 Dolphin 转写。`;
     }
-    if (consultation.status === "waiting_user_input") {
+    if (consultation?.status === "waiting_user_input") {
       return answerWindowOpenedAt ? "回答窗口已开启，可开始本轮语音回答。" : "当前题目已进入等待回答态。";
     }
     if (lastRecording && lastRecording.promptKey === currentQuestionKey) {
@@ -283,8 +296,8 @@ export default function ConsultationPage() {
     return "";
   }, [
     answerWindowOpenedAt,
-    consultation?.current_question_item?.response_required,
     consultation?.status,
+    currentVideoNode?.responseRequired,
     currentQuestionKey,
     isRecording,
     isSubmittingResponse,
@@ -292,7 +305,7 @@ export default function ConsultationPage() {
     recordingElapsedMs,
   ]);
   const subtitleUserLine = useMemo(() => {
-    if (!consultation?.current_question_item?.response_required) {
+    if (!currentVideoNode?.responseRequired) {
       return null;
     }
     if (subtitleUserTranscript?.trim()) {
@@ -304,13 +317,13 @@ export default function ConsultationPage() {
     if (isRecording) {
       return `用户：（Dolphin 识别中 ${formatDuration(recordingElapsedMs)}）`;
     }
-    if (consultation.status === "waiting_user_input") {
+    if (consultation?.status === "waiting_user_input") {
       return "用户：（回答窗口已开启，可开始语音回答）";
     }
     return null;
   }, [
-    consultation?.current_question_item?.response_required,
     consultation?.status,
+    currentVideoNode?.responseRequired,
     isRecording,
     isSubmittingResponse,
     recordingElapsedMs,
@@ -362,15 +375,13 @@ export default function ConsultationPage() {
     subtitleUserLine,
   ]);
 
-  const currentStageOrder = consultation?.current_stage?.stage_order ?? consultation?.current_question_item?.stage_order ?? 1;
-  const currentStageLabel =
-    consultation?.current_stage?.stage_label ||
-    consultation?.current_question_item?.stage_label ||
-    STAGE_LABELS[Math.max(0, Math.min(STAGE_LABELS.length - 1, currentStageOrder - 1))];
+  const currentStageOrder =
+    currentVideoNode?.stageOrder ??
+    consultation?.current_stage?.stage_order ??
+    consultation?.current_question_item?.stage_order ??
+    1;
   const canAutoCompleteSystemPrompt = Boolean(
-    consultation?.status === "waiting_system_completion" &&
-      consultation.current_question_item &&
-      consultation.current_question_item.response_required === false,
+    consultation?.status === "waiting_system_completion" && currentVideoNode?.transitionMode === "auto_commit",
   );
   const canEnterAssessment = consultation?.status === "handoff_ready";
 
@@ -417,6 +428,23 @@ export default function ConsultationPage() {
   });
 
   useEffect(() => {
+    consultationStatusRef.current = consultation?.status ?? null;
+    currentQuestionItemRef.current = consultation?.current_question_item ?? null;
+  }, [consultation?.status, consultation?.current_question_item]);
+
+  useEffect(() => {
+    currentVideoNodeRef.current = currentVideoNode;
+  }, [currentVideoNode]);
+
+  useEffect(() => {
+    currentClipKeyRef.current = currentClip?.clipKey ?? null;
+  }, [currentClip?.clipKey]);
+
+  useEffect(() => {
+    pendingCommitRef.current = videoTransitionState.pendingCommit;
+  }, [videoTransitionState.pendingCommit]);
+
+  useEffect(() => {
     if (state.message) {
       pushStoreToast(state.message, "success");
     }
@@ -433,6 +461,18 @@ export default function ConsultationPage() {
       pushToast(videoError, "error");
     }
   }, [videoError]);
+
+  useEffect(() => {
+    if (videoTransitionState.previewError) {
+      pushToast(`下一题视频预热失败，结束后会直接走正式推进。${videoTransitionState.previewError}`, "warning");
+    }
+  }, [pushToast, videoTransitionState.previewError]);
+
+  useEffect(() => {
+    if (videoTransitionState.transitionReason === "commit_mismatch") {
+      pushToast("预热结果与正式推进结果不一致，已按正式结果重新切换。", "warning");
+    }
+  }, [pushToast, videoTransitionState.transitionReason]);
 
   useEffect(() => {
     if (cameraError) {
@@ -457,9 +497,6 @@ export default function ConsultationPage() {
 
   useEffect(() => {
     setSubtitleUserTranscript(null);
-    pendingSystemAdvanceQuestionKeyRef.current = null;
-    pendingSystemAdvancePromiseRef.current = null;
-    pendingSystemAdvanceResultRef.current = null;
   }, [currentQuestionKey]);
 
   useEffect(() => {
@@ -481,12 +518,6 @@ export default function ConsultationPage() {
   useEffect(() => {
     return () => {
       isUnmountingRef.current = true;
-      pendingSystemAdvanceQuestionKeyRef.current = null;
-      pendingSystemAdvancePromiseRef.current = null;
-      pendingSystemAdvanceResultRef.current = null;
-      if (completeTransitionTimerRef.current) {
-        window.clearTimeout(completeTransitionTimerRef.current);
-      }
       if (lastRecordingUrlRef.current) {
         URL.revokeObjectURL(lastRecordingUrlRef.current);
       }
@@ -496,30 +527,11 @@ export default function ConsultationPage() {
   useEffect(() => {
     setPlaybackBlocked(false);
     setVideoError("");
-
-    if (!playableVideoUri) {
-      return;
-    }
-
-    const videoElement = videoRef.current;
-    if (!videoElement) {
-      return;
-    }
-
-    const playPromise = videoElement.play();
-    if (playPromise) {
-      void playPromise
-        .then(() => setPlaybackBlocked(false))
-        .catch(() => {
-          setPlaybackBlocked(true);
-          pushToast("浏览器阻止了自动播放，请点击数字人区域中央的播放按钮继续。", "warning");
-        });
-    }
-  }, [consultation?.current_question_key, playableVideoUri]);
+  }, [currentClip?.clipKey]);
 
   async function handlePlayCurrentVideo() {
-    const videoElement = videoRef.current;
-    if (!videoElement) {
+    const player = playerRef.current;
+    if (!player) {
       return;
     }
 
@@ -527,59 +539,47 @@ export default function ConsultationPage() {
     setVideoError("");
 
     try {
-      await videoElement.play();
+      await player.playDisplayed();
     } catch {
       setPlaybackBlocked(true);
       pushToast("当前浏览器仍然阻止自动播放，需要手动点击播放按钮。", "warning");
     }
   }
 
-  async function handleVideoEnded() {
+  const handleVideoEnded = useEffectEvent(async (endedClip?: SeamlessVideoClip | null) => {
+    const activeNode = currentVideoNodeRef.current;
     if (
-      !consultation?.current_question_item ||
-      !currentQuestionKey ||
-      !canAutoCompleteSystemPrompt ||
-      isCompletingSystemQuestion
+      (endedClip?.clipKey && currentClipKeyRef.current && endedClip.clipKey !== currentClipKeyRef.current) ||
+      !currentQuestionItemRef.current ||
+      !activeNode?.questionKey ||
+      consultationStatusRef.current !== "waiting_system_completion" ||
+      activeNode.transitionMode !== "auto_commit" ||
+      pendingCommitRef.current
     ) {
       return;
     }
 
-    completeTransitionTimerRef.current = window.setTimeout(() => {
-      setIsCompletingSystemQuestion(true);
-      completeTransitionTimerRef.current = null;
-    }, 240);
+    const updated = await commitCurrentNode();
+    if (updated) {
+      return;
+    }
 
-    try {
-      let updated = pendingSystemAdvanceResultRef.current;
-      const hasPrefetchedAdvance =
-        pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey &&
-        pendingSystemAdvancePromiseRef.current;
+    const latestNode = currentVideoNodeRef.current;
+    if (
+      !latestNode?.questionKey ||
+      consultationStatusRef.current !== "waiting_system_completion" ||
+      latestNode.transitionMode !== "auto_commit"
+    ) {
+      return;
+    }
 
-      if (!updated && hasPrefetchedAdvance) {
-        try {
-          updated = await pendingSystemAdvancePromiseRef.current;
-        } catch {
-          updated = null;
-        }
-      }
+    pushToast("当前系统视频已结束，但自动推进失败。请在右侧看板中点击刷新。", "warning");
+  });
 
-      if (updated) {
-        updated = actions.applyCompletedConsultationSystemQuestion(updated);
-      } else {
-        updated = await actions.completeConsultationSystemQuestionItem(currentQuestionKey);
-      }
-      if (!updated) {
-        pushToast("问候视频已结束，但自动推进失败。请在右侧看板中点击刷新。", "warning");
-      }
-    } finally {
-      pendingSystemAdvanceQuestionKeyRef.current = null;
-      pendingSystemAdvancePromiseRef.current = null;
-      pendingSystemAdvanceResultRef.current = null;
-      if (completeTransitionTimerRef.current) {
-        window.clearTimeout(completeTransitionTimerRef.current);
-        completeTransitionTimerRef.current = null;
-      }
-      setIsCompletingSystemQuestion(false);
+  async function handleMissingVideoContinue() {
+    const updated = await commitCurrentNode();
+    if (!updated) {
+      pushToast("当前节点缺少视频资源，继续推进失败。请在右侧看板中点击刷新。", "warning");
     }
   }
 
@@ -649,38 +649,41 @@ export default function ConsultationPage() {
     navigate(APP_PATHS.assessment, { state: { sessionId: createdAssessment.session_id } });
   }
 
-  function handleVideoTimeUpdate() {
-    const videoElement = videoRef.current;
+  function handleVideoTimeUpdate(event: SeamlessVideoTimeUpdateEvent) {
+    const activeNode = videoTransitionState.currentNode;
+    const hasPrefetchedNextNode = Boolean(
+      videoTransitionState.prefetchedNode &&
+      videoTransitionState.prefetchedNode.nodeKey !== videoTransitionState.currentNode?.nodeKey,
+    );
     if (
-      !videoElement ||
-      !currentQuestionKey ||
-      !canAutoCompleteSystemPrompt ||
-      isCompletingSystemQuestion ||
-      pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey
+      !activeNode?.questionKey ||
+      consultation?.status !== "waiting_system_completion" ||
+      activeNode.transitionMode !== "auto_commit" ||
+      videoTransitionState.pendingCommit ||
+      videoTransitionState.pendingPreview ||
+      hasPrefetchedNextNode
     ) {
       return;
     }
 
-    const remainingSeconds = videoElement.duration - videoElement.currentTime;
+    const remainingSeconds = event.video.duration - event.video.currentTime;
     if (!Number.isFinite(remainingSeconds) || remainingSeconds > 0.9) {
       return;
     }
 
-    pendingSystemAdvanceQuestionKeyRef.current = currentQuestionKey;
-    pendingSystemAdvancePromiseRef.current = actions
-      .prefetchConsultationSystemQuestionItem(currentQuestionKey)
-      .then((prefetchedConsultation) => {
-        if (pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey) {
-          pendingSystemAdvanceResultRef.current = prefetchedConsultation;
-        }
-        return prefetchedConsultation;
-      })
-      .catch((caught) => {
-        if (pendingSystemAdvanceQuestionKeyRef.current === currentQuestionKey) {
-          pendingSystemAdvanceResultRef.current = null;
-        }
-        throw caught;
-      });
+    void requestPreview();
+  }
+
+  function handleVideoError(event: SeamlessVideoErrorEvent) {
+    const clipKey = event.clip?.clipKey ?? null;
+    const scope = handleClipLoadError(clipKey);
+    if (scope === "prefetched") {
+      pushToast("后台预热视频加载失败，结束后会按正式结果重新加载下一题。", "warning");
+      return;
+    }
+
+    setVideoError("当前视频资源加载失败，请稍后重试。");
+    setPlaybackBlocked(false);
   }
 
   if (!consultation) {
@@ -743,20 +746,52 @@ export default function ConsultationPage() {
           <div className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none">
             {playableVideoUri ? (
               <div className="relative flex w-full items-end justify-center">
-                <video
-                  ref={videoRef}
-                  key={`${consultation.current_question_key || "current"}:${playableVideoUri}`}
-                  src={playableVideoUri}
-                  className="h-[min(84vh,920px)] w-auto max-w-[82vw] object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
-                  playsInline
-                  preload="auto"
-                  onTimeUpdate={handleVideoTimeUpdate}
-                  onEnded={handleVideoEnded}
-                  onError={() => {
-                    setVideoError("当前视频资源加载失败，请稍后重试。");
-                    setPlaybackBlocked(false);
-                  }}
-                />
+                <div className="relative h-[min(84vh,920px)] w-[min(82vw,980px)]">
+                  <SeamlessVideoPlayer
+                    ref={playerRef}
+                    currentClip={currentClip}
+                    preloadClip={preloadClip}
+                    className="h-full w-full"
+                    layerClassName="flex items-end justify-center"
+                    videoClassName="h-full w-full object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
+                    onClipReady={(clip) => {
+                      markReadyClip(clip.clipKey);
+                      setVideoError("");
+                    }}
+                    onDisplayedClipChange={(clip) => {
+                      markDisplayedClip(clip?.clipKey ?? null);
+                      const activeNode = videoTransitionState.currentNode;
+                      const hasPrefetchedNextNode = Boolean(
+                        videoTransitionState.prefetchedNode &&
+                        videoTransitionState.prefetchedNode.nodeKey !== activeNode?.nodeKey,
+                      );
+                      if (
+                        clip?.clipKey === currentClip?.clipKey &&
+                        activeNode?.questionKey &&
+                        consultation?.status === "waiting_system_completion" &&
+                        activeNode.transitionMode === "auto_commit" &&
+                        !videoTransitionState.pendingCommit &&
+                        !videoTransitionState.pendingPreview &&
+                        !hasPrefetchedNextNode
+                      ) {
+                        void requestPreview();
+                      }
+                    }}
+                    onEnded={(clip) => {
+                      void handleVideoEnded(clip);
+                    }}
+                    onPlaybackBlocked={() => {
+                      setPlaybackBlocked(true);
+                      pushToast("浏览器阻止了自动播放，请点击数字人区域中央的播放按钮继续。", "warning");
+                    }}
+                    onPlaybackStarted={() => {
+                      setPlaybackBlocked(false);
+                      setVideoError("");
+                    }}
+                    onTimeUpdate={handleVideoTimeUpdate}
+                    onVideoError={handleVideoError}
+                  />
+                </div>
 
                 {playbackBlocked ? (
                   <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-auto">
@@ -769,27 +804,32 @@ export default function ConsultationPage() {
                     </button>
                   </div>
                 ) : null}
-
-                {isCompletingSystemQuestion ? (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center">
-                    <div className="inline-flex items-center gap-3 rounded-full border border-white/15 bg-black/35 px-5 py-3 text-sm text-white shadow-lg backdrop-blur-xl">
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                      正在自动推进到下一题
-                    </div>
-                  </div>
-                ) : null}
               </div>
             ) : (
-              <div className="mb-28 flex min-h-[48vh] w-full max-w-[820px] flex-col items-center justify-center gap-4 rounded-[2rem] border border-white/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.68),rgba(15,23,42,0.42))] px-8 text-center text-white backdrop-blur-md">
+              <div className="pointer-events-auto mb-28 flex min-h-[48vh] w-full max-w-[820px] flex-col items-center justify-center gap-4 rounded-[2rem] border border-white/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.68),rgba(15,23,42,0.42))] px-8 text-center text-white backdrop-blur-md">
                 <div className="flex h-20 w-20 items-center justify-center rounded-full border border-white/15 bg-white/8">
                   <VideoOff className="h-8 w-8 text-sky-100/80" />
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xl font-medium">当前题目的视频资源尚未接入</p>
+                  <p className="text-xl font-medium">
+                    {missingVideoFallback.isMissingVideo ? missingVideoFallback.title : "当前题目的视频资源尚未接入"}
+                  </p>
                   <p className="max-w-2xl text-sm leading-7 text-slate-200/80">
-                    真实会话状态已经接通，但当前阶段的 manifest 仍未提供可播放视频 URI。
+                    {missingVideoFallback.isMissingVideo
+                      ? missingVideoFallback.description
+                      : "真实会话状态已经接通，但当前阶段的 manifest 仍未提供可播放视频 URI。"}
                   </p>
                 </div>
+                {missingVideoFallback.behavior === "manual_commit" && canAutoCompleteSystemPrompt ? (
+                  <button
+                    onClick={() => {
+                      void handleMissingVideoContinue();
+                    }}
+                    className="pointer-events-auto rounded-full border border-white/20 bg-white/12 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-white/18"
+                  >
+                    {missingVideoFallback.actionLabel || "继续"}
+                  </button>
+                ) : null}
               </div>
             )}
           </div>

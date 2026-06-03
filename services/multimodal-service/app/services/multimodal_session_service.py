@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any, Iterable, Sequence
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
 from app.database import get_db_session
@@ -1995,6 +1996,32 @@ def _is_finalized_turn_bundle_payload(bundle_payload: dict[str, Any] | None) -> 
     return bool(payload.get("visual_key_frames"))
 
 
+def _build_existing_finalized_turn_response(
+    row: MultimodalTurnBundle,
+    *,
+    session_id: str,
+    turn_id: str,
+) -> dict[str, Any]:
+    existing_selection = dict((row.bundle_payload or {}).get("visual_selection") or {})
+    return {
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "status": "already_finalized",
+        "finalized_at": existing_selection.get("persisted_at")
+        or _isoformat(row.updated_at),
+        "persisted": True,
+        "source": "postgres_finalized_bundle",
+        "turn_state": {
+            "frame_count": existing_selection.get("frame_count"),
+            "candidate_count": None,
+            "last_sample_index": None,
+            "last_updated_at": None,
+        },
+        "key_frame_selection": existing_selection,
+        "turn_bundle": dict(row.bundle_payload or {}),
+    }
+
+
 def _build_visual_recovery_boundaries(
     *,
     finalized_bundle_present: bool,
@@ -2991,26 +3018,11 @@ def finalize_multimodal_turn(
         if existing_bundle_row is not None and _is_finalized_turn_bundle_payload(
             existing_bundle_row.bundle_payload
         ):
-            existing_selection = dict(
-                (existing_bundle_row.bundle_payload or {}).get("visual_selection") or {}
+            return _build_existing_finalized_turn_response(
+                existing_bundle_row,
+                session_id=session.id,
+                turn_id=turn_id,
             )
-            return {
-                "session_id": session.id,
-                "turn_id": turn_id,
-                "status": "already_finalized",
-                "finalized_at": existing_selection.get("persisted_at")
-                or _isoformat(existing_bundle_row.updated_at),
-                "persisted": True,
-                "source": "postgres_finalized_bundle",
-                "turn_state": {
-                    "frame_count": existing_selection.get("frame_count"),
-                    "candidate_count": None,
-                    "last_sample_index": None,
-                    "last_updated_at": None,
-                },
-                "key_frame_selection": existing_selection,
-                "turn_bundle": dict(existing_bundle_row.bundle_payload or {}),
-            }
 
         redis_turn_aggregate = read_visual_turn_aggregate_payload(session.id, turn_id)
         redis_turn_state = read_visual_turn_state_payload(session.id, turn_id)
@@ -3106,21 +3118,36 @@ def finalize_multimodal_turn(
             "persisted_at": persisted_at,
             "selected_frames": persisted_key_frames,
         }
-        turn_bundle = _upsert_turn_bundle(
-            db_session,
-            session.id,
-            turn_id,
-            flow_run_id=flow_run_id,
-            origin_flow_type=origin_flow_type,
-            stage_id=stage_id,
-            question_key=question_key,
-            face_summary=face_summary,
-            pose_summary=pose_summary,
-            visual_key_frames=persisted_key_frames,
-            visual_selection=persisted_visual_selection,
-        )
-        db_session.flush()
-        db_session.commit()
+        try:
+            turn_bundle = _upsert_turn_bundle(
+                db_session,
+                session.id,
+                turn_id,
+                flow_run_id=flow_run_id,
+                origin_flow_type=origin_flow_type,
+                stage_id=stage_id,
+                question_key=question_key,
+                face_summary=face_summary,
+                pose_summary=pose_summary,
+                visual_key_frames=persisted_key_frames,
+                visual_selection=persisted_visual_selection,
+            )
+            db_session.flush()
+            db_session.commit()
+        except IntegrityError:
+            db_session.rollback()
+            existing_bundle_row = _load_turn_bundle_row(
+                db_session,
+                session_id=session.id,
+                turn_id=turn_id,
+            )
+            if existing_bundle_row is None:
+                raise
+            return _build_existing_finalized_turn_response(
+                existing_bundle_row,
+                session_id=session.id,
+                turn_id=turn_id,
+            )
         redis_hot_state_cleaned = finalize_visual_turn_hot_state(
             session.id,
             turn_id,

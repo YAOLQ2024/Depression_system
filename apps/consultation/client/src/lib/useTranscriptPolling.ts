@@ -13,6 +13,18 @@ type UseTranscriptPollingResult = {
 	error: string | null;
 };
 
+function resolveTranscriptFailureMessage(audioTurn: MultimodalAudioTurnRecord) {
+	if (audioTurn.error_code === "TRANSCRIPTION_FAILED") {
+		return "未识别到有效语音，请靠近麦克风并完整说一句后重试。";
+	}
+
+	if (audioTurn.error_code === "SERVICE_RESTARTED") {
+		return "语音处理服务刚刚重启，本轮录音被中断了，请重新录音。";
+	}
+
+	return audioTurn.error_message || "Dolphin 语音转写失败";
+}
+
 export function useTranscriptPolling({
 	maxAttempts = 90,
 	pollIntervalMs = 200,
@@ -39,9 +51,7 @@ export function useTranscriptPolling({
 						return audioTurn;
 					}
 					if (audioTurn.processing_status === "failed") {
-						throw new Error(
-							audioTurn.error_message || "Dolphin 语音转写失败",
-						);
+						throw new Error(resolveTranscriptFailureMessage(audioTurn));
 					}
 					await sleep(pollIntervalMs);
 				}
