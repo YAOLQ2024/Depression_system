@@ -11,7 +11,8 @@ import time
 from types import SimpleNamespace
 from typing import Any, Iterable, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
@@ -1920,37 +1921,74 @@ def _upsert_turn_bundle(
         visual_key_frames=visual_key_frames,
         visual_selection=visual_selection,
     )
-    row = db_session.execute(
-        select(MultimodalTurnBundle).where(
-            MultimodalTurnBundle.session_id == session_id,
-            MultimodalTurnBundle.turn_id == turn_id,
-        )
-    ).scalar_one_or_none()
-
     now = _utcnow()
-    if row is None:
-        row = MultimodalTurnBundle(
-            session_id=session_id,
-            turn_id=turn_id,
-            flow_run_id=flow_run_id,
-            origin_flow_type=origin_flow_type,
-            stage_id=stage_id,
-            question_key=question_key,
-            bundle_payload=bundle_payload,
-            created_at=now,
-            updated_at=now,
+    incoming_is_finalized = _is_finalized_turn_bundle_payload(bundle_payload)
+    insert_stmt = pg_insert(MultimodalTurnBundle).values(
+        session_id=session_id,
+        turn_id=turn_id,
+        flow_run_id=flow_run_id,
+        origin_flow_type=origin_flow_type,
+        stage_id=stage_id,
+        question_key=question_key,
+        bundle_payload=bundle_payload,
+        created_at=now,
+        updated_at=now,
+    )
+    update_values = {
+        "flow_run_id": func.coalesce(
+            insert_stmt.excluded.flow_run_id,
+            MultimodalTurnBundle.flow_run_id,
+        ),
+        "origin_flow_type": func.coalesce(
+            insert_stmt.excluded.origin_flow_type,
+            MultimodalTurnBundle.origin_flow_type,
+        ),
+        "stage_id": func.coalesce(
+            insert_stmt.excluded.stage_id,
+            MultimodalTurnBundle.stage_id,
+        ),
+        "question_key": func.coalesce(
+            insert_stmt.excluded.question_key,
+            MultimodalTurnBundle.question_key,
+        ),
+        "bundle_payload": insert_stmt.excluded.bundle_payload,
+        "updated_at": now,
+    }
+    upsert_stmt = insert_stmt.on_conflict_do_update(
+        index_elements=[
+            MultimodalTurnBundle.session_id,
+            MultimodalTurnBundle.turn_id,
+        ],
+        set_=update_values,
+    )
+    if not incoming_is_finalized:
+        # Preserve an already-finalized bundle when later non-finalized samples arrive.
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[
+                MultimodalTurnBundle.session_id,
+                MultimodalTurnBundle.turn_id,
+            ],
+            set_=update_values,
+            where=text(
+                "COALESCE((multimodal_turn_bundles.bundle_payload -> 'visual_selection' ->> 'persisted')::boolean, false) = false "
+                "AND json_array_length(COALESCE(multimodal_turn_bundles.bundle_payload -> 'visual_key_frames', '[]'::json)) = 0"
+            ),
         )
-        db_session.add(row)
-    else:
-        row.turn_id = turn_id
-        row.flow_run_id = flow_run_id
-        row.origin_flow_type = origin_flow_type
-        row.stage_id = stage_id
-        row.question_key = question_key or row.question_key
-        row.bundle_payload = bundle_payload
-        row.updated_at = now
-        db_session.add(row)
-    return bundle_payload
+    result = db_session.execute(
+        upsert_stmt.returning(MultimodalTurnBundle.bundle_payload)
+    )
+    persisted_payload = result.scalar_one_or_none()
+    if persisted_payload is not None:
+        return dict(persisted_payload or {})
+
+    row = _load_turn_bundle_row(
+        db_session,
+        session_id=session_id,
+        turn_id=turn_id,
+    )
+    if row is None:
+        return dict(bundle_payload or {})
+    return dict(row.bundle_payload or {})
 
 
 def _parse_iso_datetime(value: Any) -> datetime | None:

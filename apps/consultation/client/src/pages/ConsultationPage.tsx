@@ -746,14 +746,14 @@ export default function ConsultationPage() {
           <div className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none">
             {playableVideoUri ? (
               <div className="relative flex w-full items-end justify-center">
-                <div className="relative h-[min(84vh,920px)] w-[min(82vw,980px)]">
+                <div className="relative flex h-[min(84vh,920px)] w-full max-w-[82vw] items-end justify-center">
                   <SeamlessVideoPlayer
                     ref={playerRef}
                     currentClip={currentClip}
                     preloadClip={preloadClip}
                     className="h-full w-full"
                     layerClassName="flex items-end justify-center"
-                    videoClassName="h-full w-full object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
+                    videoClassName="h-full w-auto max-w-full object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
                     onClipReady={(clip) => {
                       markReadyClip(clip.clipKey);
                       setVideoError("");
