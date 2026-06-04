@@ -482,7 +482,7 @@ function EegWaveChannelPlot({
       <div className="pointer-events-none absolute right-2 top-1 text-[9px] font-medium text-slate-400">
         {formatWaveAxisValue(axisBounds.upperBound)}
       </div>
-      <div className="pointer-events-none absolute right-2 bottom-1 text-[9px] font-medium text-slate-400">
+      <div className="pointer-events-none absolute right-2 bottom-[2px] text-[9px] font-medium text-slate-400">
         {formatWaveAxisValue(axisBounds.lowerBound)}
       </div>
       <div className="pointer-events-none absolute left-2 top-1 text-[9px] font-semibold text-slate-200">
@@ -522,7 +522,7 @@ const EegWavePreview = memo(function EegWavePreview({
 
   return (
     <div
-      className="grid h-full min-h-0 gap-1.5"
+      className="grid h-full min-h-0 gap-1"
       style={{ gridTemplateRows: `repeat(${Math.max(1, visibleChannelNames.length)}, minmax(0, 1fr))` }}
     >
       {visibleChannelNames.map((channelName, channelIndex) => (
@@ -786,14 +786,14 @@ function SectionCard({
         className,
       )}
     >
-      <div className="flex items-center justify-between px-2 py-1.5">
+      <div className="flex items-center justify-between px-2 py-1">
         <h3 className="text-[13px] font-semibold text-slate-100 tracking-wide">{title}</h3>
         <div className="flex items-center gap-1 text-[10px] text-slate-400">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
           {rightStatus}
         </div>
       </div>
-      <div className="flex-1 px-2 pb-2">{children}</div>
+      <div className="flex-1 min-h-0 px-2 pb-2">{children}</div>
     </div>
   );
 }
@@ -887,10 +887,10 @@ export function ConsultationStatusPanel({
 
   return (
     <div className={cn("w-full h-full min-h-0 font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
-      <div className="flex items-center justify-between py-3 px-4 top-0 sticky bg-slate-900/82 backdrop-blur-md z-10 border-b border-indigo-500/20 shadow-md">
+      <div className="flex items-center justify-between py-2 px-4 top-0 sticky bg-slate-900/82 backdrop-blur-md z-10 border-b border-indigo-500/20 shadow-md">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-indigo-300" />
-          <h2 className="text-[20px] font-semibold tracking-wide text-white">多模态检测区</h2>
+          <h2 className="text-[18px] font-semibold tracking-wide text-white">多模态检测区</h2>
         </div>
         <div className="flex items-center gap-2">
           <span className="inline-flex min-w-11 items-center justify-center rounded-[10px] border border-indigo-300/18 bg-indigo-500/18 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-indigo-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
@@ -920,7 +920,7 @@ export function ConsultationStatusPanel({
 
       <div className="flex-1 flex flex-col gap-[3px] p-[3px]">
         <SectionCard title="表情检测" rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}>
-          <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[180px]">
+          <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[132px]">
             <div className="h-full overflow-hidden rounded-[16px] border border-white/8">
               <CameraPreview
                 className="h-full w-full !rounded-none !border-none !shadow-none"
@@ -935,13 +935,13 @@ export function ConsultationStatusPanel({
                 audioStatusText={microphoneStatusText}
               />
             </div>
-            <div className="flex h-full flex-col justify-between rounded-[16px] bg-white/[0.03] px-2 py-2">
+            <div className="flex h-full min-h-0 flex-col justify-between rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
                   <ScanFace className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-[19px] font-bold leading-none text-emerald-400">
+                  <div className="text-[17px] font-bold leading-none text-emerald-400">
                     {getPrimaryLabel(currentTurnFaceBundle.primary_label || snapshot.face.primary_label, snapshot.face.status)}
                   </div>
                   <div className="mt-0.5 text-[11px] text-slate-300">
@@ -949,7 +949,7 @@ export function ConsultationStatusPanel({
                   </div>
                 </div>
               </div>
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-2 min-h-0 space-y-1 overflow-y-auto pr-1">
                 {faceLabels.length > 0 ? (
                   faceLabels.map((item) => <DistributionBar key={item.label} label={item.label} value={item.score} />)
                 ) : (
@@ -989,26 +989,26 @@ export function ConsultationStatusPanel({
                 </div>
               )}
             </div>
-            <div className="rounded-[16px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(96,165,250,0.16),transparent_58%)] px-2 py-2">
+            <div className="rounded-[16px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(96,165,250,0.16),transparent_58%)] px-2 py-1.5">
               <div className="flex h-full flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2">
                     <BrainCircuit className="h-5 w-5 text-indigo-200/80" />
                     <div className="text-[13px] font-semibold text-slate-100">实时脑电</div>
                   </div>
-                  <div className="mt-2 text-[18px] font-bold leading-none text-sky-300">
+                  <div className="mt-1.5 text-[16px] font-bold leading-none text-sky-300">
                     {eegLatestResult?.primary_label || "等待中"}
                   </div>
-                  <div className="mt-1 text-[11px] text-slate-300">{getEegSummaryText(snapshot)}</div>
+                  <div className="mt-1 text-[10px] text-slate-300">{getEegSummaryText(snapshot)}</div>
                 </div>
-                <div className="space-y-2">
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                <div className="space-y-1.5">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Device</div>
-                    <div className="mt-1 text-[11px] leading-5 text-slate-200">{getEegDeviceText(snapshot)}</div>
+                    <div className="mt-0.5 text-[10px] leading-4 text-slate-200">{getEegDeviceText(snapshot)}</div>
                   </div>
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Window</div>
-                    <div className="mt-1 text-[11px] leading-5 text-slate-200">
+                    <div className="mt-0.5 text-[10px] leading-4 text-slate-200">
                       {typeof eegLatestResult?.window_index === "number"
                         ? `window-${eegLatestResult.window_index}`
                         : "尚未形成推理窗口"}
