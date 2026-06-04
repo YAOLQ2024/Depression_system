@@ -27,13 +27,16 @@ from app.models import (
 from app.schemas import (
     AudioEmotionInferRequest,
     CreateMultimodalSessionRequest,
+    FinishEegTurnRequest,
     FrameEmotionInferRequest,
+    StartEegTurnRequest,
     SubmitAudioTurnRequest,
     SubmitFrameCaptureRequest,
     TextEmotionInferRequest,
     WarmupMultimodalSessionRequest,
 )
 from app.services.asr_runtime import DolphinAsrError, get_asr_runtime
+from app.services.eeg_runtime import eeg_runtime_service
 from app.services.non_eeg_inference import (
     infer_audio_emotion,
     infer_audio_emotion_from_wav_path,
@@ -172,19 +175,29 @@ def _build_multimodal_live_response(
     session: MultimodalSession,
     *,
     redis_live_payload: dict[str, Any] | None = None,
+    eeg_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     live_payload = _overlay_visual_live_payload(
         dict(session.live_state_payload or {}),
         redis_live_payload,
     )
+    resolved_eeg_payload = eeg_payload or eeg_runtime_service.get_session_live_payload(session.id)
+    eeg_live = dict(resolved_eeg_payload.get("eeg_live") or _build_pending_eeg_live())
+    eeg_waves = dict(resolved_eeg_payload.get("eeg_waves") or _build_pending_eeg_waves())
+    updated_at = (
+        (redis_live_payload or {}).get("updated_at")
+        or eeg_live.get("updated_at")
+        or _isoformat(session.updated_at)
+    )
     return {
         "session_id": session.id,
-        "updated_at": (redis_live_payload or {}).get("updated_at")
-        or _isoformat(session.updated_at),
+        "updated_at": updated_at,
         "speech": live_payload.get("speech", _build_pending_live_modality("speech")),
         "text": live_payload.get("text", _build_pending_live_modality("text")),
         "face": live_payload.get("face", _build_pending_live_modality("face")),
         "pose": live_payload.get("pose", _build_pending_live_modality("pose")),
+        "eeg_live": eeg_live,
+        "eeg_waves": eeg_waves,
     }
 
 
@@ -192,14 +205,46 @@ def _publish_multimodal_live_snapshot(
     session: MultimodalSession,
     *,
     redis_live_payload: dict[str, Any] | None = None,
+    eeg_payload: dict[str, Any] | None = None,
 ) -> None:
     publish_multimodal_live_snapshot(
         session.id,
         _build_multimodal_live_response(
             session,
             redis_live_payload=redis_live_payload,
+            eeg_payload=eeg_payload,
         ),
     )
+
+
+def _publish_eeg_live_snapshot(
+    session_id: str,
+    eeg_payload: dict[str, Any],
+    wave_delta: dict[str, Any] | None,
+) -> None:
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            return
+        if wave_delta is not None:
+            publish_multimodal_live_snapshot(
+                session.id,
+                {
+                    "session_id": session.id,
+                    "updated_at": (eeg_payload.get("eeg_live") or {}).get("updated_at"),
+                    "eeg_live": dict(eeg_payload.get("eeg_live") or _build_pending_eeg_live()),
+                    "eeg_waves": dict(wave_delta),
+                },
+            )
+            return
+        _publish_multimodal_live_snapshot(
+            session,
+            redis_live_payload=read_visual_live_payload(session.id),
+            eeg_payload=eeg_payload,
+        )
+
+
+eeg_runtime_service.set_live_update_callback(_publish_eeg_live_snapshot)
 
 
 def _copy_labels(labels: Sequence[dict[str, Any]] | None, *, limit: int = 3) -> list[dict[str, Any]]:
@@ -264,6 +309,32 @@ def _build_pending_live_modality(modality: str) -> dict[str, Any]:
         base["valid_sample_count"] = 0
         base["error_message"] = None
     return base
+
+
+def _build_pending_eeg_live() -> dict[str, Any]:
+    return {
+        "status": "pending",
+        "device_status": "pending",
+        "device_id": None,
+        "channel_names": list(get_settings()["eeg_channel_names"]),
+        "sampling_rate": int(get_settings()["eeg_sampling_rate"]),
+        "updated_at": None,
+        "turn_id": None,
+        "model_name": "eeg_3class",
+        "model_version": None,
+        "latest_result": None,
+        "latest_results": [],
+        "error_message": None,
+    }
+
+
+def _build_pending_eeg_waves() -> dict[str, Any]:
+    return {
+        "status": "pending",
+        "channel_names": list(get_settings()["eeg_channel_names"]),
+        "sampling_rate": int(get_settings()["eeg_sampling_rate"]),
+        "samples": [],
+    }
 
 
 def _bool_ratio(payloads: Sequence[dict[str, Any]], key: str) -> float:
@@ -1562,13 +1633,13 @@ def _ensure_session_access(session: MultimodalSession, acting_user_id: str | Non
 
 
 def _normalize_modalities(modalities: list[str]) -> list[str]:
-    valid = {"text", "audio", "face", "pose"}
+    valid = {"text", "audio", "face", "pose", "eeg"}
     normalized: list[str] = []
     for item in modalities:
         key = str(item).strip().lower()
         if key in valid and key not in normalized:
             normalized.append(key)
-    return normalized or ["text", "audio", "face", "pose"]
+    return normalized or ["text", "audio", "face", "pose", "eeg"]
 
 
 def _stage_context_payload(session: MultimodalSession) -> dict[str, Any]:
@@ -1687,6 +1758,8 @@ def warmup_multimodal_session(
             runtime_store.get_face_engine()
         if "pose" in modalities:
             runtime_store.get_pose_engine()
+        if "eeg" in modalities:
+            eeg_runtime_service.warmup()
 
         now = _utcnow()
         session.status = "warm"
@@ -1696,6 +1769,82 @@ def warmup_multimodal_session(
         db_session.flush()
         db_session.refresh(session)
         return _snapshot(session)
+
+
+def start_eeg_turn(
+    session_id: str,
+    payload: StartEegTurnRequest,
+    acting_user_id: str | None = None,
+) -> dict[str, Any]:
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
+        result = eeg_runtime_service.begin_turn(
+            session_id=session.id,
+            turn_id=payload.turn_id,
+            flow_run_id=payload.flow_run_id or session.flow_run_id,
+            stage_id=payload.stage_id,
+            question_key=payload.question_key,
+        )
+        session.updated_at = _utcnow()
+        db_session.add(session)
+        db_session.flush()
+        _publish_multimodal_live_snapshot(
+            session,
+            redis_live_payload=read_visual_live_payload(session.id),
+        )
+        return result
+
+
+def finish_eeg_turn(
+    session_id: str,
+    turn_id: str,
+    payload: FinishEegTurnRequest,
+    acting_user_id: str | None = None,
+) -> dict[str, Any]:
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
+        result = eeg_runtime_service.finish_turn(
+            session_id=session.id,
+            turn_id=turn_id,
+            reason=str(payload.reason or "completed"),
+        )
+        session.updated_at = _utcnow()
+        db_session.add(session)
+        db_session.flush()
+        _publish_multimodal_live_snapshot(
+            session,
+            redis_live_payload=read_visual_live_payload(session.id),
+        )
+        return result
+
+
+def get_eeg_turn_results(
+    session_id: str,
+    turn_id: str,
+    acting_user_id: str | None = None,
+) -> dict[str, Any]:
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
+        return {
+            "session_id": session.id,
+            "turn_id": turn_id,
+            "modality": "eeg",
+            "results": _load_inference_payloads(
+                db_session,
+                session_id=session.id,
+                modality="eeg",
+                turn_id=turn_id,
+            ),
+        }
 
 
 def _record_capture(

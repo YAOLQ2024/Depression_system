@@ -74,6 +74,14 @@ def get_assessment_scale_detail_route(
         raise _translate_error(exc) from exc
     return success_response({"scale_detail": scale_detail_payload})
 
+@router.get("/sessions/{session_id}/multimodal/live")
+def get_assessment_live(session_id: str, x_mcs_user_id: str | None = Header(default=None)):
+    try:
+        live_payload = get_assessment_multimodal_live(session_id, acting_user_id=x_mcs_user_id)
+    except AssessmentServiceError as exc:
+        raise _translate_error(exc) from exc
+    return success_response(live_payload)
+
 
 @router.post("/sessions/{session_id}/answers")
 def post_assessment_answer(
@@ -86,21 +94,6 @@ def post_assessment_answer(
     except AssessmentServiceError as exc:
         raise _translate_error(exc) from exc
     return success_response(response_payload, message="assessment answer accepted")
-
-
-@router.get("/sessions/{session_id}/multimodal/live")
-def get_assessment_live(
-    session_id: str,
-    x_mcs_user_id: str | None = Header(default=None),
-):
-    try:
-        live_payload = get_assessment_multimodal_live(
-            session_id,
-            acting_user_id=x_mcs_user_id,
-        )
-    except AssessmentServiceError as exc:
-        raise _translate_error(exc) from exc
-    return success_response(live_payload)
 
 
 @router.get("/sessions/{session_id}/multimodal/live/stream")

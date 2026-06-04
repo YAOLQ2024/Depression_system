@@ -150,12 +150,61 @@ export type FacePoseMultimodalLive = {
   error_message?: string | null;
 };
 
+export type EegWaveSample = {
+  seq: number;
+  captured_at?: string | null;
+  values: number[];
+};
+
+export type EegLiveResult = {
+  window_index?: number | null;
+  primary_label?: string | null;
+  primary_score?: number | null;
+  top_3_labels?: MultimodalRankedLabel[];
+  sample_started_at?: string | null;
+  sample_ended_at?: string | null;
+  raw_eeg_uri?: string | null;
+  model_version?: string | null;
+  quality_flags?: Record<string, number | boolean | null>;
+};
+
+export type EegLivePayload = {
+  status: string;
+  device_status?: string | null;
+  device_id?: string | null;
+  channel_names?: string[];
+  sampling_rate?: number | null;
+  updated_at?: string | null;
+  turn_id?: string | null;
+  model_name?: string | null;
+  model_version?: string | null;
+  latest_result?: EegLiveResult | null;
+  latest_results?: EegLiveResult[];
+  error_message?: string | null;
+};
+
+export type EegWavePreview = {
+  status: string;
+  channel_names?: string[];
+  sampling_rate?: number | null;
+  samples?: EegWaveSample[];
+  append_samples?: EegWaveSample[];
+  reset?: boolean;
+};
+
 export type ConsultationMultimodalLive = {
   speech: SpeechMultimodalLive;
   text: TextMultimodalLive;
   face: FacePoseMultimodalLive;
   pose: FacePoseMultimodalLive;
+  eeg_live: EegLivePayload;
+  eeg_waves: EegWavePreview;
   updated_at?: string | null;
+};
+
+export type ConsultationMultimodalLivePatch = Partial<ConsultationMultimodalLive> & {
+  session_id?: string;
+  eeg_waves?: Partial<EegWavePreview>;
 };
 
 export type ConsultationTurnMultimodalBundle = {
@@ -327,9 +376,12 @@ export type AssessmentSession = {
   current_scale_slug?: string | null;
   current_item_index: number;
   current_item?: AssessmentItem | null;
+  current_turn_id?: string | null;
   scale_handoff_payload?: Record<string, unknown>;
   capture_context?: Record<string, unknown>;
   aggregate_payload?: Record<string, unknown>;
+  multimodal_live?: ConsultationMultimodalLive;
+  multimodal_live_updated_at?: string | null;
   results: AssessmentResult[];
   created_at?: string;
   updated_at?: string;

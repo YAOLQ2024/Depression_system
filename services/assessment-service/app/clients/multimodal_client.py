@@ -126,7 +126,7 @@ def create_multimodal_session(
             "scope_id": scope_id,
             "flow_type": flow_type,
             "flow_run_id": flow_run_id,
-            "enabled_modalities": ["text", "audio", "face", "pose"],
+            "enabled_modalities": ["text", "audio", "face", "pose", "eeg"],
             **({"stage_context": stage_context} if stage_context else {}),
         },
         acting_user_id=user_id,
@@ -192,5 +192,56 @@ def recover_multimodal_turn_hot_state(
         "POST",
         f"/api/v1/multimodal/sessions/{multimodal_session_id}/turns/{turn_id}/recover",
         {},
+        acting_user_id=acting_user_id,
+    )
+
+
+def start_eeg_turn(
+    *,
+    multimodal_session_id: str,
+    turn_id: str,
+    acting_user_id: str,
+    flow_run_id: str | None = None,
+    question_key: str | None = None,
+    stage_id: str | None = None,
+) -> dict:
+    return _forward_multimodal_request(
+        "POST",
+        f"/api/v1/multimodal/sessions/{multimodal_session_id}/eeg/turns/start",
+        {
+            "turn_id": turn_id,
+            "flow_run_id": flow_run_id,
+            "question_key": question_key,
+            "stage_id": stage_id,
+        },
+        acting_user_id=acting_user_id,
+    )
+
+
+def finish_eeg_turn(
+    *,
+    multimodal_session_id: str,
+    turn_id: str,
+    acting_user_id: str,
+    reason: str | None = None,
+) -> dict:
+    return _forward_multimodal_request(
+        "POST",
+        f"/api/v1/multimodal/sessions/{multimodal_session_id}/eeg/turns/{turn_id}/finish",
+        {"reason": reason},
+        acting_user_id=acting_user_id,
+    )
+
+
+def get_eeg_turn_results(
+    *,
+    multimodal_session_id: str,
+    turn_id: str,
+    acting_user_id: str,
+) -> dict:
+    return _forward_multimodal_request(
+        "GET",
+        f"/api/v1/multimodal/sessions/{multimodal_session_id}/eeg/turns/{turn_id}/results",
+        None,
         acting_user_id=acting_user_id,
     )
