@@ -38,10 +38,14 @@ import {
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
 import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
-import type { ConsultationMultimodalLive, ConsultationSubtitleHistoryEntry } from "../types";
+import type {
+  ConsultationMultimodalLive,
+  ConsultationMultimodalLivePatch,
+  ConsultationSubtitleHistoryEntry,
+} from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
-const LIVE_REFRESH_INTERVAL_MS = 5000;
+const LIVE_REFRESH_INTERVAL_MS = 1000;
 const SYSTEM_VIDEO_AUTO_COMMIT_THRESHOLD_SECONDS = 0.9;
 
 declare global {
@@ -391,14 +395,14 @@ export default function ConsultationPage() {
     actions.resetFeedback();
   });
 
-  const applyLiveSnapshot = useEffectEvent((live: ConsultationMultimodalLive) => {
+  const applyLiveSnapshot = useEffectEvent((live: ConsultationMultimodalLivePatch) => {
     actions.applyConsultationMultimodalLive(live);
   });
 
   const {
     isActive: isLiveStreamActive,
     activeRef: liveStreamActiveRef,
-  } = useJsonEventStream<ConsultationMultimodalLive>({
+  } = useJsonEventStream<ConsultationMultimodalLivePatch>({
     url:
       consultation?.session_id && typeof window !== "undefined"
         ? getConsultationMultimodalLiveStreamUrl(consultation.session_id)

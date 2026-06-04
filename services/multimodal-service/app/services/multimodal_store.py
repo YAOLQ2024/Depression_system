@@ -84,7 +84,7 @@ def _serialize_stage_context(stage_context: dict | None) -> dict:
 
 def _default_modalities(enabled_modalities: list[str] | None) -> list[str]:
     normalized = list(enabled_modalities or [])
-    return normalized or ["text", "audio", "face", "pose"]
+    return normalized or ["text", "audio", "face", "pose", "eeg"]
 
 
 def _serialize_session(record: MultimodalSession) -> dict:

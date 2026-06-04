@@ -83,7 +83,7 @@ export async function warmupMultimodalSession(
     {
       method: "POST",
       body: JSON.stringify({
-        modalities: payload.modalities || ["text", "audio", "face", "pose"],
+        modalities: payload.modalities || ["text", "audio", "face", "pose", "eeg"],
       }),
     },
   );

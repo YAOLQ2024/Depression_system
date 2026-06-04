@@ -51,7 +51,10 @@ services:
       context: ../../services/consultation-service
     environment:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
-      MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
+      # Set MCS_MULTIMODAL_SERVICE_URL=http://host.docker.internal:8017
+      # to route containerized services to a host-run multimodal-service
+      # for real EEG BLE capture on Windows/macOS.
+      MULTIMODAL_SERVICE_URL: ${MCS_MULTIMODAL_SERVICE_URL:-http://multimodal-service:8000}
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -81,7 +84,7 @@ services:
       context: ../../services/assessment-service
     environment:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
-      MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
+      MULTIMODAL_SERVICE_URL: ${MCS_MULTIMODAL_SERVICE_URL:-http://multimodal-service:8000}
       WORKFLOW_RESOURCES_DIR: /app/workflow-resources
       ACTIVE_SCALE_SET: v1
     depends_on:
@@ -106,7 +109,7 @@ services:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
       CONSULTATION_SERVICE_URL: http://consultation-service:8000
       ASSESSMENT_SERVICE_URL: http://assessment-service:8000
-      MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
+      MULTIMODAL_SERVICE_URL: ${MCS_MULTIMODAL_SERVICE_URL:-http://multimodal-service:8000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,10 +175,20 @@ services:
       ASR_DEVICE: auto
       ASR_SYNC_TIMEOUT_MS: 15000
       ASR_PREVIEW_MAX_DURATION_MS: 10000
+      EEG_ENABLED: ${MCS_CONTAINER_EEG_ENABLED:-true}
+      EEG_PROVIDER: ble
+      EEG_DEVICE_NAME_HINT: EEG
+      EEG_NOTIFY_CHAR_UUID: 6e400003-b5a3-f393-e0a9-e50e24dcca9e
+      EEG_CHANNEL_NAMES: T7,T8,Fpz
+      EEG_SAMPLING_RATE: 500
+      EEG_PREVIEW_SECONDS: 4
+      EEG_WINDOW_SECONDS: 60
     depends_on:
       postgres:
         condition: service_healthy
       minio:
+        condition: service_started
+      redis:
         condition: service_started
     volumes:
       - ../../services/multimodal-service/runtime-assets:/app/runtime-assets
@@ -185,7 +198,7 @@ services:
       timeout: 5s
       retries: 20
     ports:
-      - "8017:8000"
+      - "${MCS_CONTAINER_MULTIMODAL_PORT:-18017}:8000"
 
   ai-service:
     profiles:
@@ -211,7 +224,7 @@ services:
       CONSULTATION_SERVICE_URL: http://consultation-service:8000
       ASSESSMENT_SERVICE_URL: http://assessment-service:8000
       RISK_SERVICE_URL: http://risk-service:8000
-      MULTIMODAL_SERVICE_URL: http://multimodal-service:8000
+      MULTIMODAL_SERVICE_URL: ${MCS_MULTIMODAL_SERVICE_URL:-http://multimodal-service:8000}
       WORKFLOW_RESOURCES_DIR: /app/workflow-resources
       CORS_ORIGINS: http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001
       CORS_ORIGIN_REGEX: ^https?://[^/]+:(3000|3001)$

@@ -1,6 +1,5 @@
-import type { ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Activity, AlertTriangle, AudioLines, BrainCircuit, RefreshCw, ScanFace, Sparkles } from "lucide-react";
-import { Line, LineChart, ResponsiveContainer, YAxis } from "recharts";
 
 import type { MediaDeviceStatusTone } from "../lib/mediaDeviceFeedback";
 import { cn } from "../lib/utils";
@@ -8,6 +7,7 @@ import type {
   ConsultationMultimodalLive,
   ConsultationSession,
   ConsultationTurnMultimodalBundle,
+  EegWaveSample,
   FacePoseMultimodalLive,
   MultimodalRankedLabel,
   SpeechMultimodalLive,
@@ -15,19 +15,24 @@ import type {
 } from "../types";
 import { CameraPreview } from "./CameraPreview";
 
-function buildEegSeries(stageOrder: number) {
-  return Array.from({ length: 30 }, (_, idx) => {
-    const base = idx / 4;
-    const offset = stageOrder * 0.35;
+const EEG_CHANNEL_COLORS = ["#60a5fa", "#34d399", "#f59e0b"];
+const EEG_VIEWBOX_PADDING_Y = 10;
+const EEG_RENDER_POINT_LIMIT = 2048;
+const EEG_CANVAS_BOUNDS_EPSILON = 0.001;
+const EEG_CANVAS_BOUNDS_FRAME_ALPHA = 0.05;
+const EEG_MIN_VISIBLE_UPPER_UV = 20;
+const EEG_MAX_VISIBLE_LOWER_UV = -20;
 
-    return {
-      idx,
-      alpha: Number((Math.sin(base + offset) * 0.35 + 0.45).toFixed(3)),
-      beta: Number((Math.cos(base * 1.25 + offset) * 0.28 + 0.52).toFixed(3)),
-      theta: Number((Math.sin(base * 0.75 + 1.8 + offset) * 0.22 + 0.38).toFixed(3)),
-    };
-  });
-}
+type EegWaveSampleMeta = {
+  length: number;
+  lastSeq: number | null;
+  lastCapturedAtMs: number | null;
+};
+
+type EegWaveBounds = {
+  lowerBound: number;
+  upperBound: number;
+};
 
 function buildPendingLive(): ConsultationMultimodalLive {
   return {
@@ -35,6 +40,21 @@ function buildPendingLive(): ConsultationMultimodalLive {
     text: { status: "pending", top_3_labels: [], negative_terms: [] },
     face: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
     pose: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
+    eeg_live: {
+      status: "pending",
+      device_status: "pending",
+      channel_names: ["T7", "T8", "Fpz"],
+      sampling_rate: 500,
+      latest_results: [],
+    },
+    eeg_waves: {
+      status: "pending",
+      channel_names: ["T7", "T8", "Fpz"],
+      sampling_rate: 500,
+      samples: [],
+      append_samples: [],
+      reset: false,
+    },
     updated_at: null,
   };
 }
@@ -69,7 +89,521 @@ function resolveLiveData(consultation: ConsultationSession): ConsultationMultimo
       top_3_labels: live.pose?.top_3_labels || pending.pose.top_3_labels,
       quality_flags: live.pose?.quality_flags || pending.pose.quality_flags,
     },
+    eeg_live: {
+      ...pending.eeg_live,
+      ...(live.eeg_live || {}),
+      channel_names: live.eeg_live?.channel_names || pending.eeg_live.channel_names,
+      latest_results: live.eeg_live?.latest_results || pending.eeg_live.latest_results,
+    },
+    eeg_waves: {
+      ...pending.eeg_waves,
+      ...(live.eeg_waves || {}),
+      channel_names: live.eeg_waves?.channel_names || pending.eeg_waves.channel_names,
+      samples: live.eeg_waves?.samples || pending.eeg_waves.samples,
+      append_samples: live.eeg_waves?.append_samples || pending.eeg_waves.append_samples,
+      reset: live.eeg_waves?.reset ?? pending.eeg_waves.reset,
+    },
   };
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function parseCapturedAtTimestamp(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatWaveAxisValue(value: number) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  const absolute = Math.abs(value);
+  if (absolute >= 100) {
+    return value.toFixed(0);
+  }
+  if (absolute >= 10) {
+    return value.toFixed(1);
+  }
+  if (absolute >= 1) {
+    return value.toFixed(2);
+  }
+  return value.toFixed(3);
+}
+
+function pickQuantile(sortedValues: number[], quantile: number) {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+  const index = clampNumber(quantile, 0, 1) * (sortedValues.length - 1);
+  const lowerIndex = Math.floor(index);
+  const upperIndex = Math.ceil(index);
+  const lowerValue = sortedValues[lowerIndex];
+  const upperValue = sortedValues[upperIndex];
+  if (lowerIndex === upperIndex) {
+    return lowerValue;
+  }
+  const ratio = index - lowerIndex;
+  return lowerValue + (upperValue - lowerValue) * ratio;
+}
+
+function computeAdaptiveWaveBounds(values: number[]) {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (finiteValues.length === 0) {
+    return {
+      lowerBound: EEG_MAX_VISIBLE_LOWER_UV,
+      upperBound: EEG_MIN_VISIBLE_UPPER_UV,
+    };
+  }
+
+  const sortedValues = [...finiteValues].sort((left, right) => left - right);
+  const minValue = sortedValues[0];
+  const maxValue = sortedValues[sortedValues.length - 1];
+  const quantileLow = pickQuantile(sortedValues, 0.04);
+  const quantileHigh = pickQuantile(sortedValues, 0.96);
+  const robustSpan = Math.max(quantileHigh - quantileLow, 0.01);
+  const fullSpan = Math.max(maxValue - minValue, robustSpan);
+  const center = (quantileLow + quantileHigh) / 2;
+  const visibleSpan = Math.max(robustSpan, fullSpan * 0.72, 1);
+  const padding = Math.max(visibleSpan * 0.18, 0.35);
+
+  return {
+    lowerBound: Math.min(center - visibleSpan / 2 - padding, EEG_MAX_VISIBLE_LOWER_UV),
+    upperBound: Math.max(center + visibleSpan / 2 + padding, EEG_MIN_VISIBLE_UPPER_UV),
+  };
+}
+
+function resizeCanvasToDisplaySize(canvas: HTMLCanvasElement) {
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width * devicePixelRatio));
+  const height = Math.max(1, Math.round(rect.height * devicePixelRatio));
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  return devicePixelRatio;
+}
+
+function drawEegWaveCanvas(
+  canvas: HTMLCanvasElement,
+  values: number[],
+  color: string,
+  bounds: EegWaveBounds,
+  offsetSamples: number,
+) {
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+
+  const devicePixelRatio = resizeCanvasToDisplaySize(canvas);
+  const width = canvas.width / devicePixelRatio;
+  const height = canvas.height / devicePixelRatio;
+  const topGuideY = EEG_VIEWBOX_PADDING_Y;
+  const centerY = height / 2;
+  const bottomGuideY = height - EEG_VIEWBOX_PADDING_Y;
+  const plotHeight = Math.max(1, height - EEG_VIEWBOX_PADDING_Y * 2);
+  const span = Math.max(bounds.upperBound - bounds.lowerBound, EEG_CANVAS_BOUNDS_EPSILON);
+  const step = Math.max(1, Math.ceil(values.length / EEG_RENDER_POINT_LIMIT));
+  const renderedPointCount = Math.max(1, Math.ceil(values.length / step));
+  const denominator = Math.max(1, renderedPointCount - 1);
+  const scrollOffset = clampNumber(offsetSamples / step, 0, denominator);
+
+  context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#111827";
+  context.fillRect(0, 0, width, height);
+
+  context.lineWidth = 1;
+  context.strokeStyle = "rgba(148,163,184,0.18)";
+  context.beginPath();
+  context.moveTo(0, topGuideY);
+  context.lineTo(width, topGuideY);
+  context.moveTo(0, bottomGuideY);
+  context.lineTo(width, bottomGuideY);
+  context.stroke();
+
+  context.strokeStyle = "rgba(148,163,184,0.12)";
+  context.setLineDash([5, 7]);
+  context.beginPath();
+  context.moveTo(0, centerY);
+  context.lineTo(width, centerY);
+  context.stroke();
+  context.setLineDash([]);
+
+  context.strokeStyle = color;
+  context.lineWidth = 1.7;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.beginPath();
+
+  let hasStarted = false;
+  let renderIndex = 0;
+  for (let index = 0; index < values.length; index += step) {
+    const x = ((renderIndex + scrollOffset) / denominator) * width;
+    if (x < -12 || x > width + 12) {
+      renderIndex += 1;
+      continue;
+    }
+
+    const normalized = (values[index] - bounds.lowerBound) / span;
+    const y = EEG_VIEWBOX_PADDING_Y + (1 - clampNumber(normalized, 0, 1)) * plotHeight;
+
+    if (!hasStarted) {
+      context.moveTo(x, y);
+      hasStarted = true;
+    } else {
+      context.lineTo(x, y);
+    }
+    renderIndex += 1;
+  }
+
+  if (hasStarted) {
+    context.stroke();
+  }
+}
+
+function extractEegWaveSampleMeta(samples: EegWaveSample[]): EegWaveSampleMeta {
+  const lastSample = samples.length > 0 ? samples[samples.length - 1] : undefined;
+  return {
+    length: samples.length,
+    lastSeq: typeof lastSample?.seq === "number" ? lastSample.seq : null,
+    lastCapturedAtMs: parseCapturedAtTimestamp(lastSample?.captured_at),
+  };
+}
+
+function areEegWaveSampleMetasEqual(left: EegWaveSampleMeta, right: EegWaveSampleMeta) {
+  return (
+    left.length === right.length &&
+    left.lastSeq === right.lastSeq &&
+    left.lastCapturedAtMs === right.lastCapturedAtMs
+  );
+}
+
+function areChannelNamesEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function buildEmptyWaveBounds(): EegWaveBounds {
+  return {
+    lowerBound: EEG_MAX_VISIBLE_LOWER_UV,
+    upperBound: EEG_MIN_VISIBLE_UPPER_UV,
+  };
+}
+
+function extractChannelValues(samples: EegWaveSample[], channelIndex: number) {
+  return samples.map((sample) => {
+    const value = sample.values?.[channelIndex];
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  });
+}
+
+function appendValuesToFixedBuffer(buffer: number[], values: number[], maxLength: number) {
+  if (values.length === 0) {
+    return;
+  }
+  if (values.length >= maxLength) {
+    buffer.splice(0, buffer.length, ...values.slice(values.length - maxLength));
+    return;
+  }
+  const overflow = Math.max(0, buffer.length + values.length - maxLength);
+  if (overflow > 0) {
+    buffer.splice(0, overflow);
+  }
+  buffer.push(...values);
+}
+
+type EegWaveChannelPlotProps = {
+  appendMeta: EegWaveSampleMeta;
+  appendValues: number[];
+  color: string;
+  fullMeta: EegWaveSampleMeta;
+  fullValues: number[];
+  label: string;
+  maxSamples: number;
+  reset: boolean;
+  samplingRate: number;
+};
+
+function EegWaveChannelPlot({
+  appendMeta,
+  appendValues,
+  color,
+  fullMeta,
+  fullValues,
+  label,
+  maxSamples,
+  reset,
+  samplingRate,
+}: EegWaveChannelPlotProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const lastFrameAtRef = useRef<number | null>(null);
+  const lastAppliedAppendMetaRef = useRef<EegWaveSampleMeta>({
+    length: 0,
+    lastSeq: null,
+    lastCapturedAtMs: null,
+  });
+  const lastAppliedFullMetaRef = useRef<EegWaveSampleMeta>({
+    length: 0,
+    lastSeq: null,
+    lastCapturedAtMs: null,
+  });
+  const pendingShiftSamplesRef = useRef(0);
+  const samplingRateRef = useRef(samplingRate);
+  const targetBoundsRef = useRef<EegWaveBounds>(buildEmptyWaveBounds());
+  const displayBoundsRef = useRef<EegWaveBounds>(buildEmptyWaveBounds());
+  const valuesRef = useRef<number[]>([]);
+  const [axisBounds, setAxisBounds] = useState<EegWaveBounds>(buildEmptyWaveBounds());
+
+  useEffect(() => {
+    samplingRateRef.current = samplingRate;
+  }, [samplingRate]);
+
+  useEffect(() => {
+    const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
+    targetBoundsRef.current = nextBounds;
+    setAxisBounds(nextBounds);
+  }, []);
+
+  useEffect(() => {
+    const shouldApplyFull =
+      reset ||
+      !areEegWaveSampleMetasEqual(lastAppliedFullMetaRef.current, fullMeta);
+
+    if (shouldApplyFull) {
+      valuesRef.current = fullValues.slice(Math.max(0, fullValues.length - maxSamples));
+      pendingShiftSamplesRef.current = 0;
+      const nextBounds =
+        valuesRef.current.length > 0 ? computeAdaptiveWaveBounds(valuesRef.current) : buildEmptyWaveBounds();
+      targetBoundsRef.current = nextBounds;
+      displayBoundsRef.current = nextBounds;
+      setAxisBounds(nextBounds);
+      lastAppliedFullMetaRef.current = fullMeta;
+      lastAppliedAppendMetaRef.current = appendMeta;
+      lastFrameAtRef.current = null;
+      return;
+    }
+
+    if (
+      appendValues.length > 0 &&
+      !areEegWaveSampleMetasEqual(lastAppliedAppendMetaRef.current, appendMeta)
+    ) {
+      appendValuesToFixedBuffer(valuesRef.current, appendValues, maxSamples);
+      pendingShiftSamplesRef.current += appendValues.length;
+      const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
+      targetBoundsRef.current = nextBounds;
+      setAxisBounds(nextBounds);
+      lastAppliedAppendMetaRef.current = appendMeta;
+    }
+  }, [appendMeta, appendValues, fullMeta, fullValues, maxSamples, reset]);
+
+  useEffect(() => {
+    const drawFrame = (now: number) => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const previousFrameAt = lastFrameAtRef.current ?? now;
+        const elapsedMs = Math.max(0, now - previousFrameAt);
+        lastFrameAtRef.current = now;
+        const pendingShiftSamples = Math.max(
+          0,
+          pendingShiftSamplesRef.current -
+            (Math.max(1, samplingRateRef.current) * elapsedMs) / 1000,
+        );
+        pendingShiftSamplesRef.current = pendingShiftSamples;
+
+        const displayBounds = displayBoundsRef.current;
+        const targetBounds = targetBoundsRef.current;
+        displayBoundsRef.current = {
+          lowerBound:
+            displayBounds.lowerBound +
+            (targetBounds.lowerBound - displayBounds.lowerBound) * EEG_CANVAS_BOUNDS_FRAME_ALPHA,
+          upperBound:
+            displayBounds.upperBound +
+            (targetBounds.upperBound - displayBounds.upperBound) * EEG_CANVAS_BOUNDS_FRAME_ALPHA,
+        };
+
+        drawEegWaveCanvas(
+          canvas,
+          valuesRef.current,
+          color,
+          displayBoundsRef.current,
+          pendingShiftSamples,
+        );
+      }
+
+      animationFrameRef.current = window.requestAnimationFrame(drawFrame);
+    };
+
+    animationFrameRef.current = window.requestAnimationFrame(drawFrame);
+
+    const handleResize = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return;
+      }
+      drawEegWaveCanvas(
+        canvas,
+        valuesRef.current,
+        color,
+        displayBoundsRef.current,
+        0,
+      );
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="relative h-full overflow-hidden rounded-[10px] border border-white/8 bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.32))]">
+      <canvas ref={canvasRef} className="block h-full w-full" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-slate-950/45 to-transparent" />
+      <div className="pointer-events-none absolute right-2 top-1 text-[9px] font-medium text-slate-400">
+        {formatWaveAxisValue(axisBounds.upperBound)}
+      </div>
+      <div className="pointer-events-none absolute right-2 bottom-1 text-[9px] font-medium text-slate-400">
+        {formatWaveAxisValue(axisBounds.lowerBound)}
+      </div>
+      <div className="pointer-events-none absolute left-2 top-1 text-[9px] font-semibold text-slate-200">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+type EegWavePreviewProps = {
+  appendSamples: EegWaveSample[];
+  channelNames: string[];
+  reset: boolean;
+  samples: EegWaveSample[];
+  samplingRate: number;
+};
+
+const EegWavePreview = memo(function EegWavePreview({
+  appendSamples,
+  channelNames,
+  reset,
+  samples,
+  samplingRate,
+}: EegWavePreviewProps) {
+  const visibleChannelNames = channelNames.slice(0, 3);
+  const fullMeta = useMemo(() => extractEegWaveSampleMeta(samples), [samples]);
+  const appendMeta = useMemo(() => extractEegWaveSampleMeta(appendSamples), [appendSamples]);
+  const fullChannelValues = useMemo(
+    () => visibleChannelNames.map((_, channelIndex) => extractChannelValues(samples, channelIndex)),
+    [samples, visibleChannelNames],
+  );
+  const appendChannelValues = useMemo(
+    () => visibleChannelNames.map((_, channelIndex) => extractChannelValues(appendSamples, channelIndex)),
+    [appendSamples, visibleChannelNames],
+  );
+  const maxSamples = Math.max(samples.length, samplingRate * 4, EEG_RENDER_POINT_LIMIT);
+
+  return (
+    <div
+      className="grid h-full min-h-0 gap-1.5"
+      style={{ gridTemplateRows: `repeat(${Math.max(1, visibleChannelNames.length)}, minmax(0, 1fr))` }}
+    >
+      {visibleChannelNames.map((channelName, channelIndex) => (
+        <div
+          key={`channel_${channelIndex}`}
+          className="h-full min-h-0 overflow-hidden rounded-[12px] bg-slate-950/20"
+        >
+          <EegWaveChannelPlot
+            appendMeta={appendMeta}
+            appendValues={appendChannelValues[channelIndex] || []}
+            color={EEG_CHANNEL_COLORS[channelIndex] || "#60a5fa"}
+            fullMeta={fullMeta}
+            fullValues={fullChannelValues[channelIndex] || []}
+            label={channelName}
+            maxSamples={maxSamples}
+            reset={reset}
+            samplingRate={samplingRate}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}, (previousProps, nextProps) => {
+  if (previousProps.reset !== nextProps.reset) {
+    return false;
+  }
+  if (previousProps.samplingRate !== nextProps.samplingRate) {
+    return false;
+  }
+  if (!areChannelNamesEqual(previousProps.channelNames, nextProps.channelNames)) {
+    return false;
+  }
+  if (
+    !areEegWaveSampleMetasEqual(
+      extractEegWaveSampleMeta(previousProps.samples),
+      extractEegWaveSampleMeta(nextProps.samples),
+    )
+  ) {
+    return false;
+  }
+  return areEegWaveSampleMetasEqual(
+    extractEegWaveSampleMeta(previousProps.appendSamples),
+    extractEegWaveSampleMeta(nextProps.appendSamples),
+  );
+});
+
+function getEegSummaryText(live: ConsultationMultimodalLive) {
+  const latestResult = live.eeg_live.latest_result;
+  if (latestResult?.primary_label) {
+    return `${latestResult.primary_label} · ${formatPercent(latestResult.primary_score)}`;
+  }
+  if (live.eeg_live.device_status === "streaming") {
+    return "设备已连接，等待形成窗口结果";
+  }
+  if (live.eeg_live.error_message) {
+    return live.eeg_live.error_message;
+  }
+  return "等待脑电设备实时信号";
+}
+
+function getEegDeviceText(live: ConsultationMultimodalLive) {
+  const channelNames = live.eeg_waves.channel_names || live.eeg_live.channel_names || [];
+  const samplingRate = live.eeg_waves.sampling_rate || live.eeg_live.sampling_rate;
+  const status = live.eeg_live.device_status || live.eeg_live.status || "pending";
+  const statusMap: Record<string, string> = {
+    disabled: "未启用",
+    idle: "待绑定",
+    scanning: "扫描中",
+    connecting: "连接中",
+    connected: "已连接",
+    streaming: "采集中",
+    disconnected: "未连接",
+    dependency_missing: "依赖缺失",
+    pending: "等待中",
+  };
+  const parts = [
+    `状态 ${statusMap[status] || status}`,
+    channelNames.length > 0 ? `${channelNames.join(" / ")}` : null,
+    typeof samplingRate === "number" ? `${samplingRate}Hz` : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
 }
 
 function formatPercent(score?: number | null) {
@@ -338,13 +872,18 @@ export function ConsultationStatusPanel({
   const currentTurnFaceBundle = readBundleFaceSummary(consultation.current_turn_bundle);
   const currentTurnPoseBundle = readBundlePoseSummary(consultation.current_turn_bundle);
   const visualPipeline = consultation.visual_pipeline || null;
-  const stageOrder = consultation.current_stage?.stage_order ?? consultation.current_question_item?.stage_order ?? 1;
-  const eegSeries = buildEegSeries(stageOrder);
   const faceLabels =
     currentTurnFaceBundle.label_distribution.length > 0
       ? currentTurnFaceBundle.label_distribution
       : getTopLabels(snapshot.face.top_3_labels);
   const textWords = snapshot.text.negative_terms || [];
+  const eegLatestResult = snapshot.eeg_live.latest_result;
+  const eegChannelNames = snapshot.eeg_waves.channel_names || snapshot.eeg_live.channel_names || ["T7", "T8", "Fpz"];
+  const eegSamplingRate = snapshot.eeg_waves.sampling_rate || snapshot.eeg_live.sampling_rate || 500;
+  const eegSamples = snapshot.eeg_waves.samples || [];
+  const eegAppendSamples = snapshot.eeg_waves.append_samples || [];
+  const eegWaveReset = Boolean(snapshot.eeg_waves.reset);
+  const eegHasSamples = Boolean(eegSamples.length || eegAppendSamples.length);
 
   return (
     <div className={cn("w-full h-full min-h-0 font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
@@ -423,23 +962,59 @@ export function ConsultationStatusPanel({
           </div>
         </SectionCard>
 
-        <SectionCard title="脑电趋势感知">
-          <div className="grid grid-cols-[2fr_1fr] gap-[3px] h-[180px]">
-            <div className="min-w-0 rounded-[16px] bg-white/[0.03] px-1 py-1">
-              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                <LineChart data={eegSeries} margin={{ top: 10, right: 8, bottom: 4, left: -24 }}>
-                  <YAxis hide domain={[0, 1]} />
-                  <Line type="monotone" dataKey="alpha" stroke="#60a5fa" strokeWidth={1.7} dot={false} />
-                  <Line type="monotone" dataKey="beta" stroke="#34d399" strokeWidth={1.6} dot={false} />
-                  <Line type="monotone" dataKey="theta" stroke="#c084fc" strokeWidth={1.6} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+        <SectionCard
+          title="脑电情绪监测"
+          className="min-h-[202px]"
+          rightStatus={
+            snapshot.eeg_live.device_status === "streaming"
+              ? "streaming"
+              : eegHasSamples
+                ? "ready"
+                : snapshot.eeg_live.device_status || snapshot.eeg_live.status || "pending"
+          }
+        >
+          <div className="grid h-[194px] grid-cols-[1.82fr_0.98fr] gap-[3px]">
+            <div className="min-w-0 h-full overflow-hidden rounded-[16px] bg-white/[0.03] px-2 py-2">
+              {eegHasSamples ? (
+                <EegWavePreview
+                  appendSamples={eegAppendSamples}
+                  channelNames={eegChannelNames}
+                  reset={eegWaveReset}
+                  samples={eegSamples}
+                  samplingRate={eegSamplingRate}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-[14px] border border-dashed border-white/10 px-3 text-center text-[11px] text-slate-400">
+                  当前还没有收到真实 EEG 波形。设备连接并进入回答窗口后，这里会显示三通道实时信号。
+                </div>
+              )}
             </div>
-            <div className="rounded-[16px] border border-dashed border-white/10 bg-[radial-gradient(circle_at_center,rgba(96,165,250,0.18),transparent_58%)] px-2 py-2 flex items-center justify-center">
-              <div className="text-center">
-                <BrainCircuit className="mx-auto h-8 w-8 text-indigo-200/80" />
-                <p className="mt-2 text-[11px] text-slate-300">脑电地形图</p>
-                <p className="mt-1 text-[10px] text-slate-500">当前前端未接 EEG</p>
+            <div className="rounded-[16px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(96,165,250,0.16),transparent_58%)] px-2 py-2">
+              <div className="flex h-full flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <BrainCircuit className="h-5 w-5 text-indigo-200/80" />
+                    <div className="text-[13px] font-semibold text-slate-100">实时脑电</div>
+                  </div>
+                  <div className="mt-2 text-[18px] font-bold leading-none text-sky-300">
+                    {eegLatestResult?.primary_label || "等待中"}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-300">{getEegSummaryText(snapshot)}</div>
+                </div>
+                <div className="space-y-2">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Device</div>
+                    <div className="mt-1 text-[11px] leading-5 text-slate-200">{getEegDeviceText(snapshot)}</div>
+                  </div>
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Window</div>
+                    <div className="mt-1 text-[11px] leading-5 text-slate-200">
+                      {typeof eegLatestResult?.window_index === "number"
+                        ? `window-${eegLatestResult.window_index}`
+                        : "尚未形成推理窗口"}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

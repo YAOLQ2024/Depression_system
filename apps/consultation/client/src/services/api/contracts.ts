@@ -173,6 +173,8 @@ export type AssessmentAcceptedAnswer = {
   created_at?: string | null;
 };
 
+export type AssessmentMultimodalLiveResponse = ConsultationMultimodalLive;
+
 export type CreateAssessmentSessionPayload = {
   encounter_session_id?: string | null;
   source_consultation_flow_run_id?: string | null;

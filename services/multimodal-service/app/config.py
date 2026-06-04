@@ -35,10 +35,15 @@ def get_settings() -> dict:
         )
     )
     model_root = runtime_assets_dir / "models"
+    eeg_root = runtime_assets_dir / "eeg"
 
     model_providers = _as_csv_list(
         os.getenv("MODEL_PROVIDERS") or os.getenv("MODEL_PROVIDER"),
         ["CPUExecutionProvider"],
+    )
+    eeg_channel_names = _as_csv_list(
+        os.getenv("EEG_CHANNEL_NAMES"),
+        ["T7", "T8", "Fpz"],
     )
 
     return {
@@ -175,4 +180,29 @@ def get_settings() -> dict:
         "audio_model_dir": str(model_root / "audio_emotion"),
         "face_model_dir": str(model_root / "face_emotion"),
         "pose_model_dir": str(model_root / "pose_emotion"),
+        "eeg_enabled": _as_bool(os.getenv("EEG_ENABLED"), False),
+        "eeg_provider": os.getenv("EEG_PROVIDER", "ble").strip().lower() or "ble",
+        "eeg_device_name_hint": os.getenv("EEG_DEVICE_NAME_HINT", "EEG").strip() or "EEG",
+        "eeg_notify_char_uuid": (
+            os.getenv("EEG_NOTIFY_CHAR_UUID", "6e400003-b5a3-f393-e0a9-e50e24dcca9e").strip()
+            or "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+        ),
+        "eeg_scan_seconds": float(os.getenv("EEG_SCAN_SECONDS", "5")),
+        "eeg_reconnect_delay_seconds": float(os.getenv("EEG_RECONNECT_DELAY_SECONDS", "5")),
+        "eeg_sampling_rate": _as_int(os.getenv("EEG_SAMPLING_RATE"), 500),
+        "eeg_preview_seconds": _as_int(os.getenv("EEG_PREVIEW_SECONDS"), 4),
+        "eeg_window_seconds": _as_int(os.getenv("EEG_WINDOW_SECONDS"), 60),
+        "eeg_min_feature_frames": _as_int(os.getenv("EEG_MIN_FEATURE_FRAMES"), 1),
+        "eeg_channel_names": eeg_channel_names,
+        "eeg_root": eeg_root,
+        "eeg_model_path": Path(
+            os.getenv(
+                "EEG_MODEL_PATH",
+                str(eeg_root / "model_combined_3class.pkl"),
+            )
+        ),
+        "eeg_live_ttl_seconds": _as_int(os.getenv("EEG_LIVE_TTL_SECONDS"), 30),
+        "eeg_turn_state_ttl_seconds": _as_int(os.getenv("EEG_TURN_STATE_TTL_SECONDS"), 600),
+        "eeg_turn_window_ttl_seconds": _as_int(os.getenv("EEG_TURN_WINDOW_TTL_SECONDS"), 600),
+        "eeg_latest_results_limit": _as_int(os.getenv("EEG_LATEST_RESULTS_LIMIT"), 3),
     }

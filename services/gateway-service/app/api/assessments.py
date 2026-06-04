@@ -82,11 +82,29 @@ def get_assessment_scale_detail(
     scale_slug: str,
     mcs_session: str | None = Cookie(default=None),
     authorization: str | None = Header(default=None),
-):
+) -> dict:
     _, user = _require_current_user(mcs_session, authorization)
     upstream = forward_assessment_request(
         "GET",
         f"/api/v1/assessment/sessions/{session_id}/scales/{scale_slug}/detail",
+        None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.get("/sessions/{session_id}/multimodal/live")
+def get_assessment_multimodal_live(
+    session_id: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_assessment_request(
+        "GET",
+        f"/api/v1/assessment/sessions/{session_id}/multimodal/live",
         None,
         acting_user_id=user["id"],
     )
@@ -108,24 +126,6 @@ def submit_assessment_answer(
         "POST",
         f"/api/v1/assessment/sessions/{session_id}/answers",
         payload.model_dump(exclude_none=True),
-        acting_user_id=user["id"],
-    )
-    if upstream["status"] >= 400:
-        raise _proxy_error(upstream)
-    return upstream["payload"]
-
-
-@router.get("/sessions/{session_id}/multimodal/live")
-def get_assessment_multimodal_live(
-    session_id: str,
-    mcs_session: str | None = Cookie(default=None),
-    authorization: str | None = Header(default=None),
-):
-    _, user = _require_current_user(mcs_session, authorization)
-    upstream = forward_assessment_request(
-        "GET",
-        f"/api/v1/assessment/sessions/{session_id}/multimodal/live",
-        None,
         acting_user_id=user["id"],
     )
     if upstream["status"] >= 400:

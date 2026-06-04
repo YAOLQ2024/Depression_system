@@ -7,9 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.clients.multimodal_client import (
     create_multimodal_session as create_upstream_multimodal_session,
+    clear_pose_turn_runtime as clear_pose_turn_runtime_upstream,
     finalize_multimodal_turn as finalize_upstream_multimodal_turn,
     get_multimodal_turn_bundle as fetch_upstream_multimodal_turn_bundle,
     stream_multimodal_live as stream_upstream_multimodal_live,
+    finish_eeg_turn as finish_upstream_eeg_turn,
+    start_eeg_turn as start_upstream_eeg_turn,
     submit_visual_capture as submit_upstream_visual_capture,
 )
 from app.database import get_db_session
@@ -197,6 +200,66 @@ def _finalize_turn_bundle_upstream(
     return turn_bundle if isinstance(turn_bundle, dict) else None
 
 
+def _start_eeg_turn_best_effort(
+    *,
+    multimodal_session_id: str | None,
+    session_record: ConsultationSession,
+    acting_user_id: str,
+) -> None:
+    turn_id = _get_active_turn_id(session_record)
+    if not multimodal_session_id or not turn_id:
+        return
+    try:
+        start_upstream_eeg_turn(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=turn_id,
+            flow_run_id=session_record.id,
+            stage_id=session_record.current_stage_id,
+            question_key=session_record.current_question_key,
+            acting_user_id=acting_user_id,
+        )
+    except Exception:
+        return
+
+
+def _finish_eeg_turn_best_effort(
+    *,
+    multimodal_session_id: str | None,
+    turn_id: str | None,
+    acting_user_id: str,
+    reason: str,
+) -> None:
+    if not multimodal_session_id or not turn_id:
+        return
+    try:
+        finish_upstream_eeg_turn(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=turn_id,
+            reason=reason,
+            acting_user_id=acting_user_id,
+        )
+    except Exception:
+        return
+
+
+def _clear_pose_turn_runtime_best_effort(
+    *,
+    multimodal_session_id: str | None,
+    turn_id: str | None,
+    acting_user_id: str,
+) -> None:
+    if not multimodal_session_id or not turn_id:
+        return
+    try:
+        clear_pose_turn_runtime_upstream(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=turn_id,
+            acting_user_id=acting_user_id,
+        )
+    except Exception:
+        return
+
+
 def create_consultation_session(
     payload: CreateConsultationSessionRequest, acting_user_id: str | None
 ) -> dict[str, Any]:
@@ -306,11 +369,17 @@ def get_consultation_session(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
-        _ensure_multimodal_session_binding(
+        multimodal_session_id = _ensure_multimodal_session_binding(
             session_record,
             acting_user_id=acting_user_id,
         )
         _sync_playlist_state(session_record, bundle)
+        if session_record.status == "waiting_user_input":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
         db_session.flush()
         return _serialize_session(session_record, bundle)
 
@@ -326,7 +395,7 @@ def start_consultation_session(
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
             )
-        _ensure_multimodal_session_binding(
+        multimodal_session_id = _ensure_multimodal_session_binding(
             session_record,
             acting_user_id=acting_user_id,
         )
@@ -349,6 +418,12 @@ def start_consultation_session(
             session_record.encounter_session.updated_at = _now()
         _auto_advance(session_record, bundle)
         _sync_playlist_state(session_record, bundle)
+        if session_record.status == "waiting_user_input":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
         db_session.flush()
         db_session.refresh(session_record)
         return _serialize_session(session_record, bundle)
@@ -481,6 +556,15 @@ def complete_system_question_item(
             node=node,
             bundle=bundle,
         )
+        multimodal_session_id = (
+            str(session_record.multimodal_session_id or "").strip() or None
+        )
+        if session_record.status == "waiting_user_input":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
         db_session.flush()
         db_session.refresh(session_record)
         return _serialize_session(session_record, bundle)
@@ -623,12 +707,27 @@ def submit_consultation_turn(
             )
 
         if multimodal_session_id:
+            _finish_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                turn_id=turn_id,
+                acting_user_id=acting_user_id,
+                reason="consultation_turn_submitted",
+            )
             turn_bundle_payload = _finalize_turn_bundle_upstream(
                 multimodal_session_id=multimodal_session_id,
                 turn_id=turn_id,
                 acting_user_id=acting_user_id,
             )
             consultation_turn.turn_summary_payload = turn_bundle_payload
+            _clear_pose_turn_runtime_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                turn_id=turn_id,
+                acting_user_id=acting_user_id,
+            )
+            _refresh_multimodal_live_snapshot(
+                session_record,
+                acting_user_id=acting_user_id,
+            )
 
         _clear_active_turn(session_record)
         session_record.status = "running"
@@ -640,6 +739,12 @@ def submit_consultation_turn(
         _move_to_target(session_record, branch_payload.get("next"), bundle)
         _auto_advance(session_record, bundle)
         _sync_playlist_state(session_record, bundle)
+        if multimodal_session_id and session_record.status == "waiting_user_input":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
         db_session.flush()
         db_session.refresh(session_record)
         return _serialize_session(session_record, bundle)
@@ -655,6 +760,16 @@ def get_consultation_multimodal_live(
         if session_record.user_id != acting_user_id:
             raise ConsultationServiceError(
                 "consultation session forbidden", code=4032, status_code=403
+            )
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        if session_record.status == "waiting_user_input":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
             )
         live_data = _refresh_multimodal_live_snapshot(
             session_record,
@@ -678,6 +793,12 @@ def stream_consultation_multimodal_live(
             session_record,
             acting_user_id=acting_user_id,
         )
+        if session_record.status == "waiting_user_input":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
         db_session.flush()
     return stream_upstream_multimodal_live(
         multimodal_session_id=multimodal_session_id,

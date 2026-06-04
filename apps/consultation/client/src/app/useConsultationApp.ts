@@ -11,7 +11,13 @@ import {
 } from "../services/api/client";
 import type { AuthLoginPayload, AuthRegisterPayload } from "../features/auth/AuthPage";
 import { resolveHomeEntryLabel, resolveHomeEntryPath, resolvePostLoginPath, resolveResumePath } from "../routes";
-import { getAssessmentCatalog, getAssessmentSession, createAssessmentSession, submitAssessmentAnswer } from "../services/api/assessment.api";
+import {
+  getAssessmentCatalog,
+  getAssessmentMultimodalLive,
+  getAssessmentSession,
+  createAssessmentSession,
+  submitAssessmentAnswer,
+} from "../services/api/assessment.api";
 import { login, logout, register } from "../services/api/auth.api";
 import { getBootstrapSummary } from "../services/api/bootstrap.api";
 import {
@@ -46,9 +52,11 @@ import type {
   AssessmentSession,
   BootstrapPayload,
   ConsultationMultimodalLive,
+  ConsultationMultimodalLivePatch,
   ConsultationSession,
   UserRecord,
 } from "../types";
+import { mergeConsultationMultimodalLive } from "../lib/multimodalLiveMerge";
 
 export function useConsultationApp() {
   const [user, setUser] = useState<UserRecord | null>(null);
@@ -504,16 +512,40 @@ export function useConsultationApp() {
     }
   }
 
-  function applyConsultationMultimodalLive(live: ConsultationMultimodalLive) {
+  function applyConsultationMultimodalLive(
+    live: ConsultationMultimodalLive | ConsultationMultimodalLivePatch,
+  ) {
     setConsultation((current) =>
       current
         ? {
             ...current,
-            multimodal_live: live,
+            multimodal_live: mergeConsultationMultimodalLive(current.multimodal_live, live),
             multimodal_live_updated_at: live.updated_at || new Date().toISOString(),
           }
         : current,
     );
+  }
+
+  async function refreshAssessmentMultimodalLive() {
+    if (!assessment) {
+      return null;
+    }
+
+    try {
+      const live = await getAssessmentMultimodalLive(assessment.session_id);
+      setAssessment((current) =>
+        current
+          ? {
+              ...current,
+              multimodal_live: mergeConsultationMultimodalLive(current.multimodal_live, live),
+              multimodal_live_updated_at: live.updated_at || new Date().toISOString(),
+            }
+          : current,
+      );
+      return live;
+    } catch {
+      return null;
+    }
   }
 
   async function getConsultationTurnBundle(turnId: string) {
@@ -547,7 +579,16 @@ export function useConsultationApp() {
     modality: "face" | "pose",
   ) {
     const nextLive = {
-      ...(current.multimodal_live || { speech: { status: "pending" }, text: { status: "pending" }, face: { status: "pending" }, pose: { status: "pending" } }),
+      ...(
+        current.multimodal_live || {
+          speech: { status: "pending" },
+          text: { status: "pending" },
+          face: { status: "pending" },
+          pose: { status: "pending" },
+          eeg_live: { status: "pending", latest_results: [] },
+          eeg_waves: { status: "pending", samples: [] },
+        }
+      ),
     } as ConsultationMultimodalLive;
     const existing = (nextLive[modality] || { status: "pending" }) as ConsultationMultimodalLive["face"];
     const nextStatus =
@@ -874,6 +915,7 @@ export function useConsultationApp() {
       refreshConsultation,
       refreshConsultationMultimodalLive,
       applyConsultationMultimodalLive,
+      refreshAssessmentMultimodalLive,
       getConsultationTurnBundle,
       submitConsultationVisualCapture,
       completeConsultationSystemQuestionItem,

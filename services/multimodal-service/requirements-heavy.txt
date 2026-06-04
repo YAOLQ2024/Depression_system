@@ -2,6 +2,8 @@ dataoceanai-dolphin==20260513
 torch==2.5.1
 torchaudio==2.5.1
 numpy==1.26.4
+scikit-learn==1.7.2
+bleak==0.22.3
 onnxruntime-gpu==1.20.1
 transformers==4.46.2
 huggingface_hub==0.35.3

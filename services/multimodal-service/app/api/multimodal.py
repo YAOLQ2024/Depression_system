@@ -10,6 +10,8 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.schemas import (
     CreateMultimodalSessionRequest,
+    FinishEegTurnRequest,
+    StartEegTurnRequest,
     SubmitAudioTurnRequest,
     SubmitFrameCaptureRequest,
     WarmupMultimodalSessionRequest,
@@ -18,11 +20,14 @@ from app.services.multimodal_live_stream import iter_multimodal_live_events
 from app.services.multimodal_session_service import (
     clear_pose_turn_runtime_state,
     finalize_multimodal_turn,
+    finish_eeg_turn,
+    get_eeg_turn_results,
     MultimodalServiceError as SessionServiceError,
     get_multimodal_live,
     get_multimodal_session,
     get_multimodal_turn_bundle,
     recover_multimodal_turn_hot_state,
+    start_eeg_turn,
     submit_audio_turn,
     submit_visual_capture,
     warmup_multimodal_session,
@@ -316,6 +321,58 @@ async def get_live_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/sessions/{session_id}/eeg/turns/start")
+def post_start_eeg_turn(
+    session_id: str,
+    payload: StartEegTurnRequest,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
+    try:
+        result = start_eeg_turn(session_id, payload, acting_user_id=acting_user_id)
+    except (SessionServiceError, StoreServiceError) as exc:
+        raise _translate_error(exc) from exc
+    return success_response(result, message="eeg turn started")
+
+
+@router.post("/sessions/{session_id}/eeg/turns/{turn_id}/finish")
+def post_finish_eeg_turn(
+    session_id: str,
+    turn_id: str,
+    payload: FinishEegTurnRequest,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
+    try:
+        result = finish_eeg_turn(
+            session_id,
+            turn_id,
+            payload,
+            acting_user_id=acting_user_id,
+        )
+    except (SessionServiceError, StoreServiceError) as exc:
+        raise _translate_error(exc) from exc
+    return success_response(result, message="eeg turn finished")
+
+
+@router.get("/sessions/{session_id}/eeg/turns/{turn_id}/results")
+def get_eeg_turn_result_list(
+    session_id: str,
+    turn_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    acting_user_id = _require_acting_user_id(x_mcs_user_id)
+    try:
+        result = get_eeg_turn_results(
+            session_id,
+            turn_id,
+            acting_user_id=acting_user_id,
+        )
+    except (SessionServiceError, StoreServiceError) as exc:
+        raise _translate_error(exc) from exc
+    return success_response(result)
 
 
 @router.get("/sessions/{session_id}/turns/{turn_id}/bundle")

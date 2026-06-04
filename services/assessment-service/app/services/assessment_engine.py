@@ -9,6 +9,11 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.clients.multimodal_client import (
+    finish_eeg_turn as finish_upstream_eeg_turn,
+    get_eeg_turn_results as fetch_upstream_eeg_turn_results,
+    start_eeg_turn as start_upstream_eeg_turn,
+)
 from app.database import get_db_session
 from app.models import AssessmentAnswer, AssessmentResult, AssessmentSession
 from app.schemas.assessment import CreateAssessmentSessionRequest, SubmitAssessmentAnswerRequest
@@ -27,6 +32,9 @@ from app.services.scale_scoring import (
     compute_scale_scoring,
 )
 from app.services.scale_loader import ScaleDefinition, ScaleLoaderError, get_scale_loader
+
+
+ASSESSMENT_STAGE_ID = "assessment"
 
 
 class AssessmentServiceError(Exception):
@@ -101,6 +109,24 @@ def _translate_loader_error(exc: ScaleLoaderError) -> AssessmentServiceError:
 
 def _translate_scoring_error(exc: ScaleScoringError) -> AssessmentServiceError:
     return AssessmentServiceError(str(exc), code=5002, status_code=500)
+
+
+def _extract_upstream_data(upstream: dict, *, error_code: int) -> dict[str, Any]:
+    if upstream["status"] >= 400:
+        payload = upstream.get("payload") or {}
+        raise AssessmentServiceError(
+            str(payload.get("message") or "multimodal service request failed"),
+            code=int(payload.get("code") or error_code),
+            status_code=int(upstream["status"]),
+        )
+    data = (upstream.get("payload") or {}).get("data") or {}
+    if not isinstance(data, dict):
+        raise AssessmentServiceError(
+            "multimodal service returned invalid payload",
+            code=error_code,
+            status_code=502,
+        )
+    return data
 
 
 def _normalize_scale_sequence(payload: CreateAssessmentSessionRequest) -> list[str]:
@@ -296,6 +322,46 @@ def _build_current_item(scale_definition: ScaleDefinition, item_index: int) -> d
         "index": item.index,
         "text": item.text,
         "answer_options": [{"score": option.score, "label": option.label} for option in scale_definition.answer_options],
+    }
+
+
+def _build_assessment_question_key(scale_slug: str, item_index: int) -> str:
+    return f"{scale_slug}-{int(item_index):03d}"
+
+
+def _build_assessment_turn_id(
+    session_record: AssessmentSession,
+    *,
+    scale_slug: str,
+    item_id: str,
+) -> str:
+    return str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"assessment:{session_record.id}:{scale_slug}:{item_id}",
+        )
+    )
+
+
+def _build_current_turn_context(session_record: AssessmentSession) -> dict[str, Any] | None:
+    if session_record.status == "completed" or not session_record.current_scale_slug:
+        return None
+    scale_definition = _get_current_scale_or_raise(session_record)
+    current_item = _build_current_item(scale_definition, session_record.current_item_index)
+    if not current_item:
+        return None
+    return {
+        "turn_id": _build_assessment_turn_id(
+            session_record,
+            scale_slug=scale_definition.slug,
+            item_id=str(current_item["item_id"]),
+        ),
+        "question_key": _build_assessment_question_key(
+            scale_definition.slug,
+            int(current_item["index"]),
+        ),
+        "scale_definition": scale_definition,
+        "current_item": current_item,
     }
 
 
@@ -519,10 +585,8 @@ def _serialize_session(db_session: Session, session_record: AssessmentSession) -
     for answer in answers:
         answers_by_scale.setdefault(answer.scale_slug, []).append(answer)
 
-    current_item = None
-    if session_record.current_scale_slug and session_record.status != "completed":
-        current_scale = _get_current_scale_or_raise(session_record)
-        current_item = _build_current_item(current_scale, session_record.current_item_index)
+    turn_context = _build_current_turn_context(session_record)
+    current_item = turn_context["current_item"] if turn_context else None
 
     try:
         serialized_results = [
@@ -552,9 +616,16 @@ def _serialize_session(db_session: Session, session_record: AssessmentSession) -
         "current_scale_slug": session_record.current_scale_slug,
         "current_item_index": session_record.current_item_index,
         "current_item": current_item,
+        "current_turn_id": turn_context["turn_id"] if turn_context else None,
         "scale_handoff_payload": _ensure_json_dict(session_record.scale_handoff_payload),
         "capture_context": _ensure_json_dict(session_record.capture_context),
         "aggregate_payload": _ensure_json_dict(session_record.aggregate_payload),
+        "multimodal_live": _ensure_json_dict(session_record.multimodal_live_payload),
+        "multimodal_live_updated_at": (
+            session_record.multimodal_live_updated_at.isoformat()
+            if session_record.multimodal_live_updated_at
+            else None
+        ),
         "results": serialized_results,
         "created_at": session_record.created_at.isoformat(),
         "updated_at": session_record.updated_at.isoformat(),
@@ -849,6 +920,7 @@ def _build_aggregate_payload(db_session: Session, session_record: AssessmentSess
                     **dict(flag_payload),
                 }
             )
+    capture_context = _ensure_json_dict(session_record.capture_context)
     return {
         "assessment_session_id": session_record.id,
         "encounter_session_id": session_record.encounter_session_id,
@@ -860,8 +932,146 @@ def _build_aggregate_payload(db_session: Session, session_record: AssessmentSess
         "scale_result_map": scale_result_map,
         "normalized_scores": normalized_scores,
         "flattened_risk_flags": flattened_risk_flags,
+        "eeg_turn_results": list(capture_context.get("eeg_turn_results") or []),
         "source_handoff": _ensure_json_dict(session_record.scale_handoff_payload),
     }
+
+
+def _ensure_multimodal_session_binding(
+    session_record: AssessmentSession,
+    *,
+    acting_user_id: str,
+) -> str:
+    multimodal_session_id = ensure_multimodal_session_binding(
+        session_record,
+        acting_user_id=acting_user_id,
+    )
+    session_record.updated_at = _now()
+    return str(multimodal_session_id)
+
+
+def _refresh_multimodal_live_snapshot(
+    session_record: AssessmentSession,
+    *,
+    acting_user_id: str,
+) -> dict[str, Any]:
+    _ensure_multimodal_session_binding(
+        session_record,
+        acting_user_id=acting_user_id,
+    )
+    live_data = refresh_multimodal_live_snapshot(
+        session_record,
+        acting_user_id=acting_user_id,
+    )
+    session_record.multimodal_live_payload = live_data
+    session_record.multimodal_live_updated_at = _now()
+    return live_data
+
+
+def _start_eeg_turn_best_effort(
+    *,
+    multimodal_session_id: str | None,
+    session_record: AssessmentSession,
+    acting_user_id: str,
+) -> None:
+    turn_context = _build_current_turn_context(session_record)
+    if not multimodal_session_id or turn_context is None:
+        return
+    try:
+        start_upstream_eeg_turn(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=str(turn_context["turn_id"]),
+            flow_run_id=session_record.id,
+            stage_id=ASSESSMENT_STAGE_ID,
+            question_key=str(turn_context["question_key"]),
+            acting_user_id=acting_user_id,
+        )
+    except Exception:
+        return
+
+
+def _finish_eeg_turn_best_effort(
+    *,
+    multimodal_session_id: str | None,
+    turn_id: str | None,
+    acting_user_id: str,
+    reason: str,
+) -> None:
+    if not multimodal_session_id or not turn_id:
+        return
+    try:
+        finish_upstream_eeg_turn(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=turn_id,
+            reason=reason,
+            acting_user_id=acting_user_id,
+        )
+    except Exception:
+        return
+
+
+def _load_eeg_turn_results_best_effort(
+    *,
+    multimodal_session_id: str | None,
+    turn_id: str | None,
+    acting_user_id: str,
+) -> list[dict[str, Any]]:
+    if not multimodal_session_id or not turn_id:
+        return []
+    try:
+        data = _extract_upstream_data(
+            fetch_upstream_eeg_turn_results(
+                multimodal_session_id=multimodal_session_id,
+                turn_id=turn_id,
+                acting_user_id=acting_user_id,
+            ),
+            error_code=5026,
+        )
+    except Exception:
+        return []
+
+    results = data.get("results") or []
+    normalized: list[dict[str, Any]] = []
+    for item in results:
+        if isinstance(item, dict):
+            normalized.append(dict(item))
+    return normalized
+
+
+def _append_eeg_turn_results(
+    session_record: AssessmentSession,
+    *,
+    scale_definition: ScaleDefinition,
+    current_item: dict[str, Any],
+    turn_id: str,
+    window_results: list[dict[str, Any]],
+) -> None:
+    capture_context = _ensure_json_dict(session_record.capture_context)
+    existing_entries = [
+        entry
+        for entry in list(capture_context.get("eeg_turn_results") or [])
+        if isinstance(entry, dict) and entry.get("turn_id") != turn_id
+    ]
+    copied_results = [dict(item) for item in window_results if isinstance(item, dict)]
+    existing_entries.append(
+        {
+            "turn_id": turn_id,
+            "scale_slug": scale_definition.slug,
+            "item_id": current_item["item_id"],
+            "item_index": current_item["index"],
+            "question_key": _build_assessment_question_key(
+                scale_definition.slug,
+                str(current_item["item_id"]),
+            ),
+            "result_count": len(copied_results),
+            "latest_result": dict(copied_results[-1]) if copied_results else None,
+            "window_results": copied_results,
+            "captured_at": _now().isoformat(),
+        }
+    )
+    capture_context["eeg_turn_results"] = existing_entries
+    session_record.capture_context = capture_context
+    session_record.updated_at = _now()
 
 
 def get_assessment_catalog() -> list[dict[str, Any]]:
@@ -884,6 +1094,8 @@ def create_assessment_session(payload: CreateAssessmentSessionRequest, acting_us
 
     selected_scales = _normalize_scale_sequence(payload)
     now = _now()
+    assessment_session_id = str(uuid.uuid4())
+
     with get_db_session() as db_session:
         _validate_source_consultation_handoff(
             db_session,
@@ -891,7 +1103,7 @@ def create_assessment_session(payload: CreateAssessmentSessionRequest, acting_us
             acting_user_id=acting_user_id,
         )
         session_record = AssessmentSession(
-            id=str(uuid.uuid4()),
+            id=assessment_session_id,
             user_id=payload.user_id,
             encounter_session_id=payload.encounter_session_id,
             source_consultation_flow_run_id=payload.source_consultation_flow_run_id,
@@ -904,17 +1116,23 @@ def create_assessment_session(payload: CreateAssessmentSessionRequest, acting_us
             scale_handoff_payload=_ensure_json_dict(payload.scale_handoff_payload),
             capture_context=_ensure_json_dict(payload.capture_context),
             aggregate_payload={},
+            multimodal_live_payload={},
+            multimodal_live_updated_at=None,
             created_at=now,
             updated_at=now,
             started_at=now,
         )
         db_session.add(session_record)
         db_session.flush()
-        if not session_record.multimodal_session_id:
-            ensure_multimodal_session_binding(
-                session_record,
-                acting_user_id=acting_user_id,
-            )
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        _start_eeg_turn_best_effort(
+            multimodal_session_id=multimodal_session_id,
+            session_record=session_record,
+            acting_user_id=acting_user_id,
+        )
         db_session.flush()
         return _serialize_session(db_session, session_record)
 
@@ -924,6 +1142,16 @@ def get_assessment_session(session_id: str, acting_user_id: str | None) -> dict[
     with get_db_session() as db_session:
         session_record = _get_session_or_raise(db_session, session_id)
         _require_session_owner(session_record, acting_user_id)
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        if session_record.status != "completed":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
         return _serialize_session(db_session, session_record)
 
 
@@ -943,6 +1171,30 @@ def get_assessment_scale_detail(
         )
 
 
+def get_assessment_multimodal_live(
+    session_id: str,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        _require_session_owner(session_record, acting_user_id)
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        if session_record.status != "completed":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
+        return _refresh_multimodal_live_snapshot(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+
+
 def submit_assessment_answer(
     session_id: str,
     payload: SubmitAssessmentAnswerRequest,
@@ -956,6 +1208,11 @@ def submit_assessment_answer(
         if session_record.status == "completed":
             raise AssessmentServiceError("assessment session already completed", code=4091, status_code=409)
 
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        turn_context = _build_current_turn_context(session_record)
         scale_definition = _get_current_scale_or_raise(session_record)
         current_item = _build_current_item(scale_definition, session_record.current_item_index)
         if not current_item:
@@ -990,13 +1247,17 @@ def submit_assessment_answer(
                     code=4094,
                     status_code=409,
                 )
-        question_key = payload.question_key or f"{scale_definition.slug}-{current_item['index']:03d}"
+        question_key = payload.question_key or _build_assessment_question_key(
+            scale_definition.slug,
+            int(current_item["index"]),
+        )
         raw_input = payload.raw_input or payload.transcript_text
         multimodal_session_id = (
             payload.multimodal_session_id
             or bound_multimodal_session_id
             or None
         )
+        resolved_turn_id = payload.turn_id or (str(turn_context["turn_id"]) if turn_context else None) or question_key
         answer_record = AssessmentAnswer(
             id=str(uuid.uuid4()),
             session_id=session_record.id,
@@ -1004,7 +1265,7 @@ def submit_assessment_answer(
             item_id=current_item["item_id"],
             item_index=int(current_item.get("index") or (session_record.current_item_index + 1)),
             question_key=question_key,
-            turn_id=payload.turn_id,
+            turn_id=resolved_turn_id,
             answer_source=answer_source,
             raw_input=raw_input,
             transcript_text=payload.transcript_text,
@@ -1026,7 +1287,7 @@ def submit_assessment_answer(
         db_session.flush()
         turn_bundle = finalize_assessment_turn_bundle(
             session_record,
-            turn_id=payload.turn_id or question_key,
+            turn_id=resolved_turn_id,
             acting_user_id=acting_user_id,
         )
         accepted_answer = _serialize_accepted_answer(
@@ -1036,11 +1297,36 @@ def submit_assessment_answer(
         if turn_bundle is not None:
             accepted_answer["turn_bundle"] = turn_bundle
 
+        _finish_eeg_turn_best_effort(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=resolved_turn_id,
+            acting_user_id=acting_user_id,
+            reason="assessment_item_submitted",
+        )
+        eeg_window_results = _load_eeg_turn_results_best_effort(
+            multimodal_session_id=multimodal_session_id,
+            turn_id=resolved_turn_id,
+            acting_user_id=acting_user_id,
+        )
+        if resolved_turn_id:
+            _append_eeg_turn_results(
+                session_record,
+                scale_definition=scale_definition,
+                current_item=current_item,
+                turn_id=resolved_turn_id,
+                window_results=eeg_window_results,
+            )
+
         session_record.updated_at = _now()
         next_item_index = session_record.current_item_index + 1
         if next_item_index < len(scale_definition.items):
             session_record.current_item_index = next_item_index
             db_session.flush()
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
             return {
                 "assessment_session": _serialize_session(db_session, session_record),
                 "accepted_answer": accepted_answer,
@@ -1053,6 +1339,11 @@ def submit_assessment_answer(
             session_record.current_scale_slug = selected_scales[current_scale_index + 1]
             session_record.current_item_index = 0
             db_session.flush()
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
             return {
                 "assessment_session": _serialize_session(db_session, session_record),
                 "accepted_answer": accepted_answer,
@@ -1083,20 +1374,6 @@ def submit_assessment_answer(
         }
 
 
-def get_assessment_multimodal_live(
-    session_id: str,
-    acting_user_id: str | None,
-) -> dict[str, Any]:
-    acting_user_id = _require_acting_user_id(acting_user_id)
-    with get_db_session() as db_session:
-        session_record = _get_session_or_raise(db_session, session_id)
-        _require_session_owner(session_record, acting_user_id)
-        return refresh_multimodal_live_snapshot(
-            session_record,
-            acting_user_id=acting_user_id,
-        )
-
-
 def stream_assessment_multimodal_live(
     session_id: str,
     acting_user_id: str | None,
@@ -1105,6 +1382,16 @@ def stream_assessment_multimodal_live(
     with get_db_session() as db_session:
         session_record = _get_session_or_raise(db_session, session_id)
         _require_session_owner(session_record, acting_user_id)
+        multimodal_session_id = _ensure_multimodal_session_binding(
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        if session_record.status != "completed":
+            _start_eeg_turn_best_effort(
+                multimodal_session_id=multimodal_session_id,
+                session_record=session_record,
+                acting_user_id=acting_user_id,
+            )
         return stream_assessment_multimodal_live_upstream(
             session_record,
             acting_user_id=acting_user_id,

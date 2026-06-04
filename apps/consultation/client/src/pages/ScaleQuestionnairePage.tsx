@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
+﻿import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CheckCircle,
@@ -40,6 +40,7 @@ import { useMultimodalAudioSubmission } from "../lib/useMultimodalAudioSubmissio
 import { useAudioRecording, type RecordingCompletedPayload } from "../lib/useAudioRecording";
 import { useCamera } from "../lib/useCamera";
 import { useJsonEventStream } from "../lib/useJsonEventStream";
+import { mergeConsultationMultimodalLive } from "../lib/multimodalLiveMerge";
 import { useMultimodalSession } from "../lib/useMultimodalSession";
 import { useTimedToast } from "../lib/useTimedToast";
 import { useVisualCapture } from "../lib/useVisualCapture";
@@ -60,6 +61,7 @@ import type {
   AssessmentOption,
   AssessmentSession,
   ConsultationMultimodalLive,
+  ConsultationMultimodalLivePatch,
   ConsultationSession,
   ConsultationTurnMultimodalBundle,
   VisualPipelineStatus,
@@ -93,7 +95,7 @@ const OPTION_BADGE_STYLES = [
   },
 ] as const;
 const ANSWER_CONFIRMATION_MS = 800;
-const LIVE_REFRESH_INTERVAL_MS = 5000;
+const LIVE_REFRESH_INTERVAL_MS = 1000;
 const VIDEO_COMPLETION_SCHEDULE_THRESHOLD_SECONDS = 0.9;
 const VIDEO_COMPLETION_FALLBACK_BUFFER_MS = 120;
 
@@ -117,6 +119,19 @@ function buildPendingLive(): ConsultationMultimodalLive {
     text: { status: "pending", top_3_labels: [], negative_terms: [] },
     face: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
     pose: { status: "pending", top_3_labels: [], quality_flags: {}, latest_capture_at: null },
+    eeg_live: {
+      status: "pending",
+      device_status: "pending",
+      channel_names: ["T7", "T8", "Fpz"],
+      sampling_rate: 500,
+      latest_results: [],
+    },
+    eeg_waves: {
+      status: "pending",
+      channel_names: ["T7", "T8", "Fpz"],
+      sampling_rate: 500,
+      samples: [],
+    },
     updated_at: null,
   };
 }
@@ -278,12 +293,14 @@ export default function ScaleQuestionnairePage() {
   const {
     isActive: isLiveStreamActive,
     activeRef: liveStreamActiveRef,
-  } = useJsonEventStream<ConsultationMultimodalLive>({
+  } = useJsonEventStream<ConsultationMultimodalLivePatch>({
     url:
       assessment?.session_id && typeof window !== "undefined"
         ? getAssessmentMultimodalLiveStreamUrl(assessment.session_id)
         : null,
-    onMessage: setMultimodalLive,
+    onMessage: (live) => {
+      setMultimodalLive((current) => mergeConsultationMultimodalLive(current, live));
+    },
   });
 
   const currentQuestion = useMemo(() => {
@@ -622,7 +639,7 @@ export default function ScaleQuestionnairePage() {
       const [live, bundle] = await Promise.allSettled([livePromise, bundlePromise]);
 
       if (live.status === "fulfilled" && live.value) {
-        setMultimodalLive(live.value);
+        setMultimodalLive((current) => mergeConsultationMultimodalLive(current, live.value));
       }
       if (bundle.status === "fulfilled" && bundle.value) {
         setCurrentTurnBundle(bundle.value);

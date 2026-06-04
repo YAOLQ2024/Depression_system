@@ -28,7 +28,7 @@ class CreateMultimodalSessionRequest(BaseModel):
     user_id: str | None = None
     stage_context: MultimodalStageContext | None = None
     enabled_modalities: list[str] = Field(
-        default_factory=lambda: ["text", "audio", "face", "pose"],
+        default_factory=lambda: ["text", "audio", "face", "pose", "eeg"],
     )
     notes: str | None = None
 
@@ -83,7 +83,7 @@ class CreateMultimodalSessionRequest(BaseModel):
 
 
 class WarmupMultimodalSessionRequest(BaseModel):
-    modalities: list[str] = Field(default_factory=lambda: ["text", "audio", "face", "pose"])
+    modalities: list[str] = Field(default_factory=lambda: ["text", "audio", "face", "pose", "eeg"])
 
 
 class SubmitAudioTurnRequest(BaseModel):
@@ -153,6 +153,28 @@ class SubmitFrameCaptureRequest(BaseModel):
 
     def image_bytes_length(self) -> int:
         return len(self.require_image_bytes())
+
+
+class StartEegTurnRequest(BaseModel):
+    turn_id: str = Field(min_length=1)
+    flow_run_id: str | None = None
+    question_key: str | None = None
+    stage_id: str | None = None
+
+
+class FinishEegTurnRequest(BaseModel):
+    reason: str | None = None
+
+
+class StartEegTurnRequest(BaseModel):
+    turn_id: str = Field(min_length=1)
+    flow_run_id: str | None = None
+    question_key: str | None = None
+    stage_id: str | None = None
+
+
+class FinishEegTurnRequest(BaseModel):
+    reason: str | None = None
 
 
 class MultimodalSessionSnapshot(BaseModel):

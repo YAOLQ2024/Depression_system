@@ -2,8 +2,8 @@ import { apiRequest, buildApiUrl } from "./client";
 import type {
   AssessmentCatalogResponse,
   AssessmentScaleDetailResponse,
+  AssessmentMultimodalLiveResponse,
   AssessmentSessionResponse,
-  ConsultationMultimodalLiveResponse,
   ConsultationTurnMultimodalBundleResponse,
   CreateAssessmentSessionPayload,
   SubmitAssessmentAnswerPayload,
@@ -39,21 +39,22 @@ export async function getAssessmentScaleDetail(sessionId: string, scaleSlug: str
   return data.scale_detail;
 }
 
+export async function getAssessmentMultimodalLive(sessionId: string) {
+  const data = await apiRequest<AssessmentMultimodalLiveResponse>(
+    `/assessment/sessions/${sessionId}/multimodal/live`,
+    {
+      method: "GET",
+    },
+  );
+  return data;
+}
+
 export async function submitAssessmentAnswer(sessionId: string, payload: SubmitAssessmentAnswerPayload) {
   const data = await apiRequest<AssessmentSessionResponse>(`/assessment/sessions/${sessionId}/answers`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
   return data;
-}
-
-export async function getAssessmentMultimodalLive(sessionId: string) {
-  return apiRequest<ConsultationMultimodalLiveResponse>(
-    `/assessment/sessions/${sessionId}/multimodal/live`,
-    {
-      method: "GET",
-    },
-  );
 }
 
 export function getAssessmentMultimodalLiveStreamUrl(sessionId: string) {
