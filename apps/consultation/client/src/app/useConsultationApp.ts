@@ -279,7 +279,7 @@ export function useConsultationApp() {
       const existingConsultation = await fetchExistingConsultation(currentUser.id);
       setConsultation(existingConsultation ? mergeConsultationWithCurrentTurnBundle(existingConsultation) : existingConsultation);
 
-      if (existingConsultation?.status === "handoff_ready") {
+      if (existingConsultation?.status === "handoff_ready" || !existingConsultation) {
         const existingAssessment = await fetchExistingAssessment(currentUser.id);
         setAssessment(existingAssessment);
       } else {
@@ -393,6 +393,8 @@ export function useConsultationApp() {
     setLoading(true);
 
     try {
+      clearAssessmentSessionId();
+      setAssessment(null);
       const created = await createConsultationSession();
       saveConsultationSessionId(created.session_id);
 

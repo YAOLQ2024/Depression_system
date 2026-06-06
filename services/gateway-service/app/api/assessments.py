@@ -76,6 +76,25 @@ def get_assessment_session(
     return upstream["payload"]
 
 
+@router.get("/sessions/{session_id}/scales/{scale_slug}/detail")
+def get_assessment_scale_detail(
+    session_id: str,
+    scale_slug: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_assessment_request(
+        "GET",
+        f"/api/v1/assessment/sessions/{session_id}/scales/{scale_slug}/detail",
+        None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
 @router.post("/sessions/{session_id}/answers")
 def submit_assessment_answer(
     session_id: str,

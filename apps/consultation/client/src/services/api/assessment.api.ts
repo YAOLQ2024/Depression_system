@@ -1,6 +1,7 @@
 import { apiRequest, buildApiUrl } from "./client";
 import type {
   AssessmentCatalogResponse,
+  AssessmentScaleDetailResponse,
   AssessmentSessionResponse,
   ConsultationMultimodalLiveResponse,
   ConsultationTurnMultimodalBundleResponse,
@@ -26,6 +27,16 @@ export async function getAssessmentSession(sessionId: string) {
     method: "GET",
   });
   return data.assessment_session;
+}
+
+export async function getAssessmentScaleDetail(sessionId: string, scaleSlug: string) {
+  const data = await apiRequest<AssessmentScaleDetailResponse>(
+    `/assessment/sessions/${sessionId}/scales/${scaleSlug}/detail`,
+    {
+      method: "GET",
+    },
+  );
+  return data.scale_detail;
 }
 
 export async function submitAssessmentAnswer(sessionId: string, payload: SubmitAssessmentAnswerPayload) {

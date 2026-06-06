@@ -1,5 +1,6 @@
 import type {
   AssessmentCatalogItem,
+  AssessmentScaleDetail,
   AssessmentSession,
   BootstrapPayload,
   ConsultationMultimodalLive,
@@ -122,6 +123,10 @@ export type ConsultationTurnMultimodalBundleResponse = ConsultationTurnMultimoda
 export type AssessmentSessionResponse = {
   assessment_session: AssessmentSession;
   accepted_answer?: AssessmentAcceptedAnswer | null;
+};
+
+export type AssessmentScaleDetailResponse = {
+  scale_detail: AssessmentScaleDetail;
 };
 
 export type AssessmentAcceptedAnswer = {
