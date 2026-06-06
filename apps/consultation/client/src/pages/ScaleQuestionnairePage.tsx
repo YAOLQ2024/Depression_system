@@ -94,6 +94,8 @@ const OPTION_BADGE_STYLES = [
 ] as const;
 const ANSWER_CONFIRMATION_MS = 800;
 const LIVE_REFRESH_INTERVAL_MS = 5000;
+const VIDEO_COMPLETION_SCHEDULE_THRESHOLD_SECONDS = 0.9;
+const VIDEO_COMPLETION_FALLBACK_BUFFER_MS = 120;
 
 function formatStageQuestionCounter(current: number, total: number) {
   return `第 ${current}/${total} 题`;
@@ -242,6 +244,9 @@ export default function ScaleQuestionnairePage() {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const lastRecordingUrlRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
+  const videoCompletionTimerRef = useRef<number | null>(null);
+  const videoCompletionScheduledClipKeyRef = useRef<string | null>(null);
+  const completedVideoClipKeyRef = useRef<string | null>(null);
 
   const previewStages = useMemo(
     () => buildScaleAssessmentPreviewStages(state.assessmentCatalog),
@@ -365,6 +370,14 @@ export default function ScaleQuestionnairePage() {
   const playableVideoUri = currentClip?.src ?? null;
   const currentTurnId = currentQuestionKey;
   const isAssessmentCompleted = assessment?.status === "completed";
+
+  function clearVideoCompletionFallback() {
+    if (videoCompletionTimerRef.current !== null) {
+      window.clearTimeout(videoCompletionTimerRef.current);
+      videoCompletionTimerRef.current = null;
+    }
+    videoCompletionScheduledClipKeyRef.current = null;
+  }
 
   const activeAcceptedScore =
     pendingAcceptedAnswer?.question_key === currentQuestionKey
@@ -520,6 +533,7 @@ export default function ScaleQuestionnairePage() {
   useEffect(() => {
     return () => {
       isUnmountingRef.current = true;
+      clearVideoCompletionFallback();
       if (lastRecordingUrlRef.current) {
         URL.revokeObjectURL(lastRecordingUrlRef.current);
       }
@@ -556,6 +570,8 @@ export default function ScaleQuestionnairePage() {
   }, [pushToast, videoTransitionState.transitionReason]);
 
   useEffect(() => {
+    clearVideoCompletionFallback();
+    completedVideoClipKeyRef.current = null;
     setPlaybackBlocked(false);
     setVideoError("");
     setVideoFinished(false);
@@ -649,6 +665,8 @@ export default function ScaleQuestionnairePage() {
       return;
     }
 
+    clearVideoCompletionFallback();
+    completedVideoClipKeyRef.current = null;
     setPlaybackBlocked(false);
     setVideoError("");
     setVideoFinished(false);
@@ -665,33 +683,57 @@ export default function ScaleQuestionnairePage() {
     }
   }
 
-  async function handleVideoEnded() {
-    if (!currentVideoNode) {
+  const finalizeCurrentVideoPlayback = useEffectEvent(async () => {
+    if (!currentVideoNode || !currentClip?.clipKey) {
       return;
     }
+
+    if (completedVideoClipKeyRef.current === currentClip.clipKey) {
+      return;
+    }
+
+    completedVideoClipKeyRef.current = currentClip.clipKey;
+    clearVideoCompletionFallback();
 
     if (isAssessmentStageIntroVideoNode(currentVideoNode) && currentStage?.slug) {
       await requestPreview();
-      setPlayedStageIntros((current) => ({ ...current, [currentStage.slug]: true }));
+      setPlayedStageIntros((current) =>
+        current[currentStage.slug] ? current : { ...current, [currentStage.slug]: true },
+      );
       return;
     }
 
-    if (!videoFinished) {
-      setVideoFinished(true);
-    }
+    setVideoFinished((current) => (current ? current : true));
+  });
+
+  async function handleVideoEnded() {
+    await finalizeCurrentVideoPlayback();
   }
 
   function handleVideoTimeUpdate(event: SeamlessVideoTimeUpdateEvent) {
-    if (!isCurrentVideoStageIntro) {
-      return;
-    }
-
     const remainingSeconds = event.video.duration - event.video.currentTime;
-    if (!Number.isFinite(remainingSeconds) || remainingSeconds > 0.9) {
+    if (!Number.isFinite(remainingSeconds)) {
       return;
     }
 
-    void requestPreview();
+    if (isCurrentVideoStageIntro && remainingSeconds <= VIDEO_COMPLETION_SCHEDULE_THRESHOLD_SECONDS) {
+      void requestPreview();
+    }
+
+    if (
+      !currentClip?.clipKey ||
+      completedVideoClipKeyRef.current === currentClip.clipKey ||
+      videoCompletionScheduledClipKeyRef.current === currentClip.clipKey ||
+      remainingSeconds > VIDEO_COMPLETION_SCHEDULE_THRESHOLD_SECONDS
+    ) {
+      return;
+    }
+
+    clearVideoCompletionFallback();
+    videoCompletionScheduledClipKeyRef.current = currentClip.clipKey;
+    videoCompletionTimerRef.current = window.setTimeout(() => {
+      void finalizeCurrentVideoPlayback();
+    }, Math.max(Math.ceil(remainingSeconds * 1000) + VIDEO_COMPLETION_FALLBACK_BUFFER_MS, 0));
   }
 
   function handleVideoError(event: SeamlessVideoErrorEvent) {

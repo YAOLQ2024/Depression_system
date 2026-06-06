@@ -67,6 +67,14 @@ VOICE_OPTION_SYNONYMS: dict[str, dict[int, tuple[str, ...]]] = {
         4: ("绝大部分或全部时间", "绝大部分时间", "全部时间", "大部分时间", "几乎总是", "一直都是", "总是", "4分"),
     },
 }
+DETAIL_QUESTION_PREFIXES: dict[str, tuple[str, ...]] = {
+    "sds": (
+        "接下来进入SDS量表问诊环节，请根据您最近一星期的实际情况回答。",
+    ),
+    "sas": (
+        "接下来进入SAS量表问诊环节，我会问您20个问题，请根据您最近一星期的实际感受，按照选项作答。",
+    ),
+}
 
 
 def _now() -> datetime:
@@ -357,6 +365,144 @@ def _serialize_accepted_answer(
     }
 
 
+def _serialize_scale_detail_item(
+    scale_definition: ScaleDefinition,
+    item: dict[str, Any],
+    answer_record: AssessmentAnswer | None,
+) -> dict[str, Any]:
+    item_index = int(item.get("index") or 0)
+    question_text = _sanitize_scale_detail_question_text(
+        scale_definition.slug,
+        item_index,
+        str(item.get("question_text") or item.get("text") or "").strip(),
+    )
+    fallback_question_key = f"{scale_definition.slug}-{item_index:03d}" if item_index > 0 else None
+
+    return {
+        "item_id": str(item.get("id") or ""),
+        "item_index": item_index,
+        "question_key": (
+            answer_record.question_key if answer_record and answer_record.question_key else fallback_question_key
+        ),
+        "question_text": question_text,
+        "selected_option_label": (
+            answer_record.selected_option_label or answer_record.normalized_option if answer_record else None
+        ),
+        "selected_option_score": (
+            answer_record.selected_option_score or answer_record.score_value if answer_record else None
+        ),
+        "answer_source": answer_record.answer_source if answer_record else None,
+        "transcript_text": answer_record.transcript_text if answer_record else None,
+        "transcript_source": answer_record.transcript_source if answer_record else None,
+        "response_started_at": (
+            answer_record.response_started_at.isoformat()
+            if answer_record and answer_record.response_started_at
+            else None
+        ),
+        "response_completed_at": (
+            answer_record.response_completed_at.isoformat()
+            if answer_record and answer_record.response_completed_at
+            else None
+        ),
+        "capture_timestamp": (
+            answer_record.capture_timestamp.isoformat()
+            if answer_record and answer_record.capture_timestamp
+            else None
+        ),
+        "answered_at": answer_record.created_at.isoformat() if answer_record else None,
+    }
+
+
+def _serialize_scale_detail(
+    db_session: Session,
+    session_record: AssessmentSession,
+    *,
+    scale_slug: str,
+) -> dict[str, Any]:
+    known_scale_slugs = {
+        *(_ensure_json_list(session_record.selected_scales)),
+        *(_ensure_json_list(session_record.required_scales)),
+    }
+    if scale_slug != session_record.current_scale_slug and scale_slug not in known_scale_slugs:
+        raise AssessmentServiceError("assessment scale detail not found", code=4047, status_code=404)
+
+    try:
+        scale_definition = get_scale_loader().load_scale(scale_slug)
+    except ScaleLoaderError as exc:
+        raise _translate_loader_error(exc) from exc
+
+    result_record = db_session.scalar(
+        select(AssessmentResult).where(
+            AssessmentResult.session_id == session_record.id,
+            AssessmentResult.scale_slug == scale_slug,
+        )
+    )
+    answers = db_session.scalars(
+        select(AssessmentAnswer)
+        .where(
+            AssessmentAnswer.session_id == session_record.id,
+            AssessmentAnswer.scale_slug == scale_slug,
+        )
+        .order_by(AssessmentAnswer.item_index.asc(), AssessmentAnswer.created_at.asc())
+    ).all()
+    answers_by_item_id = {
+        answer.item_id: answer for answer in answers
+    }
+
+    items = [
+        _serialize_scale_detail_item(
+            scale_definition,
+            {
+                "id": item.id,
+                "index": item.index,
+                "text": item.text,
+                "question_text": item.question_text,
+            },
+            answers_by_item_id.get(item.id),
+        )
+        for item in scale_definition.items
+    ]
+    answered_item_count = sum(1 for item in items if item["selected_option_label"])
+
+    return {
+        "session_id": session_record.id,
+        "scale_slug": scale_definition.slug,
+        "scale_code": scale_definition.code,
+        "scale_name": scale_definition.name,
+        "scale_short_name": scale_definition.short_name,
+        "status": (
+            "completed"
+            if result_record
+            else "in_progress"
+            if session_record.current_scale_slug == scale_definition.slug
+            else "pending"
+        ),
+        "configured_item_count": scale_definition.item_count,
+        "answered_item_count": answered_item_count,
+        "raw_score": result_record.raw_score if result_record else None,
+        "derived_score": result_record.derived_score if result_record else None,
+        "normalized_score": (
+            build_normalized_score(
+                scale_definition,
+                answers,
+                raw_score=result_record.raw_score,
+                derived_score=result_record.derived_score,
+            )
+            if result_record
+            else None
+        ),
+        "interpretation_level": result_record.interpretation_level if result_record else None,
+        "interpretation_label": result_record.interpretation_label if result_record else None,
+        "risk_flags": list(result_record.risk_flags or []) if result_record else [],
+        "completed_at": result_record.completed_at.isoformat() if result_record else None,
+        "answer_options": [
+            {"score": option.score, "label": option.label}
+            for option in scale_definition.answer_options
+        ],
+        "items": items,
+    }
+
+
 def _serialize_session(db_session: Session, session_record: AssessmentSession) -> dict[str, Any]:
     scale_loader = get_scale_loader()
     results = db_session.scalars(
@@ -643,6 +789,22 @@ def _store_scale_result(db_session: Session, session_record: AssessmentSession, 
     return result_record
 
 
+def _sanitize_scale_detail_question_text(
+    scale_slug: str,
+    item_index: int,
+    question_text: str,
+) -> str:
+    normalized_text = str(question_text or "").strip()
+    if item_index != 1 or not normalized_text:
+        return normalized_text
+
+    for prefix in DETAIL_QUESTION_PREFIXES.get(scale_slug, ()):
+        if normalized_text.startswith(prefix):
+            return normalized_text[len(prefix):].strip()
+
+    return normalized_text
+
+
 def _build_aggregate_payload(db_session: Session, session_record: AssessmentSession) -> dict[str, Any]:
     scale_loader = get_scale_loader()
     results = db_session.scalars(
@@ -763,6 +925,22 @@ def get_assessment_session(session_id: str, acting_user_id: str | None) -> dict[
         session_record = _get_session_or_raise(db_session, session_id)
         _require_session_owner(session_record, acting_user_id)
         return _serialize_session(db_session, session_record)
+
+
+def get_assessment_scale_detail(
+    session_id: str,
+    scale_slug: str,
+    acting_user_id: str | None,
+) -> dict[str, Any]:
+    acting_user_id = _require_acting_user_id(acting_user_id)
+    with get_db_session() as db_session:
+        session_record = _get_session_or_raise(db_session, session_id)
+        _require_session_owner(session_record, acting_user_id)
+        return _serialize_scale_detail(
+            db_session,
+            session_record,
+            scale_slug=scale_slug,
+        )
 
 
 def submit_assessment_answer(

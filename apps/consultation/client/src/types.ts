@@ -269,6 +269,42 @@ export type AssessmentResult = {
   completed_at: string;
 };
 
+export type AssessmentScaleDetailItem = {
+  item_id: string;
+  item_index: number;
+  question_key?: string | null;
+  question_text: string;
+  selected_option_label?: string | null;
+  selected_option_score?: number | null;
+  answer_source?: string | null;
+  transcript_text?: string | null;
+  transcript_source?: string | null;
+  response_started_at?: string | null;
+  response_completed_at?: string | null;
+  capture_timestamp?: string | null;
+  answered_at?: string | null;
+};
+
+export type AssessmentScaleDetail = {
+  session_id: string;
+  scale_slug: string;
+  scale_code: string;
+  scale_name: string;
+  scale_short_name: string;
+  status: string;
+  configured_item_count: number;
+  answered_item_count: number;
+  raw_score?: number | null;
+  derived_score?: number | null;
+  normalized_score?: number | null;
+  interpretation_level?: string | null;
+  interpretation_label?: string | null;
+  risk_flags?: Array<Record<string, unknown>>;
+  completed_at?: string | null;
+  answer_options: AssessmentOption[];
+  items: AssessmentScaleDetailItem[];
+};
+
 export type AssessmentSession = {
   session_id: string;
   user_id: string;

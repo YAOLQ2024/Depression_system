@@ -9,6 +9,7 @@ from app.services.assessment_engine import (
     create_assessment_session,
     get_assessment_multimodal_live,
     get_assessment_catalog,
+    get_assessment_scale_detail,
     get_assessment_session,
     get_assessment_turn_multimodal_bundle,
     recover_assessment_turn_hot_state,
@@ -55,6 +56,23 @@ def get_assessment(session_id: str, x_mcs_user_id: str | None = Header(default=N
     except AssessmentServiceError as exc:
         raise _translate_error(exc) from exc
     return success_response({"assessment_session": session_payload})
+
+
+@router.get("/sessions/{session_id}/scales/{scale_slug}/detail")
+def get_assessment_scale_detail_route(
+    session_id: str,
+    scale_slug: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    try:
+        scale_detail_payload = get_assessment_scale_detail(
+            session_id,
+            scale_slug,
+            acting_user_id=x_mcs_user_id,
+        )
+    except AssessmentServiceError as exc:
+        raise _translate_error(exc) from exc
+    return success_response({"scale_detail": scale_detail_payload})
 
 
 @router.post("/sessions/{session_id}/answers")
