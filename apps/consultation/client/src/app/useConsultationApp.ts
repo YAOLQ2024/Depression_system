@@ -27,14 +27,20 @@ import {
 } from "../services/api/consultation.api";
 import type {
   AssessmentAcceptedAnswer,
+  CreateConsultationSessionPayload,
   ConsultationMultimodalCapturePayload,
   ConsultationFrameCaptureResponse,
   ConsultationVisualCaptureResponse,
   SubmitConsultationTurnPayload,
   SubmitAssessmentAnswerPayload,
+  UpdateUserPreparationStatePayload,
   UpdateUserProfilePayload,
 } from "../services/api/contracts";
-import { getCurrentUser, updateCurrentUserProfile } from "../services/api/user.api";
+import {
+  getCurrentUser,
+  updateCurrentUserPreparationState,
+  updateCurrentUserProfile,
+} from "../services/api/user.api";
 import type {
   AssessmentCatalogItem,
   AssessmentSession,
@@ -388,14 +394,22 @@ export function useConsultationApp() {
     }
   }
 
-  async function handleStartConsultation() {
+  async function savePreparationState(payload: UpdateUserPreparationStatePayload) {
+    const updatedUser = await updateCurrentUserPreparationState(payload);
+    if (updatedUser) {
+      setUser(updatedUser);
+    }
+    return updatedUser;
+  }
+
+  async function handleStartConsultation(payload: CreateConsultationSessionPayload = {}) {
     resetFeedback();
     setLoading(true);
 
     try {
       clearAssessmentSessionId();
       setAssessment(null);
-      const created = await createConsultationSession();
+      const created = await createConsultationSession(payload);
       saveConsultationSessionId(created.session_id);
 
       const started = await startConsultationSession(created.session_id);
@@ -853,6 +867,7 @@ export function useConsultationApp() {
       handleLogin,
       handleRegister,
       savePreparationProfile,
+      savePreparationState,
       handleStartConsultation,
       submitConsultationTurn,
       submitManualConsultationTurn,

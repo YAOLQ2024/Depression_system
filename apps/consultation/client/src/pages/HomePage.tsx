@@ -35,7 +35,7 @@ function getHomeSubtitle({
     return "先完成问诊准备信息，再开始正式评估。";
   }
 
-  return "我将协助您完成心理状态评估";
+  return "先进入问诊准备，确认档案与设备后开始正式评估。";
 }
 
 function getFlowCardCopy(homeEntryPath: string, homeEntryLabel: string) {
@@ -66,15 +66,7 @@ export default function HomePage() {
   });
   const flowCardCopy = getFlowCardCopy(state.homeEntryPath, state.homeEntryLabel);
 
-  const handleStartConsultation = async () => {
-    if (state.homeEntryPath === APP_PATHS.consultation && !state.consultation && !state.assessment) {
-      const started = await actions.handleStartConsultation();
-      if (started) {
-        navigate(APP_PATHS.consultation, { state: { sessionId: started.session_id } });
-      }
-      return;
-    }
-
+  const handleStartConsultation = () => {
     navigate(state.homeEntryPath);
   };
 

@@ -95,6 +95,7 @@ def create_consultation(
         "audio_channel_ready": payload.audio_channel_ready,
         "consent_confirmed": payload.consent_confirmed,
         "consultation_ready_state": payload.consultation_ready_state,
+        "assigned_doctor_persona": payload.assigned_doctor_persona,
     }
     upstream = forward_consultation_request(
         "POST",

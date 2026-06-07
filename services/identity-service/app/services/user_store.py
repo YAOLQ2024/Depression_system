@@ -51,6 +51,7 @@ def _public_user(user: User) -> dict:
             "parents_occupation": user.parents_occupation,
             "prior_psychiatric_visit": user.prior_psychiatric_visit,
         },
+        "preparation_state": user.preparation_state or {},
         "created_at": user.created_at.isoformat(),
         "updated_at": user.updated_at.isoformat(),
     }
@@ -189,6 +190,42 @@ def update_profile(user_id: str, payload: dict) -> dict:
             setattr(user, key, value)
 
         user.profile_status = "completed" if any(value not in (None, "") for value in updates.values()) else "draft"
+        user.updated_at = _now()
+        session.flush()
+        session.refresh(user)
+        return _public_user(user)
+
+
+def get_preparation_state(user_id: str) -> dict:
+    with get_db_session() as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise ValueError("user not found")
+        return dict(user.preparation_state or {})
+
+
+def update_preparation_state(user_id: str, payload: dict) -> dict:
+    allowed_fields = {
+        "device_status",
+        "consent_confirmed",
+        "consent_confirmed_at",
+        "assigned_doctor_persona",
+        "doctor_selected_at",
+    }
+    updates = {key: value for key, value in payload.items() if key in allowed_fields}
+
+    with get_db_session() as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise ValueError("user not found")
+
+        if not updates:
+            return _public_user(user)
+
+        next_state = dict(user.preparation_state or {})
+        next_state.update(updates)
+        next_state["updated_at"] = _now().isoformat()
+        user.preparation_state = next_state
         user.updated_at = _now()
         session.flush()
         session.refresh(user)
