@@ -1,5 +1,6 @@
 import { apiRequest, buildApiUrl } from "./client";
 import type {
+  CreateConsultationSessionPayload,
   ConsultationMultimodalCapturePayload,
   ConsultationFrameCaptureResponse,
   ConsultationMultimodalLiveResponse,
@@ -9,10 +10,10 @@ import type {
   SubmitConsultationTurnPayload,
 } from "./contracts";
 
-export async function createConsultationSession() {
+export async function createConsultationSession(payload: CreateConsultationSessionPayload = {}) {
   const data = await apiRequest<ConsultationResponse>("/consultations", {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify(payload),
   });
   return data.consultation;
 }

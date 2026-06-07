@@ -17,6 +17,13 @@ import {
 } from "lucide-react";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { AppToast } from "../components/AppToast";
+import {
+  buildPreparationDeviceStatus,
+  getPermissionStatusLabel,
+  probePreparationDeviceAccess,
+  requestPreparationDeviceAccess,
+  type PreparationDeviceAccessSnapshot,
+} from "../lib/preparationDeviceAccess";
 import { ConsultationLayout } from "../layouts";
 import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
@@ -163,25 +170,125 @@ function validateAndBuildProfilePayload(
   };
 }
 
+type DeviceIndicatorTone = "ready" | "pending" | "warning" | "error";
+
+function getChannelIndicator(
+  channel: PreparationDeviceAccessSnapshot["camera"] | PreparationDeviceAccessSnapshot["microphone"] | null,
+): { text: string; tone: DeviceIndicatorTone } {
+  if (!channel) {
+    return { text: "待检测", tone: "pending" };
+  }
+
+  if (channel.ready) {
+    return { text: "已授权", tone: "ready" };
+  }
+
+  if (channel.available === false) {
+    return { text: "未检测", tone: "warning" };
+  }
+
+  if (channel.permission === "denied") {
+    return { text: "已拒绝", tone: "error" };
+  }
+
+  if (channel.permission === "unsupported") {
+    return { text: "不支持", tone: "error" };
+  }
+
+  return { text: getPermissionStatusLabel(channel.permission), tone: "pending" };
+}
+
+function getSpeakerIndicator(snapshot: PreparationDeviceAccessSnapshot | null): { text: string; tone: DeviceIndicatorTone } {
+  if (!snapshot) {
+    return { text: "待检测", tone: "pending" };
+  }
+
+  if (snapshot.speaker.available) {
+    return { text: "已检测", tone: "ready" };
+  }
+
+  return { text: "未检测", tone: "warning" };
+}
+
+function getBrowserIndicator(snapshot: PreparationDeviceAccessSnapshot | null): { text: string; tone: DeviceIndicatorTone } {
+  if (!snapshot) {
+    return { text: "待检测", tone: "pending" };
+  }
+
+  if (snapshot.browser_ready) {
+    return { text: "已就绪", tone: "ready" };
+  }
+
+  if (!snapshot.secure_context) {
+    return { text: "需 HTTPS", tone: "error" };
+  }
+
+  if (!snapshot.media_devices_supported) {
+    return { text: "不支持", tone: "error" };
+  }
+
+  return { text: "未就绪", tone: "warning" };
+}
+
+function formatCheckedAt(timestamp: string | null | undefined) {
+  if (!timestamp) {
+    return "";
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleString("zh-CN", {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function PreparationPage() {
   const { state, actions } = useConsultationAppContext();
   const navigate = useNavigate();
   const { toast, pushToast } = useTimedToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDeviceAuth, setIsDeviceAuth] = useState(false);
-  const [isDataAuth, setIsDataAuth] = useState(false);
-  const [isDoctorSelected, setIsDoctorSelected] = useState(false);
+  const [deviceAccess, setDeviceAccess] = useState<PreparationDeviceAccessSnapshot | null>(null);
+  const [isCheckingDevices, setIsCheckingDevices] = useState(false);
+  const [dataConsentConfirmedAt, setDataConsentConfirmedAt] = useState<string | null>(null);
+  const [selectedDoctorPersonaId, setSelectedDoctorPersonaId] = useState<string | null>(null);
+  const [doctorSelectedAt, setDoctorSelectedAt] = useState<string | null>(null);
   const [formData, setFormData] = useState<PreparationFormData>(EMPTY_PROFILE);
   const [formError, setFormError] = useState("");
 
   const profile = buildFormDataFromUser(state.user);
+  const savedPreparationState = state.user?.preparation_state || null;
+  const doctorPersonas = state.bootstrap?.doctor_personas || [];
+  const selectedDoctorPersona =
+    doctorPersonas.find((persona) => persona.persona_id === selectedDoctorPersonaId) || null;
+  const displayedDoctorPersona = selectedDoctorPersona || doctorPersonas[0] || null;
   const hasSavedProfile = Boolean(profile.full_name.trim());
+  const isDeviceAuth = Boolean(deviceAccess?.all_required_ready);
+  const isDataAuth = Boolean(dataConsentConfirmedAt);
+  const isDoctorSelected = Boolean(selectedDoctorPersonaId);
   const isReady = hasSavedProfile && isDeviceAuth && isDataAuth && isDoctorSelected;
   const readyCount = [hasSavedProfile, isDeviceAuth, isDataAuth, isDoctorSelected].filter(Boolean).length;
   const resumableConsultationId =
     state.consultation && state.consultation.status !== "handoff_ready"
       ? state.consultation.session_id
       : null;
+  const cameraIndicator = getChannelIndicator(deviceAccess?.camera || null);
+  const microphoneIndicator = getChannelIndicator(deviceAccess?.microphone || null);
+  const speakerIndicator = getSpeakerIndicator(deviceAccess);
+  const browserIndicator = getBrowserIndicator(deviceAccess);
+  const deviceSummaryText = deviceAccess?.all_required_ready
+    ? "摄像头和麦克风已完成真实授权，开始问诊时会把本次设备状态同步到后端会话。"
+    : "请先完成浏览器摄像头与麦克风授权；页面也会同步检测扬声器和浏览器环境。";
+  const deviceCheckedAtText = formatCheckedAt(
+    deviceAccess?.checked_at || ((savedPreparationState?.device_status as Record<string, unknown> | undefined)?.checked_at as string | undefined),
+  );
+  const doctorSelectedAtText = formatCheckedAt(doctorSelectedAt);
 
   useEffect(() => {
     if (state.message) {
@@ -196,6 +303,49 @@ export default function PreparationPage() {
       actions.resetFeedback();
     }
   }, [actions, pushToast, state.error]);
+
+  useEffect(() => {
+    setDataConsentConfirmedAt(
+      savedPreparationState?.consent_confirmed
+        ? savedPreparationState.consent_confirmed_at || new Date().toISOString()
+        : null,
+    );
+    setSelectedDoctorPersonaId(savedPreparationState?.assigned_doctor_persona || null);
+    setDoctorSelectedAt(savedPreparationState?.doctor_selected_at || null);
+  }, [
+    savedPreparationState?.assigned_doctor_persona,
+    savedPreparationState?.consent_confirmed,
+    savedPreparationState?.consent_confirmed_at,
+    savedPreparationState?.doctor_selected_at,
+    state.user?.id,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshDeviceAccess() {
+      const snapshot = await probePreparationDeviceAccess();
+      if (!cancelled) {
+        setDeviceAccess(snapshot);
+      }
+    }
+
+    void refreshDeviceAccess();
+
+    const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : null;
+    const handleDeviceChange = () => {
+      void refreshDeviceAccess();
+    };
+
+    mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
+    window.addEventListener("focus", handleDeviceChange);
+
+    return () => {
+      cancelled = true;
+      mediaDevices?.removeEventListener?.("devicechange", handleDeviceChange);
+      window.removeEventListener("focus", handleDeviceChange);
+    };
+  }, []);
 
   const openProfileModal = () => {
     actions.resetFeedback();
@@ -225,13 +375,116 @@ export default function PreparationPage() {
     }
   };
 
+  const persistPreparationState = async ({
+    deviceStatus = deviceAccess ? buildPreparationDeviceStatus(deviceAccess) : undefined,
+    consentConfirmed = isDataAuth,
+    consentConfirmedAt = dataConsentConfirmedAt,
+    assignedDoctorPersona = selectedDoctorPersonaId,
+    doctorPickedAt = doctorSelectedAt,
+  }: {
+    deviceStatus?: Record<string, unknown>;
+    consentConfirmed?: boolean;
+    consentConfirmedAt?: string | null;
+    assignedDoctorPersona?: string | null;
+    doctorPickedAt?: string | null;
+  } = {}) => {
+    return actions.savePreparationState({
+      ...(deviceStatus ? { device_status: deviceStatus } : {}),
+      consent_confirmed: consentConfirmed,
+      consent_confirmed_at: consentConfirmedAt,
+      assigned_doctor_persona: assignedDoctorPersona,
+      doctor_selected_at: doctorPickedAt,
+    });
+  };
+
+  const handleAuthorizeDevices = async () => {
+    actions.resetFeedback();
+    setIsCheckingDevices(true);
+
+    try {
+      const snapshot = await requestPreparationDeviceAccess();
+      setDeviceAccess(snapshot);
+      await persistPreparationState({
+        deviceStatus: buildPreparationDeviceStatus(snapshot),
+      });
+      if (snapshot.all_required_ready) {
+        pushToast("摄像头与麦克风已完成授权。", "success");
+      } else {
+        pushToast("设备状态已更新，但仍有设备未就绪，请检查后重试。", "error");
+      }
+    } catch (caught) {
+      pushToast(caught instanceof Error ? caught.message : "浏览器设备授权失败，请重试。", "error");
+      const snapshot = await probePreparationDeviceAccess();
+      setDeviceAccess(snapshot);
+    } finally {
+      setIsCheckingDevices(false);
+    }
+  };
+
+  const handleConfirmDataConsent = async () => {
+    if (isDataAuth) {
+      return;
+    }
+
+    const previousConfirmedAt = dataConsentConfirmedAt;
+    const confirmedAt = new Date().toISOString();
+    setDataConsentConfirmedAt(confirmedAt);
+    try {
+      await persistPreparationState({
+        consentConfirmed: true,
+        consentConfirmedAt: confirmedAt,
+      });
+      pushToast("已记录本次数据采集同意，开始问诊时会同步写入会话。", "success");
+    } catch (caught) {
+      setDataConsentConfirmedAt(previousConfirmedAt);
+      pushToast(caught instanceof Error ? caught.message : "保存数据采集同意状态失败，请重试。", "error");
+    }
+  };
+
+  const handleSelectDoctorPersona = async () => {
+    if (!doctorPersonas.length) {
+      pushToast("医生风格仍在加载，请稍后再试。", "error");
+      return;
+    }
+
+    const currentIndex = doctorPersonas.findIndex((persona) => persona.persona_id === selectedDoctorPersonaId);
+    const nextPersona = currentIndex >= 0 ? doctorPersonas[(currentIndex + 1) % doctorPersonas.length] : doctorPersonas[0];
+    const previousDoctorPersonaId = selectedDoctorPersonaId;
+    const previousDoctorSelectedAt = doctorSelectedAt;
+    const selectedAt = new Date().toISOString();
+
+    setSelectedDoctorPersonaId(nextPersona.persona_id);
+    setDoctorSelectedAt(selectedAt);
+    try {
+      await persistPreparationState({
+        assignedDoctorPersona: nextPersona.persona_id,
+        doctorPickedAt: selectedAt,
+      });
+      pushToast(`已选择 ${nextPersona.display_name}。`, "success");
+    } catch (caught) {
+      setSelectedDoctorPersonaId(previousDoctorPersonaId);
+      setDoctorSelectedAt(previousDoctorSelectedAt);
+      pushToast(caught instanceof Error ? caught.message : "保存医生选择失败，请重试。", "error");
+    }
+  };
+
   const handleStartConsultation = async () => {
     if (!isReady) return;
     if (resumableConsultationId) {
       navigate(APP_PATHS.consultation, { state: { sessionId: resumableConsultationId } });
       return;
     }
-    const started = await actions.handleStartConsultation();
+    const started = await actions.handleStartConsultation({
+      device_status: buildPreparationDeviceStatus(deviceAccess),
+      audio_channel_ready: Boolean(
+        deviceAccess?.browser_ready &&
+          deviceAccess?.microphone.ready &&
+          (deviceAccess?.speaker.available ?? true),
+      ),
+      consent_confirmed: isDataAuth,
+      consultation_ready_state: isReady ? "ready" : "pending_preparation",
+      assigned_doctor_persona: selectedDoctorPersonaId,
+    });
     if (started) {
       navigate(APP_PATHS.consultation, { state: { sessionId: started.session_id } });
     }
@@ -306,26 +559,29 @@ export default function PreparationPage() {
                   <h3 className="text-xl font-bold">设备与采集授权</h3>
                   <StatusBadge isDone={isDeviceAuth} textDone="已授权" textPending="待授权" />
                 </div>
-                <p className="text-white/60 text-sm mb-4">授权必要的设备与权限，保障问诊过程顺利进行</p>
+                <p className="text-white/60 text-sm mb-4">{deviceSummaryText}</p>
                 <div className="flex gap-4 sm:gap-8 justify-start">
-                  <DeviceIcon icon={<Camera />} label="摄像头" />
-                  <DeviceIcon icon={<Mic />} label="麦克风" />
-                  <DeviceIcon icon={<Volume2 />} label="扬声器" />
-                  <DeviceIcon icon={<MonitorPlay />} label="浏览器权限" />
+                  <DeviceIcon icon={<Camera />} label="摄像头" statusText={cameraIndicator.text} tone={cameraIndicator.tone} />
+                  <DeviceIcon icon={<Mic />} label="麦克风" statusText={microphoneIndicator.text} tone={microphoneIndicator.tone} />
+                  <DeviceIcon icon={<Volume2 />} label="扬声器" statusText={speakerIndicator.text} tone={speakerIndicator.tone} />
+                  <DeviceIcon icon={<MonitorPlay />} label="浏览器环境" statusText={browserIndicator.text} tone={browserIndicator.tone} />
                 </div>
+                {deviceCheckedAtText ? (
+                  <p className="text-xs text-white/45 mt-4">最近检测：{deviceCheckedAtText}</p>
+                ) : null}
               </div>
               <div className="flex-shrink-0 mt-4 sm:mt-0">
                 <button
-                  onClick={() => setIsDeviceAuth(true)}
-                  disabled={isDeviceAuth}
+                  onClick={handleAuthorizeDevices}
+                  disabled={isCheckingDevices}
                   className={cn(
                     "px-8 py-3 rounded-full font-medium transition-all",
-                    isDeviceAuth
+                    isCheckingDevices
                       ? "bg-white/10 text-white/50 border border-white/10"
                       : "bg-gradient-to-r from-purple-500 to-blue-600 hover:shadow-[0_0_20px_rgba(99,102,241,0.4)]",
                   )}
                 >
-                  {isDeviceAuth ? "已完成授权" : "立即授权"}
+                  {isCheckingDevices ? "检测中..." : isDeviceAuth ? "重新检测" : "立即授权"}
                 </button>
               </div>
             </div>
@@ -337,16 +593,19 @@ export default function PreparationPage() {
                   <h3 className="text-xl font-bold">数据采集说明与授权</h3>
                   <StatusBadge isDone={isDataAuth} textDone="已确认" textPending="待确认" />
                 </div>
-                <p className="text-white/60 text-sm mb-4">本次问诊将采集多维度数据，用于辅助评估</p>
+                <p className="text-white/60 text-sm mb-4">本次问诊将采集多维度数据用于辅助评估，开始问诊时会把本次同意状态写入会话。</p>
                 <div className="flex items-center gap-2 text-sm text-blue-200 bg-blue-500/10 w-fit px-3 py-1.5 rounded-full cursor-pointer hover:bg-blue-500/20 transition-colors">
                   <ShieldAlert className="w-4 h-4" />
                   <span>已阅读并同意本次数据采集说明</span>
                   <span className="text-blue-400 ml-2">查看详情 →</span>
                 </div>
+                {dataConsentConfirmedAt ? (
+                  <p className="text-xs text-white/45 mt-4">确认时间：{formatCheckedAt(dataConsentConfirmedAt)}</p>
+                ) : null}
               </div>
               <div className="flex-shrink-0 mt-4 sm:mt-0">
                 <button
-                  onClick={() => setIsDataAuth(true)}
+                  onClick={handleConfirmDataConsent}
                   disabled={isDataAuth}
                   className={cn(
                     "px-8 py-3 rounded-full font-medium transition-all",
@@ -396,7 +655,7 @@ export default function PreparationPage() {
               </div>
 
               <div
-                onClick={() => setIsDoctorSelected(true)}
+                onClick={() => void handleSelectDoctorPersona()}
                 className={cn(
                   "bg-white/5 border rounded-2xl p-4 flex gap-4 items-center shrink-0 w-full sm:w-auto mt-4 md:mt-0 transition-all cursor-pointer",
                   isDoctorSelected ? "border-blue-400 ring-2 ring-blue-500/50" : "border-white/10 hover:border-white/30",
@@ -408,9 +667,16 @@ export default function PreparationPage() {
                   className="w-14 h-14 rounded-full object-cover border-2 border-blue-400/50"
                 />
                 <div className="flex flex-col">
-                  <div className="font-bold text-lg">温和陪伴型</div>
-                  <div className="text-white/60 text-xs mb-1">耐心倾听，温和引导</div>
-                  <div className="text-blue-400 text-xs text-left">更换风格 →</div>
+                  <div className="font-bold text-lg">{displayedDoctorPersona?.display_name || "医生风格加载中"}</div>
+                  <div className="text-white/60 text-xs mb-1">
+                    {selectedDoctorPersona
+                      ? "已作为下次问诊默认数字医生"
+                      : "点击选择并保存本次问诊风格"}
+                  </div>
+                  <div className="text-blue-400 text-xs text-left">
+                    {doctorPersonas.length > 1 ? "点击切换风格 →" : "点击确认风格 →"}
+                  </div>
+                  {doctorSelectedAtText ? <div className="text-white/40 text-[11px] mt-1">上次确认：{doctorSelectedAtText}</div> : null}
                 </div>
               </div>
             </div>
@@ -653,11 +919,42 @@ function StatusBadge({ isDone, textDone, textPending }: { isDone: boolean; textD
   );
 }
 
-function DeviceIcon({ icon, label }: { icon: React.ReactNode; label: string }) {
+function DeviceIcon({
+  icon,
+  label,
+  statusText,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  statusText: string;
+  tone: DeviceIndicatorTone;
+}) {
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="text-green-400 bg-green-400/10 p-2 rounded-lg">{icon}</div>
+      <div
+        className={cn(
+          "p-2 rounded-lg",
+          tone === "ready" && "text-green-300 bg-green-400/10",
+          tone === "pending" && "text-blue-200 bg-blue-400/10",
+          tone === "warning" && "text-orange-300 bg-orange-400/10",
+          tone === "error" && "text-red-300 bg-red-400/10",
+        )}
+      >
+        {icon}
+      </div>
       <span className="text-xs text-white/70">{label}</span>
+      <span
+        className={cn(
+          "text-[11px]",
+          tone === "ready" && "text-green-300",
+          tone === "pending" && "text-blue-200",
+          tone === "warning" && "text-orange-300",
+          tone === "error" && "text-red-300",
+        )}
+      >
+        {statusText}
+      </span>
     </div>
   );
 }

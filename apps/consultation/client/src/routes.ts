@@ -63,11 +63,7 @@ export function resolveHomeEntryPath({ user, consultation, assessment }: Resolve
     return APP_PATHS.consultation;
   }
 
-  if (user.profile_status !== "completed") {
-    return APP_PATHS.preparation;
-  }
-
-  return APP_PATHS.consultation;
+  return APP_PATHS.preparation;
 }
 
 export function resolveHomeEntryLabel({ user, consultation, assessment }: ResolveAppPathArgs) {

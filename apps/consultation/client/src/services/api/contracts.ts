@@ -30,6 +30,11 @@ export type UserResponse = {
   user: UserRecord;
 };
 
+export type PreparationStateResponse = {
+  preparation_state: Record<string, unknown>;
+  user?: UserRecord;
+};
+
 export type UpdateUserProfilePayload = {
   full_name?: string;
   age?: number;
@@ -42,12 +47,28 @@ export type UpdateUserProfilePayload = {
   prior_psychiatric_visit?: string;
 };
 
+export type UpdateUserPreparationStatePayload = {
+  device_status?: Record<string, unknown>;
+  consent_confirmed?: boolean;
+  consent_confirmed_at?: string | null;
+  assigned_doctor_persona?: string | null;
+  doctor_selected_at?: string | null;
+};
+
 export type AssessmentCatalogResponse = {
   catalog: AssessmentCatalogItem[];
 };
 
 export type ConsultationResponse = {
   consultation: ConsultationSession;
+};
+
+export type CreateConsultationSessionPayload = {
+  device_status?: Record<string, unknown>;
+  audio_channel_ready?: boolean;
+  consent_confirmed?: boolean;
+  consultation_ready_state?: string;
+  assigned_doctor_persona?: string | null;
 };
 
 export type SubmitConsultationTurnPayload = {

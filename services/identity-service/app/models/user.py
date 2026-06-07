@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -26,6 +26,7 @@ class User(Base):
     parents_marital_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     parents_occupation: Mapped[str | None] = mapped_column(Text, nullable=True)
     prior_psychiatric_visit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preparation_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

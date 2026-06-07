@@ -9,6 +9,15 @@ export type UserPreparationProfile = {
   prior_psychiatric_visit?: string | null;
 };
 
+export type UserPreparationState = {
+  device_status?: Record<string, unknown>;
+  consent_confirmed?: boolean;
+  consent_confirmed_at?: string | null;
+  assigned_doctor_persona?: string | null;
+  doctor_selected_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type UserRecord = {
   id: string;
   email: string;
@@ -16,6 +25,7 @@ export type UserRecord = {
   role: string;
   profile_status: string;
   profile?: UserPreparationProfile | null;
+  preparation_state?: UserPreparationState | null;
 };
 
 export type WorkflowStageSummary = {

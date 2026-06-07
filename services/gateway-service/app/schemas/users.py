@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -13,3 +16,11 @@ class ProfileUpdateRequest(BaseModel):
     parents_marital_status: str | None = None
     parents_occupation: str | None = None
     prior_psychiatric_visit: str | None = None
+
+
+class PreparationStateUpdateRequest(BaseModel):
+    device_status: dict[str, Any] | None = None
+    consent_confirmed: bool | None = None
+    consent_confirmed_at: datetime | None = None
+    assigned_doctor_persona: str | None = None
+    doctor_selected_at: datetime | None = None

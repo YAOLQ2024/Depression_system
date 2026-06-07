@@ -1,5 +1,10 @@
 import { apiRequest } from "./client";
-import type { UpdateUserProfilePayload, UserResponse } from "./contracts";
+import type {
+  PreparationStateResponse,
+  UpdateUserPreparationStatePayload,
+  UpdateUserProfilePayload,
+  UserResponse,
+} from "./contracts";
 
 export async function getCurrentUser() {
   const data = await apiRequest<UserResponse>("/users/me", { method: "GET" });
@@ -12,4 +17,19 @@ export async function updateCurrentUserProfile(payload: UpdateUserProfilePayload
     body: JSON.stringify(payload),
   });
   return data.user;
+}
+
+export async function getCurrentUserPreparationState() {
+  const data = await apiRequest<PreparationStateResponse>("/users/me/preparation-state", {
+    method: "GET",
+  });
+  return data.preparation_state;
+}
+
+export async function updateCurrentUserPreparationState(payload: UpdateUserPreparationStatePayload) {
+  const data = await apiRequest<PreparationStateResponse>("/users/me/preparation-state", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return data.user || null;
 }

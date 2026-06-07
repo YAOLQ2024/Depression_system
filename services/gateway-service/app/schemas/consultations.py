@@ -20,6 +20,7 @@ class CreateConsultationRequest(BaseModel):
     audio_channel_ready: bool = True
     consent_confirmed: bool = True
     consultation_ready_state: str = "ready"
+    assigned_doctor_persona: str | None = None
 
 
 class ConsultationTurnRequest(BaseModel):
