@@ -59,7 +59,8 @@ Set-DefaultEnvValue -Name "EEG_NOTIFY_CHAR_UUID" -Value "6e400003-b5a3-f393-e0a9
 Set-DefaultEnvValue -Name "EEG_CHANNEL_NAMES" -Value "T7,T8,Fpz"
 Set-DefaultEnvValue -Name "EEG_SAMPLING_RATE" -Value "500"
 Set-DefaultEnvValue -Name "EEG_PREVIEW_SECONDS" -Value "4"
-Set-DefaultEnvValue -Name "EEG_WINDOW_SECONDS" -Value "60"
+Set-DefaultEnvValue -Name "EEG_WINDOW_SECONDS" -Value "10"
+Set-DefaultEnvValue -Name "EEG_MIN_FEATURE_FRAMES" -Value "10"
 Set-DefaultEnvValue -Name "EEG_SCAN_SECONDS" -Value "5"
 Set-DefaultEnvValue -Name "EEG_RECONNECT_DELAY_SECONDS" -Value "5"
 Set-DefaultEnvValue -Name "EEG_MODEL_PATH" -Value (Join-Path $runtimeAssetsDir "eeg/model_combined_3class.pkl")

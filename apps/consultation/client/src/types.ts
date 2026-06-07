@@ -161,6 +161,7 @@ export type EegLiveResult = {
   primary_label?: string | null;
   primary_score?: number | null;
   top_3_labels?: MultimodalRankedLabel[];
+  feature_frame_count?: number | null;
   sample_started_at?: string | null;
   sample_ended_at?: string | null;
   raw_eeg_uri?: string | null;

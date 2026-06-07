@@ -9,7 +9,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import numpy as np
 from sqlalchemy.orm.attributes import flag_modified
@@ -24,11 +24,16 @@ from app.services.eeg_live_state_store import (
     write_eeg_turn_state_payload,
     write_eeg_turn_window_payload,
 )
-from app.services.eeg_protocol import EEGPacketDecoder, FeaturePacket, WavePacket
+from app.services.eeg_protocol import EEGPacketDecoder, FeaturePacket, MODEL_FEATURE_COUNT, WavePacket
 from app.services.object_storage import upload_object_to_bucket
 
 logger = logging.getLogger(__name__)
 EEG_LIVE_FLUSH_INTERVAL_SECONDS = 0.12
+EEG_LABELS = {
+    0: "\u6d88\u6781",
+    1: "\u4e2d\u6027",
+    2: "\u79ef\u6781",
+}
 
 
 def _utcnow() -> datetime:
@@ -60,6 +65,54 @@ def _copy_labels(labels: list[dict[str, Any]] | None, *, limit: int = 3) -> list
         if len(copied) >= limit:
             break
     return copied
+
+
+def _softmax(scores: Sequence[float]) -> np.ndarray:
+    values = np.asarray(scores, dtype=np.float32)
+    values = values - np.max(values)
+    exp_values = np.exp(values)
+    total = np.sum(exp_values)
+    if total <= 0:
+        return np.full_like(exp_values, 1.0 / max(1, exp_values.size), dtype=np.float32)
+    return exp_values / total
+
+
+def _predict_probabilities(clf: Any, scaled_vector: np.ndarray) -> np.ndarray:
+    classes = list(getattr(clf, "classes_", [0, 1, 2]))
+    probabilities = np.zeros(3, dtype=np.float32)
+    clf_name = type(clf).__name__.lower()
+
+    if hasattr(clf, "decision_function") and "svc" in clf_name:
+        decision = np.asarray(clf.decision_function(scaled_vector), dtype=np.float32)
+        if decision.ndim == 1:
+            raw = _softmax(np.array([-decision[0], decision[0]], dtype=np.float32)) if len(classes) == 2 else _softmax(decision)
+        else:
+            raw = _softmax(decision[0])
+    elif hasattr(clf, "predict_proba"):
+        raw = np.asarray(clf.predict_proba(scaled_vector)[0], dtype=np.float32)
+    elif hasattr(clf, "decision_function"):
+        decision = np.asarray(clf.decision_function(scaled_vector), dtype=np.float32)
+        if decision.ndim == 1:
+            raw = _softmax(np.array([-decision[0], decision[0]], dtype=np.float32)) if len(classes) == 2 else _softmax(decision)
+        else:
+            raw = _softmax(decision[0])
+    else:
+        predicted = int(clf.predict(scaled_vector)[0])
+        raw = np.zeros(len(classes), dtype=np.float32)
+        if predicted in classes:
+            raw[classes.index(predicted)] = 1.0
+
+    for cls, prob in zip(classes, raw):
+        cls_index = int(cls)
+        if 0 <= cls_index < probabilities.size:
+            probabilities[cls_index] = float(prob)
+
+    total = float(probabilities.sum())
+    if total <= 0:
+        probabilities[:] = [1 / 3, 1 / 3, 1 / 3]
+    else:
+        probabilities /= total
+    return probabilities
 
 
 @dataclass(slots=True)
@@ -111,6 +164,7 @@ class EEGBleProvider:
         self._scan_seconds = float(settings["eeg_scan_seconds"])
         self._reconnect_delay_seconds = float(settings["eeg_reconnect_delay_seconds"])
         self._stop_event = threading.Event()
+        self._stopping = threading.Event()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._status_callback: Callable[[str, str | None, str | None], None] | None = None
@@ -125,6 +179,7 @@ class EEGBleProvider:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
+        self._stopping.clear()
         self._thread = threading.Thread(
             target=self._run,
             name="eeg-ble-provider",
@@ -134,18 +189,77 @@ class EEGBleProvider:
 
     def stop(self) -> None:
         self._stop_event.set()
+        self._stopping.set()
         loop = self._loop
         if loop is not None and loop.is_running():
             loop.call_soon_threadsafe(lambda: None)
         thread = self._thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=2)
+        if thread is not None and thread.is_alive():
+            logger.warning("EEG BLE provider thread did not exit cleanly before timeout")
+            return
         self._thread = None
         self._loop = None
 
     def _emit_status(self, status: str, *, device_id: str | None = None, error: str | None = None) -> None:
+        if self._stopping.is_set():
+            return
         if self._status_callback is not None:
             self._status_callback(status, device_id, error)
+
+    @staticmethod
+    def _device_name(device: Any) -> str:
+        return str(getattr(device, "name", "") or "").strip()
+
+    @staticmethod
+    def _device_address(device: Any) -> str:
+        return str(getattr(device, "address", "") or "").strip()
+
+    def _matches_device_hint(self, device: Any, *, local_name: str | None = None) -> bool:
+        hint = self._name_hint.strip()
+        if not hint:
+            return True
+        normalized_hint = hint.upper()
+        candidates = [
+            self._device_name(device),
+            str(local_name or "").strip(),
+            self._device_address(device),
+        ]
+        return any(candidate and normalized_hint in candidate.upper() for candidate in candidates)
+
+    async def _discover_devices(self, scanner_cls: Any) -> list[tuple[Any, str | None]]:
+        try:
+            discovered = await scanner_cls.discover(timeout=self._scan_seconds, return_adv=True)
+        except TypeError:
+            devices = await scanner_cls.discover(timeout=self._scan_seconds)
+            return [(device, None) for device in devices]
+
+        devices_with_names: list[tuple[Any, str | None]] = []
+        for item in discovered.values():
+            if not isinstance(item, tuple) or len(item) != 2:
+                continue
+            device, advertisement = item
+            local_name = str(getattr(advertisement, "local_name", "") or "").strip() or None
+            devices_with_names.append((device, local_name))
+        return devices_with_names
+
+    def _build_not_found_error(self, scanned_devices: Sequence[tuple[Any, str | None]]) -> str:
+        scan_count = len(scanned_devices)
+        hint = self._name_hint.strip()
+        unnamed_count = sum(
+            1
+            for device, local_name in scanned_devices
+            if not self._device_name(device) and not str(local_name or "").strip()
+        )
+        if hint and scan_count > 0 and unnamed_count == scan_count:
+            return (
+                f"device_not_found: scan_count={scan_count}; "
+                "all advertisements are unnamed; set EEG_DEVICE_NAME_HINT to the BLE address"
+            )
+        if hint:
+            return f"device_not_found: hint={hint}; scan_count={scan_count}"
+        return f"device_not_found: scan_count={scan_count}"
 
     def _run(self) -> None:
         loop = asyncio.new_event_loop()
@@ -167,19 +281,18 @@ class EEGBleProvider:
         while not self._stop_event.is_set():
             try:
                 self._emit_status("scanning")
-                devices = await BleakScanner.discover(timeout=self._scan_seconds)
+                devices = await self._discover_devices(BleakScanner)
                 target_device = None
-                for device in devices:
-                    name = str(getattr(device, "name", "") or "")
-                    if self._name_hint.upper() in name.upper():
+                for device, local_name in devices:
+                    if self._matches_device_hint(device, local_name=local_name):
                         target_device = device
                         break
                 if target_device is None:
-                    self._emit_status("disconnected", error="device_not_found")
+                    self._emit_status("disconnected", error=self._build_not_found_error(devices))
                     await asyncio.sleep(self._reconnect_delay_seconds)
                     continue
 
-                address = str(getattr(target_device, "address", "") or "")
+                address = self._device_address(target_device)
                 self._emit_status("connecting", device_id=address)
 
                 def _handle_disconnect(_: Any) -> None:
@@ -199,6 +312,7 @@ class EEGBleProvider:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
+                logger.exception("EEG BLE provider loop failed")
                 self._emit_status("disconnected", error=str(exc))
                 await asyncio.sleep(self._reconnect_delay_seconds)
 
@@ -212,6 +326,7 @@ class EEGRuntimeService:
         self._sampling_rate = int(settings["eeg_sampling_rate"])
         self._preview_seconds = max(1, int(settings["eeg_preview_seconds"]))
         self._window_seconds = max(1, int(settings["eeg_window_seconds"]))
+        self._window_feature_frames = self._window_seconds
         self._min_feature_frames = max(1, int(settings["eeg_min_feature_frames"]))
         self._latest_results_limit = max(1, int(settings["eeg_latest_results_limit"]))
         self._preview_sample_limit = max(1, self._sampling_rate * self._preview_seconds)
@@ -228,6 +343,7 @@ class EEGRuntimeService:
         self._clf = None
         self._scaler = None
         self._selected_features: np.ndarray | None = None
+        self._all_feature_names: list[str] = []
         self._model_name = "eeg_3class"
         self._model_version: str | None = None
         self._model_loaded = False
@@ -236,6 +352,7 @@ class EEGRuntimeService:
     def warmup(self) -> dict[str, Any]:
         with self._lock:
             model_loaded = self._load_model_locked()
+            # 服务启动时自动开始 BLE 扫描，无需等待 begin_turn
             self._ensure_provider_started_locked()
             return {
                 "enabled": self._enabled,
@@ -261,6 +378,7 @@ class EEGRuntimeService:
                     and self._scaler is not None
                     and self._selected_features is not None
                     and self._selected_features.size > 0
+                    and bool(self._all_feature_names)
                 ),
                 "model_name": self._model_name,
                 "model_version": self._model_version,
@@ -270,9 +388,8 @@ class EEGRuntimeService:
 
     def shutdown(self) -> None:
         with self._lock:
-            self._provider.stop()
-            self._provider_started = False
             self._active_binding = None
+            self._stop_provider_locked(clear_error=False)
 
     def set_live_update_callback(
         self,
@@ -317,7 +434,17 @@ class EEGRuntimeService:
     def finish_turn(self, *, session_id: str, turn_id: str, reason: str = "completed") -> dict[str, Any]:
         with self._lock:
             active = self._active_binding
-            if active is None or active.session_id != session_id or active.turn_id != turn_id:
+            if active is None:
+                # BLE provider 保持运行，下次 turn 无需重新扫描
+                clear_eeg_turn_hot_state(session_id, turn_id, window_indexes=[])
+                return {
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "status": "not_active",
+                    "device_status": self._device_status,
+                    "reason": reason,
+                }
+            if active.session_id != session_id or active.turn_id != turn_id:
                 clear_eeg_turn_hot_state(session_id, turn_id, window_indexes=[])
                 return {
                     "session_id": session_id,
@@ -328,6 +455,8 @@ class EEGRuntimeService:
                 }
             self._finish_binding_locked(active, reason=reason)
             self._active_binding = None
+            # BLE provider 保持运行，断连后自动重连，下次 turn 即刻就绪
+            # 仅在 shutdown() 时才真正停止
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -363,9 +492,23 @@ class EEGRuntimeService:
         self._provider.start()
         self._provider_started = True
 
+    def _stop_provider_locked(self, *, clear_error: bool) -> None:
+        if self._provider_started:
+            self._provider.stop()
+            self._provider_started = False
+        self._device_status = "disabled" if not self._enabled else "idle"
+        self._device_id = None
+        if clear_error:
+            self._last_error = None
+
     def _load_model_locked(self) -> bool:
         if self._model_loaded:
-            return self._clf is not None and self._scaler is not None and self._selected_features is not None
+            return (
+                self._clf is not None
+                and self._scaler is not None
+                and self._selected_features is not None
+                and bool(self._all_feature_names)
+            )
 
         self._model_loaded = True
         model_path = Path(get_settings()["eeg_model_path"])
@@ -383,15 +526,31 @@ class EEGRuntimeService:
             if selected is None:
                 selected = []
             self._selected_features = np.array(selected, dtype=int)
+            all_feature_names = model_obj.get("all_feature_names") or []
+            self._all_feature_names = [str(name) for name in all_feature_names]
+            if not self._all_feature_names:
+                self._all_feature_names = [f"feat_{index}" for index in range(MODEL_FEATURE_COUNT)]
             self._model_name = str(model_obj.get("classifier_name") or self._model_name)
-            self._model_version = str(model_obj.get("version_tag") or model_obj.get("feature_set_desc") or "unknown")
-            return self._clf is not None and self._scaler is not None and self._selected_features.size > 0
+            self._model_version = str(
+                model_obj.get("version")
+                or model_obj.get("version_tag")
+                or model_obj.get("feature_set_desc")
+                or "unknown"
+            )
+            self._last_error = None
+            return (
+                self._clf is not None
+                and self._scaler is not None
+                and self._selected_features.size > 0
+                and bool(self._all_feature_names)
+            )
         except Exception as exc:
             self._last_error = str(exc)
             logger.exception("Failed to load EEG model asset")
             self._clf = None
             self._scaler = None
             self._selected_features = None
+            self._all_feature_names = []
             return False
 
     def _update_device_status(self, status: str, device_id: str | None, error: str | None) -> None:
@@ -400,6 +559,8 @@ class EEGRuntimeService:
             self._device_id = device_id
             if error:
                 self._last_error = error
+            elif status in {"idle", "scanning", "connecting", "connected", "streaming"}:
+                self._last_error = None
             active = self._active_binding
             if active is not None:
                 self._write_binding_live_locked(active)
@@ -438,19 +599,31 @@ class EEGRuntimeService:
         if binding is None:
             return
         captured_at = _utcnow()
+        vector = np.asarray(packet.to_model_vector(), dtype=np.float32)
+        expected_count = self._expected_feature_count()
+        if vector.size != expected_count:
+            logger.warning(
+                "EEG feature dimension mismatch after filtering: received=%s expected=%s",
+                vector.size,
+                expected_count,
+            )
+            return
         feature_sample = EegFeatureSample(
             captured_at=captured_at,
-            values=tuple(packet.features),
+            values=tuple(float(value) for value in vector),
         )
         current_window = binding.current_window
         current_window.sample_started_at = current_window.sample_started_at or captured_at
         current_window.sample_ended_at = captured_at
         current_window.feature_samples.append(feature_sample)
         binding.last_sample_at = captured_at
-        if current_window.sample_started_at is None:
-            return
-        if (captured_at - current_window.sample_started_at).total_seconds() >= self._window_seconds:
+        if len(current_window.feature_samples) >= self._window_feature_frames:
             self._finalize_window_locked(binding, reason="window_complete")
+
+    def _expected_feature_count(self) -> int:
+        if self._all_feature_names:
+            return len(self._all_feature_names)
+        return MODEL_FEATURE_COUNT
 
     def _finish_binding_locked(self, binding: EegTurnBinding, *, reason: str) -> None:
         self._finalize_window_locked(binding, reason=reason, force=True)
@@ -486,7 +659,7 @@ class EEGRuntimeService:
         feature_values = (
             np.array([sample.values for sample in feature_samples], dtype=np.float32)
             if feature_samples
-            else np.zeros((0, 57), dtype=np.float32)
+            else np.zeros((0, self._expected_feature_count()), dtype=np.float32)
         )
         feature_timestamps_ms = np.array(
             [int(sample.captured_at.timestamp() * 1000) for sample in feature_samples],
@@ -544,23 +717,28 @@ class EEGRuntimeService:
             dtype=np.float32,
         )
         median_vector = np.median(features_matrix, axis=0)
+        if median_vector.size != self._expected_feature_count():
+            logger.warning(
+                "EEG median feature dimension mismatch: received=%s expected=%s",
+                median_vector.size,
+                self._expected_feature_count(),
+            )
+            return None
+        if np.any(self._selected_features < 0) or np.any(self._selected_features >= median_vector.size):
+            logger.warning("EEG selected feature indices exceed median vector size=%s", median_vector.size)
+            return None
         selected = median_vector[self._selected_features].reshape(1, -1)
         scaled = self._scaler.transform(selected)
         prediction = int(self._clf.predict(scaled)[0])
 
-        if hasattr(self._clf, "predict_proba"):
-            probabilities = np.asarray(self._clf.predict_proba(scaled)[0], dtype=np.float32)
-        else:
-            probabilities = np.zeros(len(getattr(self._clf, "classes_", [0, 1, 2])), dtype=np.float32)
-            classes = list(getattr(self._clf, "classes_", [0, 1, 2]))
-            probabilities[classes.index(prediction)] = 1.0
+        probabilities = _predict_probabilities(self._clf, scaled)
 
         label_map = {0: "消极", 1: "中性", 2: "积极"}
         score_map = {
-            label_map.get(index, str(index)): float(probabilities[index])
-            for index in range(min(len(probabilities), 3))
+            EEG_LABELS.get(index, str(index)): float(probabilities[index])
+            for index in range(min(len(probabilities), len(EEG_LABELS)))
         }
-        primary_label = label_map.get(prediction, str(prediction))
+        primary_label = EEG_LABELS.get(prediction, str(prediction))
         return {
             "modality": "eeg",
             "status": "ready",
@@ -651,6 +829,7 @@ class EEGRuntimeService:
                             "primary_label": inference_payload.get("primary_label"),
                             "primary_score": inference_payload.get("primary_score"),
                             "top_3_labels": _copy_labels(inference_payload.get("top_3_labels")),
+                            "feature_frame_count": inference_payload.get("feature_frame_count"),
                         },
                     }
                     session.live_state_payload = live_state_payload
@@ -804,7 +983,12 @@ class EEGRuntimeService:
             "turn_id": binding.turn_id,
             "device_status": self._device_status,
             "provider": self._provider_mode,
-            "model_loaded": self._clf is not None and self._scaler is not None and self._selected_features is not None,
+            "model_loaded": (
+                self._clf is not None
+                and self._scaler is not None
+                and self._selected_features is not None
+                and bool(self._all_feature_names)
+            ),
             "channel_names": list(self._channel_names),
             "sampling_rate": self._sampling_rate,
         }
@@ -835,6 +1019,7 @@ class EEGRuntimeService:
                     "primary_label": inference_payload.get("primary_label"),
                     "primary_score": inference_payload.get("primary_score"),
                     "top_3_labels": _copy_labels(inference_payload.get("top_3_labels")),
+                    "feature_frame_count": inference_payload.get("feature_frame_count"),
                     "sample_started_at": inference_payload.get("sample_started_at"),
                     "sample_ended_at": inference_payload.get("sample_ended_at"),
                     "raw_eeg_uri": inference_payload.get("raw_eeg_uri"),

@@ -9,6 +9,11 @@ PKT_TYPE_WAVE = 0x01
 PKT_TYPE_FEAT = 0x02
 WAVE_CHANNEL_COUNT = 3
 FEATURE_COUNT = 57
+FEATURE_DROPPED_INDICES = (26, 41, 46, 54, 55)
+KEPT_FEATURE_INDICES = tuple(
+    index for index in range(FEATURE_COUNT) if index not in FEATURE_DROPPED_INDICES
+)
+MODEL_FEATURE_COUNT = len(KEPT_FEATURE_INDICES)
 WAVE_PACKET_BYTES = 19
 FEATURE_PACKET_BYTES = 233
 
@@ -22,6 +27,9 @@ class WavePacket:
 @dataclass(frozen=True, slots=True)
 class FeaturePacket:
     features: tuple[float, ...]
+
+    def to_model_vector(self) -> tuple[float, ...]:
+        return tuple(self.features[index] for index in KEPT_FEATURE_INDICES)
 
 
 def crc16_ccitt(data: bytes, *, init: int = 0xFFFF) -> int:
