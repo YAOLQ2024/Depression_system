@@ -42,6 +42,7 @@ import type { ConsultationMultimodalLive, ConsultationSubtitleHistoryEntry } fro
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
 const LIVE_REFRESH_INTERVAL_MS = 5000;
+const SYSTEM_VIDEO_AUTO_COMMIT_THRESHOLD_SECONDS = 0.9;
 
 declare global {
   interface Window {
@@ -445,6 +446,24 @@ export default function ConsultationPage() {
   }, [videoTransitionState.pendingCommit]);
 
   useEffect(() => {
+    const activeNode = videoTransitionState.currentNode;
+    if (
+      consultation?.status !== "waiting_system_completion" ||
+      !activeNode?.questionKey ||
+      activeNode.transitionMode !== "auto_commit"
+    ) {
+      return;
+    }
+
+    void requestPreview();
+  }, [
+    consultation?.status,
+    videoTransitionState.currentNode?.nodeKey,
+    videoTransitionState.currentNode?.questionKey,
+    videoTransitionState.currentNode?.transitionMode,
+  ]);
+
+  useEffect(() => {
     if (state.message) {
       pushStoreToast(state.message, "success");
     }
@@ -651,27 +670,27 @@ export default function ConsultationPage() {
 
   function handleVideoTimeUpdate(event: SeamlessVideoTimeUpdateEvent) {
     const activeNode = videoTransitionState.currentNode;
-    const hasPrefetchedNextNode = Boolean(
-      videoTransitionState.prefetchedNode &&
-      videoTransitionState.prefetchedNode.nodeKey !== videoTransitionState.currentNode?.nodeKey,
-    );
     if (
       !activeNode?.questionKey ||
       consultation?.status !== "waiting_system_completion" ||
       activeNode.transitionMode !== "auto_commit" ||
-      videoTransitionState.pendingCommit ||
-      videoTransitionState.pendingPreview ||
-      hasPrefetchedNextNode
+      videoTransitionState.pendingCommit
     ) {
       return;
     }
 
     const remainingSeconds = event.video.duration - event.video.currentTime;
-    if (!Number.isFinite(remainingSeconds) || remainingSeconds > 0.9) {
+    if (
+      !Number.isFinite(remainingSeconds) ||
+      remainingSeconds > SYSTEM_VIDEO_AUTO_COMMIT_THRESHOLD_SECONDS
+    ) {
       return;
     }
 
-    void requestPreview();
+    if (!videoTransitionState.pendingPreview) {
+      void requestPreview();
+    }
+    void commitCurrentNode();
   }
 
   function handleVideoError(event: SeamlessVideoErrorEvent) {
