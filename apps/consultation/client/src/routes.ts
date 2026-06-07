@@ -9,6 +9,7 @@ export const APP_PATHS = {
   assessment: "/scale-questionnaire",
   result: "/result",
   intervention: "/intervention",
+  interventionVideo: "/intervention/video",
   seamlessVideoDemo: "/labs/seamless-video-player",
 } as const;
 
