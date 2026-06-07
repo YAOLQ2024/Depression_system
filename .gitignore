@@ -33,3 +33,4 @@ tmp/
 
 **/test/
 **/tests/
+!services/multimodal-service/tests/

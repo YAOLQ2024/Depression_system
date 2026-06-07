@@ -62,7 +62,10 @@ def test_live_route_returns_step4d_shape(monkeypatch) -> None:
     )
 
     with build_test_client(monkeypatch) as client:
-        response = client.get("/api/v1/multimodal/sessions/mm-session-1/live")
+        response = client.get(
+            "/api/v1/multimodal/sessions/mm-session-1/live",
+            headers={"x-mcs-user-id": "user-1"},
+        )
     assert response.status_code == 200
     data = response.json()["data"]
     assert "live" not in data
@@ -180,7 +183,10 @@ def test_bundle_route_returns_direct_bundle(monkeypatch) -> None:
     )
 
     with build_test_client(monkeypatch) as client:
-        response = client.get("/api/v1/multimodal/sessions/mm-session-1/turns/turn-1/bundle")
+        response = client.get(
+            "/api/v1/multimodal/sessions/mm-session-1/turns/turn-1/bundle",
+            headers={"x-mcs-user-id": "user-1"},
+        )
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["turn_id"] == "turn-1"

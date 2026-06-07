@@ -182,7 +182,8 @@ services:
       EEG_CHANNEL_NAMES: T7,T8,Fpz
       EEG_SAMPLING_RATE: 500
       EEG_PREVIEW_SECONDS: 4
-      EEG_WINDOW_SECONDS: 60
+      EEG_WINDOW_SECONDS: 10
+      EEG_MIN_FEATURE_FRAMES: 10
     depends_on:
       postgres:
         condition: service_healthy

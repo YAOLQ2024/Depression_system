@@ -7,6 +7,7 @@ import type {
   ConsultationMultimodalLive,
   ConsultationSession,
   ConsultationTurnMultimodalBundle,
+  EegLiveResult,
   EegWaveSample,
   FacePoseMultimodalLive,
   MultimodalRankedLabel,
@@ -22,6 +23,7 @@ const EEG_CANVAS_BOUNDS_EPSILON = 0.001;
 const EEG_CANVAS_BOUNDS_FRAME_ALPHA = 0.05;
 const EEG_MIN_VISIBLE_UPPER_UV = 20;
 const EEG_MAX_VISIBLE_LOWER_UV = -20;
+const EEG_PROBABILITY_LABELS = ["\u6d88\u6781", "\u4e2d\u6027", "\u79ef\u6781"];
 
 type EegWaveSampleMeta = {
   length: number;
@@ -628,6 +630,28 @@ function getTopLabels(labels?: MultimodalRankedLabel[]) {
   return (labels || []).slice(0, 4);
 }
 
+function getEegDistribution(result?: EegLiveResult | null) {
+  const labels = result?.top_3_labels || [];
+  if (labels.length === 0) {
+    return [];
+  }
+
+  const scoreByLabel = new Map<string, number>();
+  for (const item of labels) {
+    if (!item?.label) {
+      continue;
+    }
+    scoreByLabel.set(item.label, typeof item.score === "number" ? item.score : 0);
+  }
+
+  const ordered = EEG_PROBABILITY_LABELS.map((label) => ({
+    label,
+    score: scoreByLabel.get(label) ?? 0,
+  }));
+  const hasKnownLabels = ordered.some((item) => item.score > 0);
+  return hasKnownLabels ? ordered : labels.slice(0, 3);
+}
+
 function readBundleFaceSummary(bundle?: ConsultationTurnMultimodalBundle | null) {
   const face = (bundle?.face_features || {}) as Record<string, unknown>;
   const labelDistributionRaw = Array.isArray(face.label_distribution) ? face.label_distribution : [];
@@ -878,6 +902,7 @@ export function ConsultationStatusPanel({
       : getTopLabels(snapshot.face.top_3_labels);
   const textWords = snapshot.text.negative_terms || [];
   const eegLatestResult = snapshot.eeg_live.latest_result;
+  const eegDistribution = getEegDistribution(eegLatestResult);
   const eegChannelNames = snapshot.eeg_waves.channel_names || snapshot.eeg_live.channel_names || ["T7", "T8", "Fpz"];
   const eegSamplingRate = snapshot.eeg_waves.sampling_rate || snapshot.eeg_live.sampling_rate || 500;
   const eegSamples = snapshot.eeg_waves.samples || [];
@@ -1000,6 +1025,17 @@ export function ConsultationStatusPanel({
                     {eegLatestResult?.primary_label || "等待中"}
                   </div>
                   <div className="mt-1 text-[10px] text-slate-300">{getEegSummaryText(snapshot)}</div>
+                </div>
+                <div className="mt-2 min-h-0 space-y-1 overflow-y-auto pr-1">
+                  {eegDistribution.length > 0 ? (
+                    eegDistribution.map((item) => (
+                      <DistributionBar key={item.label} label={item.label} value={item.score} />
+                    ))
+                  ) : (
+                    <div className="rounded-[12px] border border-dashed border-white/10 px-2 py-2 text-center text-[10px] text-slate-400">
+                      绛夊緟 10s EEG 绐楀彛缁撴灉
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
