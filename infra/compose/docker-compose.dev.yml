@@ -85,6 +85,7 @@ services:
     environment:
       DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
       MULTIMODAL_SERVICE_URL: ${MCS_MULTIMODAL_SERVICE_URL:-http://multimodal-service:8000}
+      RISK_SERVICE_URL: http://risk-service:8000
       WORKFLOW_RESOURCES_DIR: /app/workflow-resources
       ACTIVE_SCALE_SET: v1
     depends_on:
@@ -110,6 +111,7 @@ services:
       CONSULTATION_SERVICE_URL: http://consultation-service:8000
       ASSESSMENT_SERVICE_URL: http://assessment-service:8000
       MULTIMODAL_SERVICE_URL: ${MCS_MULTIMODAL_SERVICE_URL:-http://multimodal-service:8000}
+      WORKFLOW_RESOURCES_DIR: /app/workflow-resources
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,6 +121,8 @@ services:
         condition: service_started
       multimodal-service:
         condition: service_started
+    volumes:
+      - ../../packages/workflow-resources:/app/workflow-resources:ro
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready').read()"]
       interval: 5s

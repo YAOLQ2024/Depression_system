@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
@@ -9,6 +10,7 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.clients.risk_client import create_risk_evaluation as create_risk_evaluation_upstream
 from app.clients.multimodal_client import (
     finish_eeg_turn as finish_upstream_eeg_turn,
     get_eeg_turn_results as fetch_upstream_eeg_turn_results,
@@ -95,6 +97,15 @@ def _ensure_json_dict(value: dict[str, Any] | None) -> dict[str, Any]:
 
 def _ensure_json_list(value: list[str] | None) -> list[str]:
     return list(value or [])
+
+
+def _safe_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _require_acting_user_id(acting_user_id: str | None) -> str:
@@ -924,6 +935,8 @@ def _build_aggregate_payload(db_session: Session, session_record: AssessmentSess
     return {
         "assessment_session_id": session_record.id,
         "encounter_session_id": session_record.encounter_session_id,
+        "multimodal_session_id": session_record.multimodal_session_id,
+        "status": session_record.status,
         "source_consultation_flow_run_id": (
             session_record.source_consultation_flow_run_id
         ),
@@ -935,6 +948,334 @@ def _build_aggregate_payload(db_session: Session, session_record: AssessmentSess
         "eeg_turn_results": list(capture_context.get("eeg_turn_results") or []),
         "source_handoff": _ensure_json_dict(session_record.scale_handoff_payload),
     }
+
+
+def _extract_primary_label(feature_payload: dict[str, Any]) -> str | None:
+    primary_label = str(feature_payload.get("primary_label") or "").strip()
+    if primary_label:
+        return primary_label
+
+    for item in list(feature_payload.get("top_3_labels") or []):
+        if not isinstance(item, dict):
+            continue
+        candidate = str(item.get("label") or "").strip()
+        if candidate:
+            return candidate
+    return None
+
+
+def _merge_label_counts(
+    counter: Counter[str],
+    *,
+    feature_payload: dict[str, Any],
+) -> tuple[int, int]:
+    label_distribution = feature_payload.get("label_distribution")
+    if isinstance(label_distribution, list):
+        distribution_total = 0.0
+        for row in label_distribution:
+            if not isinstance(row, dict):
+                continue
+            label = str(row.get("label") or "").strip()
+            count = _safe_float(row.get("count"))
+            if not label or count is None or count <= 0:
+                continue
+            counter[label] += count
+            distribution_total += count
+        if distribution_total > 0:
+            sample_count = int(round(_safe_float(feature_payload.get("sample_count")) or distribution_total))
+            valid_sample_count = int(
+                round(_safe_float(feature_payload.get("valid_sample_count")) or distribution_total)
+            )
+            return sample_count, valid_sample_count
+
+    primary_label = _extract_primary_label(feature_payload)
+    if not primary_label:
+        return 0, 0
+    counter[primary_label] += 1.0
+    return 1, 1
+
+
+def _build_label_distribution_summary(
+    counter: Counter[str],
+    *,
+    sample_count: int,
+    valid_sample_count: int,
+    extra_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    total_count = float(sum(counter.values()))
+    if valid_sample_count <= 0 and total_count > 0:
+        valid_sample_count = int(round(total_count))
+    if sample_count <= 0 and valid_sample_count > 0:
+        sample_count = valid_sample_count
+
+    label_distribution = [
+        {
+            "label": label,
+            "count": int(round(count)) if abs(count - round(count)) < 1e-6 else round(count, 4),
+            "ratio": round((count / total_count), 4) if total_count > 0 else 0.0,
+        }
+        for label, count in sorted(
+            counter.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
+    primary_label = label_distribution[0]["label"] if label_distribution else None
+    primary_ratio = label_distribution[0]["ratio"] if label_distribution else None
+
+    payload = {
+        "primary_label": primary_label,
+        "primary_score": primary_ratio,
+        "primary_ratio": primary_ratio,
+        "sample_count": sample_count,
+        "valid_sample_count": valid_sample_count,
+        "label_distribution": label_distribution,
+    }
+    if extra_payload:
+        payload.update(extra_payload)
+    return payload
+
+
+def _summarize_turn_feature_sections(
+    sections: list[dict[str, Any]],
+    *,
+    extra_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    counter: Counter[str] = Counter()
+    sample_count = 0
+    valid_sample_count = 0
+    for section in sections:
+        current_sample_count, current_valid_count = _merge_label_counts(
+            counter,
+            feature_payload=section,
+        )
+        sample_count += current_sample_count
+        valid_sample_count += current_valid_count
+    return _build_label_distribution_summary(
+        counter,
+        sample_count=sample_count,
+        valid_sample_count=valid_sample_count,
+        extra_payload=extra_payload,
+    )
+
+
+def _load_turn_multimodal_bundle_best_effort(
+    session_record: AssessmentSession,
+    *,
+    turn_id: str,
+    acting_user_id: str,
+) -> dict[str, Any] | None:
+    try:
+        payload = fetch_assessment_turn_multimodal_bundle(
+            session_record,
+            turn_id=turn_id,
+            acting_user_id=acting_user_id,
+        )
+    except Exception:
+        return None
+    return dict(payload) if isinstance(payload, dict) else None
+
+
+def _build_eeg_feature_summary(session_record: AssessmentSession) -> dict[str, Any]:
+    capture_context = _ensure_json_dict(session_record.capture_context)
+    counter: Counter[str] = Counter()
+    sample_count = 0
+    valid_sample_count = 0
+    latest_result: dict[str, Any] | None = None
+
+    for entry in list(capture_context.get("eeg_turn_results") or []):
+        if not isinstance(entry, dict):
+            continue
+        window_results = [
+            dict(item)
+            for item in list(entry.get("window_results") or [])
+            if isinstance(item, dict)
+        ]
+        if not window_results and isinstance(entry.get("latest_result"), dict):
+            window_results = [dict(entry["latest_result"])]
+
+        for window_result in window_results:
+            label = _extract_primary_label(window_result)
+            sample_count += 1
+            latest_result = window_result
+            if not label:
+                continue
+            counter[label] += 1.0
+            valid_sample_count += 1
+
+    extra_payload = {
+        "latest_result": dict(latest_result) if isinstance(latest_result, dict) else None,
+        "result_count": sample_count,
+    }
+    return _build_label_distribution_summary(
+        counter,
+        sample_count=sample_count,
+        valid_sample_count=valid_sample_count,
+        extra_payload=extra_payload,
+    )
+
+
+def _build_multimodal_feature_bundle(
+    db_session: Session,
+    session_record: AssessmentSession,
+    *,
+    acting_user_id: str,
+) -> dict[str, Any]:
+    answers = db_session.scalars(
+        select(AssessmentAnswer)
+        .where(AssessmentAnswer.session_id == session_record.id)
+        .order_by(AssessmentAnswer.created_at.asc(), AssessmentAnswer.item_index.asc())
+    ).all()
+    turn_ids: list[str] = []
+    seen_turn_ids: set[str] = set()
+    for answer in answers:
+        turn_id = str(answer.turn_id or "").strip()
+        if not turn_id or turn_id in seen_turn_ids:
+            continue
+        seen_turn_ids.add(turn_id)
+        turn_ids.append(turn_id)
+
+    turn_bundles: list[dict[str, Any]] = []
+    for turn_id in turn_ids:
+        bundle = _load_turn_multimodal_bundle_best_effort(
+            session_record,
+            turn_id=turn_id,
+            acting_user_id=acting_user_id,
+        )
+        if bundle:
+            turn_bundles.append(bundle)
+
+    speech_sections: list[dict[str, Any]] = []
+    text_sections: list[dict[str, Any]] = []
+    face_sections: list[dict[str, Any]] = []
+    pose_sections: list[dict[str, Any]] = []
+    text_negative_terms: set[str] = set()
+
+    for bundle in turn_bundles:
+        speech_features = bundle.get("speech_features")
+        if isinstance(speech_features, dict):
+            speech_sections.append(dict(speech_features))
+
+        text_features = bundle.get("text_features")
+        if isinstance(text_features, dict):
+            text_sections.append(dict(text_features))
+            for term in list(text_features.get("negative_terms") or []):
+                normalized_term = str(term or "").strip()
+                if normalized_term:
+                    text_negative_terms.add(normalized_term)
+
+        face_features = bundle.get("face_features")
+        if isinstance(face_features, dict):
+            face_sections.append(dict(face_features))
+
+        pose_features = bundle.get("pose_features")
+        if isinstance(pose_features, dict):
+            pose_sections.append(dict(pose_features))
+
+    return {
+        "multimodal_session_id": session_record.multimodal_session_id,
+        "origin_flow_type": "assessment",
+        "generated_at": _now().isoformat(),
+        "turn_count": len(turn_ids),
+        "bundle_count": len(turn_bundles),
+        "speech_features": _summarize_turn_feature_sections(
+            speech_sections,
+            extra_payload={"summary_type": "assessment_session"},
+        ),
+        "text_features": _summarize_turn_feature_sections(
+            text_sections,
+            extra_payload={
+                "summary_type": "assessment_session",
+                "negative_terms": sorted(text_negative_terms),
+            },
+        ),
+        "face_features": _summarize_turn_feature_sections(
+            face_sections,
+            extra_payload={"summary_type": "assessment_session"},
+        ),
+        "pose_features": _summarize_turn_feature_sections(
+            pose_sections,
+            extra_payload={"summary_type": "assessment_session"},
+        ),
+        "eeg_features": _build_eeg_feature_summary(session_record),
+    }
+
+
+def _build_risk_summary_payload(risk_evaluation: dict[str, Any]) -> dict[str, Any]:
+    result_payload = _ensure_json_dict(risk_evaluation.get("result"))
+    front_display = _ensure_json_dict(result_payload.get("front_display"))
+    return {
+        "evaluation_id": risk_evaluation.get("evaluation_id"),
+        "risk_level": risk_evaluation.get("risk_level"),
+        "risk_level_label": front_display.get("risk_level_label"),
+        "depression_score": risk_evaluation.get("depression_score"),
+        "depression_severity": risk_evaluation.get("depression_severity"),
+        "depression_severity_label": result_payload.get("depression_severity_label"),
+        "requires_human_review": risk_evaluation.get("requires_human_review"),
+        "front_display": front_display,
+        "risk_explanation": _ensure_json_dict(result_payload.get("risk_explanation")),
+        "referral_recommendations": list(result_payload.get("referral_recommendations") or []),
+        "lifestyle_suggestions": list(result_payload.get("lifestyle_suggestions") or []),
+    }
+
+
+def _create_final_risk_evaluation_best_effort(
+    session_record: AssessmentSession,
+    *,
+    acting_user_id: str,
+    assessment_aggregate_payload: dict[str, Any],
+    multimodal_feature_bundle: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    try:
+        upstream = create_risk_evaluation_upstream(
+            payload={
+                "user_id": session_record.user_id,
+                "encounter_session_id": session_record.encounter_session_id,
+                "consultation_session_id": session_record.source_consultation_flow_run_id,
+                "assessment_session_id": session_record.id,
+                "multimodal_session_id": session_record.multimodal_session_id,
+                "assessment_aggregate_payload": assessment_aggregate_payload,
+                "multimodal_feature_bundle": multimodal_feature_bundle,
+            },
+            acting_user_id=acting_user_id,
+        )
+    except AssessmentServiceError as exc:
+        return None, {
+            "code": exc.code,
+            "message": exc.message,
+            "status_code": exc.status_code,
+        }
+    except Exception as exc:
+        return None, {
+            "code": 5028,
+            "message": str(exc) or "risk evaluation failed",
+            "status_code": 502,
+        }
+
+    status_code = int(upstream.get("status") or 500)
+    payload = upstream.get("payload") or {}
+    if status_code >= 400:
+        return None, {
+            "code": int(payload.get("code") or 5028),
+            "message": str(payload.get("message") or "risk service request failed"),
+            "status_code": status_code,
+        }
+
+    data = payload.get("data") or {}
+    if not isinstance(data, dict):
+        return None, {
+            "code": 5028,
+            "message": "risk service returned invalid payload",
+            "status_code": 502,
+        }
+
+    risk_evaluation = data.get("risk_evaluation")
+    if not isinstance(risk_evaluation, dict):
+        return None, {
+            "code": 5028,
+            "message": "risk service returned invalid payload",
+            "status_code": 502,
+        }
+    return dict(risk_evaluation), None
 
 
 def _ensure_multimodal_session_binding(
@@ -1061,7 +1402,7 @@ def _append_eeg_turn_results(
             "item_index": current_item["index"],
             "question_key": _build_assessment_question_key(
                 scale_definition.slug,
-                str(current_item["item_id"]),
+                int(current_item["index"]),
             ),
             "result_count": len(copied_results),
             "latest_result": dict(copied_results[-1]) if copied_results else None,
@@ -1354,7 +1695,28 @@ def submit_assessment_answer(
         session_record.current_item_index = 0
         session_record.status = "completed"
         session_record.completed_at = completion_time
-        session_record.aggregate_payload = _build_aggregate_payload(db_session, session_record)
+        aggregate_payload = _build_aggregate_payload(db_session, session_record)
+        multimodal_feature_bundle = _build_multimodal_feature_bundle(
+            db_session,
+            session_record,
+            acting_user_id=acting_user_id,
+        )
+        aggregate_payload["multimodal_feature_bundle"] = multimodal_feature_bundle
+        risk_evaluation, risk_error = _create_final_risk_evaluation_best_effort(
+            session_record,
+            acting_user_id=acting_user_id,
+            assessment_aggregate_payload=aggregate_payload,
+            multimodal_feature_bundle=multimodal_feature_bundle,
+        )
+        if risk_evaluation:
+            aggregate_payload["risk_evaluation_id"] = risk_evaluation.get("evaluation_id")
+            aggregate_payload["risk_evaluation"] = risk_evaluation
+            aggregate_payload["risk_summary"] = _build_risk_summary_payload(
+                risk_evaluation
+            )
+        if risk_error:
+            aggregate_payload["risk_evaluation_error"] = risk_error
+        session_record.aggregate_payload = aggregate_payload
         _mark_encounter_completed(
             db_session,
             encounter_session_id=session_record.encounter_session_id,

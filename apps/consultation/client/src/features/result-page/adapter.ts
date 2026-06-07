@@ -148,6 +148,45 @@ function getFlattenedRiskFlags(assessment: AssessmentSession | null) {
   );
 }
 
+/*
+function joinAdviceLines(items: string[]) {
+  return items.length ? items.join("；") : null;
+}
+
+*/
+function joinAdviceLines(items: string[]) {
+  return items.length ? items.join("; ") : null;
+}
+
+function getAssessmentRiskSummary(assessment: AssessmentSession | null) {
+  const aggregate = asRecord(assessment?.aggregate_payload);
+  const directSummary = asRecord(aggregate?.risk_summary);
+  if (directSummary) {
+    return directSummary;
+  }
+
+  const evaluation = asRecord(aggregate?.risk_evaluation);
+  if (!evaluation) {
+    return null;
+  }
+
+  const result = asRecord(evaluation.result);
+  const frontDisplay = asRecord(result?.front_display);
+  return {
+    evaluation_id: asString(evaluation.evaluation_id),
+    risk_level: asString(evaluation.risk_level),
+    risk_level_label: asString(frontDisplay?.risk_level_label),
+    depression_score: asNumber(evaluation.depression_score),
+    depression_severity: asString(evaluation.depression_severity),
+    depression_severity_label: asString(result?.depression_severity_label),
+    requires_human_review: Boolean(evaluation.requires_human_review),
+    front_display: frontDisplay,
+    risk_explanation: asRecord(result?.risk_explanation),
+    referral_recommendations: asStringArray(result?.referral_recommendations),
+    lifestyle_suggestions: asStringArray(result?.lifestyle_suggestions),
+  };
+}
+
 function getScaleScoreMethod(result: AssessmentResult) {
   const scoreDetails = asRecord(result.score_details);
   return asString(scoreDetails?.score_method);
@@ -626,12 +665,18 @@ function buildConsultationSummary(
   };
 }
 
+/*
 function buildAssessmentModuleDescription(
   scaleCount: number,
   flattenedRiskFlags: Array<Record<string, unknown>>,
+  riskSummary: Record<string, unknown> | null,
 ) {
   if (!scaleCount) {
     return "量表会话结果待接入。";
+  }
+
+  if (riskSummary) {
+    return `宸插畬鎴?${scaleCount} 浠介噺琛ㄥ苟鐢熸垚缁煎悎鍐崇瓥缁撴灉銆俙;
   }
 
   if (flattenedRiskFlags.length) {
@@ -644,13 +689,68 @@ function buildAssessmentModuleDescription(
 function buildMultimodalModuleDescription(
   assessment: AssessmentSession | null,
   consultation: ConsultationSession | null,
+  riskSummary: Record<string, unknown> | null,
 ) {
+  const aggregate = asRecord(assessment?.aggregate_payload);
+  const finalBundle = asRecord(aggregate?.multimodal_feature_bundle);
   const multimodalSessionId =
     asString(assessment?.multimodal_session_id) || asString(consultation?.multimodal_session_id);
+
+  if (riskSummary && finalBundle) {
+    return "澶氭ā鎬佺粓鎬佺壒寰佸凡鑱氬悎骞剁撼鍏ョ患鍚堣瘎鍒嗐€?";
+  }
+
+  if (finalBundle) {
+    return "澶氭ā鎬佺粓鎬佺壒寰佸凡鑱氬悎锛岀瓑寰呭喅绛栬绠椼€?";
+  }
 
   return multimodalSessionId
     ? "多模态会话已完成绑定，综合评分待接入。"
     : "多模态综合结果待接入。";
+}
+
+*/
+function buildAssessmentModuleDescription(
+  scaleCount: number,
+  flattenedRiskFlags: Array<Record<string, unknown>>,
+  riskSummary: Record<string, unknown> | null,
+) {
+  if (!scaleCount) {
+    return "Assessment results are pending.";
+  }
+
+  if (riskSummary) {
+    return `Completed ${scaleCount} scales and generated the final decision result.`;
+  }
+
+  if (flattenedRiskFlags.length) {
+    return `Completed ${scaleCount} scales with ${flattenedRiskFlags.length} risk flags detected.`;
+  }
+
+  return `Completed ${scaleCount} scales and generated the scale-level results.`;
+}
+
+function buildMultimodalModuleDescription(
+  assessment: AssessmentSession | null,
+  consultation: ConsultationSession | null,
+  riskSummary: Record<string, unknown> | null,
+) {
+  const aggregate = asRecord(assessment?.aggregate_payload);
+  const finalBundle = asRecord(aggregate?.multimodal_feature_bundle);
+  const multimodalSessionId =
+    asString(assessment?.multimodal_session_id) || asString(consultation?.multimodal_session_id);
+
+  if (riskSummary && finalBundle) {
+    return "Final multimodal features were aggregated into the overall score.";
+  }
+
+  if (finalBundle) {
+    return "Final multimodal features were aggregated and are ready for scoring.";
+  }
+
+  return multimodalSessionId
+    ? "A multimodal session is already bound for this assessment."
+    : "Multimodal summary is pending.";
 }
 
 function buildModules({
@@ -659,12 +759,14 @@ function buildModules({
   consultationSummary,
   scaleCount,
   flattenedRiskFlags,
+  riskSummary,
 }: {
   assessment: AssessmentSession | null;
   consultation: ConsultationSession | null;
   consultationSummary: ResultConsultationSummary | null;
   scaleCount: number;
   flattenedRiskFlags: Array<Record<string, unknown>>;
+  riskSummary: Record<string, unknown> | null;
 }): ResultModuleCard[] {
   return [
     {
@@ -677,13 +779,13 @@ function buildModules({
     {
       id: "assessment-session",
       name: "量表会话",
-      description: buildAssessmentModuleDescription(scaleCount, flattenedRiskFlags),
+      description: buildAssessmentModuleDescription(scaleCount, flattenedRiskFlags, riskSummary),
       tone: "indigo",
     },
     {
       id: "multimodal-session",
       name: "多模态会话",
-      description: buildMultimodalModuleDescription(assessment, consultation),
+      description: buildMultimodalModuleDescription(assessment, consultation, riskSummary),
       tone: "emerald",
     },
   ];
@@ -700,6 +802,16 @@ export function buildResultPageViewModel({
   const scaleSlugs = getOrderedScaleSlugs(assessment, results);
   const resultMap = new Map(results.map((result) => [result.scale_slug, result] as const));
   const flattenedRiskFlags = getFlattenedRiskFlags(assessment);
+  const riskSummary = getAssessmentRiskSummary(assessment);
+  const riskFrontDisplay = asRecord(riskSummary?.front_display);
+  const overallScore = asNumber(riskSummary?.depression_score);
+  const overallSeverity =
+    asString(riskSummary?.risk_level_label) ||
+    asString(riskFrontDisplay?.risk_level_label) ||
+    asString(riskSummary?.depression_severity_label) ||
+    asString(riskSummary?.depression_severity);
+  const clinicalAdvice = joinAdviceLines(asStringArray(riskSummary?.referral_recommendations));
+  const lifestyleAdvice = joinAdviceLines(asStringArray(riskSummary?.lifestyle_suggestions));
   const consultationSummary = buildConsultationSummary(assessment, consultation, catalogMap);
   const scales = scaleSlugs.map((slug) => buildScaleBrief(slug, resultMap.get(slug) || null, catalogMap.get(slug)));
 
@@ -720,23 +832,42 @@ export function buildResultPageViewModel({
     status: assessment?.status || "idle",
     defaultScaleId: scales[0]?.id || null,
     // Reserved for the future top-level risk-service contract.
-    overallScore: null,
-    overallScorePending: true,
+    overallScore,
+    overallScorePending: !riskSummary,
+    /*
     overallSeverity: "待接入",
     overallSeverityPending: true,
+    */
+    /*
+    ...{
+      overallSeverity: overallSeverity || "寰呮帴鍏?",
+      overallSeverityPending: !riskSummary,
+    },
+    */
+    ...{
+      overallSeverity: overallSeverity || "Pending",
+      overallSeverityPending: !riskSummary,
+    },
     modules: buildModules({
       assessment,
       consultation,
       consultationSummary,
       scaleCount: scales.filter((item) => typeof item.score === "number").length,
       flattenedRiskFlags,
+      riskSummary,
     }),
     scales,
     scaleDetails,
     consultationSummary,
     // Reserved for the future top-level risk-service advice contract.
+    /*
     clinicalAdvice: null,
     lifestyleAdvice: null,
+    */
+    ...{
+      clinicalAdvice,
+      lifestyleAdvice,
+    },
     flattenedRiskFlags,
   };
 }

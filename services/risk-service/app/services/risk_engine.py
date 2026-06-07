@@ -108,6 +108,7 @@ DEFAULT_INTERVENTION_MAPPING: dict[str, dict[str, Any]] = {
     "urgent": {"intensity": "high", "allow_auto_intervention": False},
 }
 DEFAULT_NEGATIVE_LABEL_SETS: dict[str, set[str]] = {
+    "eeg": {"negative", "娑堟瀬"},
     "text": {"negative", "消极", "悲伤", "抑郁", "焦虑"},
     "speech": {"sad", "ang", "悲伤", "难过", "愤怒"},
     "face": {"sad", "angry", "disgust", "fear", "悲伤", "难过", "愤怒", "厌恶", "恐惧"},
@@ -322,6 +323,12 @@ def _normalize_assessment_payload(
     flattened_risk_flags = payload.get("flattened_risk_flags")
     if not isinstance(flattened_risk_flags, list):
         flattened_risk_flags = _flatten_risk_flags(scale_results)
+    multimodal_feature_bundle = payload.get("multimodal_feature_bundle")
+    if not isinstance(multimodal_feature_bundle, dict):
+        multimodal_feature_bundle = {}
+    eeg_turn_results = payload.get("eeg_turn_results")
+    if not isinstance(eeg_turn_results, list):
+        eeg_turn_results = []
 
     return {
         "assessment_session_id": _normalize_identifier(
@@ -343,6 +350,10 @@ def _normalize_assessment_payload(
         "flattened_risk_flags": [
             dict(item) for item in flattened_risk_flags if isinstance(item, dict)
         ],
+        "eeg_turn_results": [
+            dict(item) for item in eeg_turn_results if isinstance(item, dict)
+        ],
+        "multimodal_feature_bundle": dict(multimodal_feature_bundle),
         "source_handoff": _ensure_json_dict(
             payload.get("source_handoff") or payload.get("scale_handoff_payload")
         ),
@@ -553,6 +564,25 @@ def _resolve_multimodal_payload(
                 source_type="explicit_bundle",
             ),
             "explicit_bundle",
+        )
+
+    assessment_bundle = _ensure_json_dict(
+        assessment_payload.get("multimodal_feature_bundle")
+    )
+    if assessment_bundle:
+        return (
+            _normalize_multimodal_payload(
+                assessment_bundle,
+                multimodal_session_id=_coalesce_identifier(
+                    "multimodal_session_id",
+                    payload.multimodal_session_id,
+                    assessment_bundle.get("multimodal_session_id"),
+                    assessment_payload.get("multimodal_session_id"),
+                    consultation_payload.get("multimodal_session_id"),
+                ),
+                source_type="assessment_aggregate_bundle",
+            ),
+            "assessment_aggregate_bundle",
         )
 
     multimodal_session_id = _coalesce_identifier(
@@ -1067,8 +1097,6 @@ def _evaluate_depression_axis(
     pending_integrations: list[str] = []
     if multimodal_source == "upstream_live_snapshot":
         pending_integrations.append("multimodal_final_feature_bundle")
-    if "eeg" in missing_modalities:
-        pending_integrations.append("eeg_modality_interface")
 
     return {
         "scale_score": scale_score,
