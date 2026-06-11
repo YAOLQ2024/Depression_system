@@ -37,13 +37,14 @@ export function mergeConsultationMultimodalLive(
   const incomingEegWaves = incoming.eeg_waves;
   const shouldClearEegSamples =
     incomingEegWaves?.reset === true && incomingEegWaves?.samples === undefined;
-  const nextEegSamples = incomingEegWaves?.samples ?? (shouldClearEegSamples ? [] : base.eeg_waves.samples);
+  const baseEegWaves = base.eeg_waves ?? buildPendingLive().eeg_waves;
+  const nextEegSamples = incomingEegWaves?.samples ?? (shouldClearEegSamples ? [] : baseEegWaves.samples);
   const nextEegAppendSamples =
     incomingEegWaves?.append_samples ??
-    (incomingEegWaves?.samples !== undefined ? [] : base.eeg_waves.append_samples);
+    (incomingEegWaves?.samples !== undefined ? [] : baseEegWaves.append_samples);
   const nextEegReset =
     incomingEegWaves?.reset ??
-    (incomingEegWaves?.samples !== undefined ? false : base.eeg_waves.reset);
+    (incomingEegWaves?.samples !== undefined ? false : baseEegWaves.reset);
 
   return {
     ...base,

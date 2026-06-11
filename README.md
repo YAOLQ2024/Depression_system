@@ -164,6 +164,36 @@ ls infra/certs/lan-key.pem
 
 > 以上 4 条命令都会重建有变更的镜像并启动全部服务。如果只想启动或重建特定服务，在末尾追加服务名即可，见 [第 5 节](#5-只重建某个服务)。
 
+### 3.1 Windows EEG 启动速查
+
+如果你要在前端看到 EEG 波形，除了启动 Docker 业务主链，还必须再启动一个 EEG 数据源。
+
+先启动业务主链：
+
+```powershell
+docker compose -f infra/compose/docker-compose.dev.yml up -d --build
+```
+
+然后三选一：
+
+- 真机脑电帽：
+  `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command bridge`
+- 模拟数据：
+  `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command replay -Mode simulate`
+- 录制文件回放：
+  `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command replay -Mode raw -ReplayFile E:\DataSets\Projects\depression-system\tools\eeg-tools\data\records\eeg-host-bridge-20260608T125403Z.jsonl -Speed 1.0`
+
+如果已经打包单用途 EXE，也可以直接启动真机桥接：
+
+```powershell
+.\eeg-bridge.exe
+```
+
+注意：
+
+- 不要同时启动 `bridge` 和 `replay`
+- 当前 EEG 波形不是进入页面立刻出现，而是在进入真正作答窗口后开始显示
+
 ### 4. 各场景完整命令
 
 #### 4.1 默认（CPU + HTTP）
@@ -317,17 +347,9 @@ docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
 
 ### 9. face 模态最小回归
 
-如果要快速复验 `face` 模态当前是否仍保持”基本走通”，可以从仓库根目录执行：
+原先的人脸模态一键检查脚本已经移除。
 
-```powershell
-.\scripts\run_face_modality_checks.ps1 -PythonExe “C:\path\to\python.exe”
-```
-
-这会顺序运行：
-
-- `multimodal-service` 路由 smoke test
-- `multimodal-service` face 服务层回归
-- `consultation-service` face bundle 缓存回归
+如果后续还需要恢复这类能力，建议基于当前仍然存在的测试文件重新整理一套新的回归入口，而不是继续保留已经失效的历史脚本。
 
 注意：
 

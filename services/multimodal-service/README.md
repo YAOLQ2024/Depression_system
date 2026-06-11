@@ -1,102 +1,141 @@
 # Multimodal Service
 
-`multimodal-service` 目前已经从纯骨架推进到“可本地推理”的第一阶段，但本轮只接入非 EEG 的 4 个模态：
+`multimodal-service` 是当前项目中的多模态采集、推理、热态与对象存储编排服务。
 
-- 文本情感
-- 语音情感
-- 面部情感
-- 姿态情感
+当前仓库里的实现已经不再只是“非 EEG 四模态骨架”。现状更准确地说是：
 
-当前明确不包含：
+- 已接入文本情感
+- 已接入语音情感
+- 已接入面部情感
+- 已接入姿态情感
+- 已接入 ASR 运行时
+- 已接入 EEG turn 级运行时、Redis 热态、MinIO 原始文件与结果落库主链
 
-- EEG 模态
-- ASR 语音转写
+## 当前边界
+
+当前代码里已经存在 EEG 与 ASR 相关能力，但团队当前冻结的 Windows 开发边界是：
+
+- Docker 内保留唯一一份业务侧 `multimodal-service`
+- 不把整份 `multimodal-service` 作为默认链路搬到 Windows 宿主机
+- EEG transport 统一走“宿主机 `eeg-tools` -> Redis Stream -> Docker 内 multimodal-service”
+
+## Windows 默认开发链路
+
+截至 `2026-06-09`，Windows 开发阶段的默认 EEG 链路已经固定为：
+
+```text
+Docker Compose
+  -> gateway / consultation / assessment / risk
+  -> container multimodal-service (唯一一份)
+
+Windows host
+  -> eeg-tools
+  -> Redis Stream
+  -> container multimodal-service
+```
+
+默认做法：
+
+1. 启动 Docker 主链：
+   `docker compose -f infra/compose/docker-compose.dev.yml up -d --build`
+2. 真机联调时启动：
+   `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command bridge`
+3. 无设备联调时启动：
+   `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command replay -Mode simulate`
+
+不要做的事：
+
+- 不要在默认开发链路里设置 `MCS_MULTIMODAL_SERVICE_URL`
+- 不要为了 EEG 默认再起一份宿主机完整 `multimodal-service`
+
+详细方案见：
+
+- [docs/architecture/eeg-pure-docker-single-command-plan_20260607.md](/e:/DataSets/Projects/depression-system/docs/architecture/eeg-pure-docker-single-command-plan_20260607.md)
 
 ## 当前能力
 
-- PostgreSQL / SQLAlchemy / Alembic 基础骨架
-- `scripts/start.sh` 启动前自动迁移
-- 标准健康检查接口
+- PostgreSQL / SQLAlchemy / Alembic
+- Redis live state
+- MinIO 对象存储
 - 本地 ONNX 推理加载
-- 兼容旧版 4 模态 API 路径
+- Dolphin ASR 运行时
+- EEG turn start / finish / results API
+- `/live` 与 `/live/stream` 多模态实时看板输出
+- 兼容旧版部分非 EEG API 路径
 
-## 已实现接口
+## 主要接口
 
 - `GET /health/live`
 - `GET /health/ready`
+- `POST /api/v1/multimodal/sessions`
+- `POST /api/v1/multimodal/sessions/{session_id}/warmup`
+- `POST /api/v1/multimodal/sessions/{session_id}/audio-turns`
+- `POST /api/v1/multimodal/sessions/{session_id}/visual-captures`
+- `POST /api/v1/multimodal/sessions/{session_id}/eeg/turns/start`
+- `POST /api/v1/multimodal/sessions/{session_id}/eeg/turns/{turn_id}/finish`
+- `GET /api/v1/multimodal/sessions/{session_id}/eeg/turns/{turn_id}/results`
 
-### 推荐的新路径
+## 运行配置
 
-- `POST /api/v1/non-eeg/text-emotion/infer`
-- `POST /api/v1/non-eeg/audio-emotion/infer`
-- `POST /api/v1/non-eeg/face-emotion/frame-infer`
-- `POST /api/v1/non-eeg/pose-emotion/frame-infer`
+当前服务通过环境变量读取配置，主要来自：
 
-### 兼容旧路径
+- Docker Compose 注入
+- 仓库根 `.env`
+- 服务级 `.env.example`
 
-- `POST /api/v1/text/infer`
-- `POST /api/v1/audio/infer`
-- `POST /api/v1/emotion-recognition/frame-infer`
-- `POST /api/v1/pose/frame-infer`
+推荐约定是：
 
-## 模型目录
+- 真实开发值放根 `.env`
+- 模板说明放 `.env.example`
+- Compose 只负责编排和引用变量
+- `app/config.py` 只做解析与兜底
 
-非 EEG 模型统一放在：
+`multimodal-service` 自身已有示例配置文件：
 
-- `runtime-assets/models/text_emotion`
-- `runtime-assets/models/audio_emotion`
-- `runtime-assets/models/face_emotion`
-- `runtime-assets/models/pose_emotion`
-
-开发阶段推荐：
-
-- 通过 Compose 把 `runtime-assets` 挂载到容器内 `/app/runtime-assets`
-- `.onnx` 大文件通过 Git LFS 管理
-- 镜像构建阶段不再把这 4 个大模型 bake 进镜像
+- `.env.example`
 
 ## 关键环境变量
 
 - `DATABASE_URL`
+- `REDIS_ENABLED`
+- `REDIS_URL`
+- `REDIS_KEY_PREFIX`
 - `MINIO_ENDPOINT`
+- `MINIO_ACCESS_KEY`
+- `MINIO_SECRET_KEY`
 - `MULTIMODAL_BUCKET`
 - `MODEL_PROVIDERS`
-- `POSE_WINDOW`
+- `ASR_DEVICE`
+- `EEG_ENABLED`
+- `EEG_PROVIDER`
+- `EEG_AUTO_START_TRANSPORT`
+- `EEG_REQUIRE_TRANSPORT_FOR_READY`
+- `EEG_DEVICE_NAME_HINT`
+- `EEG_NOTIFY_CHAR_UUID`
+- `EEG_STREAM_KEY_PREFIX`
+- `EEG_STREAM_CONSUMER_GROUP`
+- `EEG_CHANNEL_NAMES`
+- `EEG_SAMPLING_RATE`
+- `EEG_WINDOW_SECONDS`
+- `EEG_MODEL_PATH`
 
-`MODEL_PROVIDERS` 支持逗号分隔 provider 顺序，例如：
+## 模型与资源目录
 
-- CPU 默认：`CPUExecutionProvider`
-- GPU 优先：`CUDAExecutionProvider,CPUExecutionProvider`
+- 非 EEG 模型：`runtime-assets/models/*`
+- ASR 资源：`runtime-assets/asr/*`
+- EEG 资源：`runtime-assets/eeg/*`
 
-## 当前 Step 4D 已完成
+开发阶段通常通过 Compose 把 `runtime-assets` 挂载到容器内 `/app/runtime-assets`。
 
-- `audio-turns` 后内部补齐 `speech_emotion` / `text_emotion`
-- `captures/face` / `captures/pose` 的连续采样接入
-- `/live` 的前端看板稳定结构
-- `/turns/{turn_id}/bundle` 的 turn 级聚合输出
-- `face` 的显式 `failed` 结果、轻量质量标记、`storage_uri` 回填
+## 验证
 
-## Face 回归检查
+如果本机 Python 环境完整，可以从仓库根目录执行相关测试或类型检查。
 
-当前仓库已经补了 `face` 模态的最小回归测试，覆盖：
+当前更建议优先通过：
 
-- 路由 smoke test
-- face 服务层标准化 / 质量标记 / `live` 刷新
-- `submit_face_capture -> live -> bundle` 联动
+- `docker compose config`
+- 服务级测试
+- `/health/ready`
+- `/live` / `/live/stream`
 
-如果你本机已有可用的 `Python 3.11+` 环境，可以从仓库根目录执行：
-
-```powershell
-.\scripts\run_face_modality_checks.ps1 -PythonExe "C:\path\to\python.exe"
-```
-
-说明：
-
-- 该脚本会分开设置 `PYTHONPATH`，避免 `consultation-service` 和 `multimodal-service` 的 `app` 包名冲突
-- 当前检查更偏“最小回归包”，不等于真实数据库、对象存储、模型资源都在线时的全链路联调
-
-## 下一步尚未完成
-
-- EEG 模态
-- Dolphin ASR
-- MinIO 音频落盘
-- 和 `consultation-service`、`risk-service` 的正式联调
+来做联调验证。

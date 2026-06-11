@@ -560,7 +560,7 @@ face 不应成为 turn 提交阻塞项。
 - `multimodal-service` 的 face/live/bundle 路由 smoke test 已通过
 - `multimodal-service` 的 face 服务层单元测试已通过
 - `consultation-service` 的 face bundle 缓存单元测试已通过
-- 已提供 `scripts/run_face_modality_checks.ps1` 作为分服务验收脚本
+- 当时曾提供 face 分服务验收脚本，现已移除
 
 当前仍属于待补齐项的主要是：
 

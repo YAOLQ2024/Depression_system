@@ -67,7 +67,6 @@ function resolveLiveData(consultation: ConsultationSession): ConsultationMultimo
 
   return {
     ...pending,
-    ...live,
     speech: {
       ...pending.speech,
       ...(live.speech || {}),

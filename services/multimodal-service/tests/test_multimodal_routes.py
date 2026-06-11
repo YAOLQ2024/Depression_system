@@ -9,8 +9,66 @@ def build_test_client(monkeypatch: object) -> TestClient:
     monkeypatch.setattr(main_module, "ensure_multimodal_bucket", lambda: None)
     monkeypatch.setattr(main_module, "shutdown_transcription_executor", lambda: None)
     monkeypatch.setattr(main_module.runtime_store, "shutdown", lambda: None)
+    monkeypatch.setattr(main_module.eeg_runtime_service, "warmup_model", lambda: True)
+    monkeypatch.setattr(main_module.eeg_runtime_service, "ensure_transport_started", lambda: {})
     monkeypatch.setattr(main_module.eeg_runtime_service, "shutdown", lambda: None)
     return TestClient(main_module.app)
+
+
+def test_health_ready_returns_503_when_eeg_is_not_ready(monkeypatch) -> None:
+    from app import main as main_module
+
+    monkeypatch.setattr(
+        main_module.eeg_runtime_service,
+        "status_snapshot",
+        lambda: {
+            "enabled": True,
+            "provider": "redis_stream",
+            "provider_started": False,
+            "device_status": "idle",
+            "model_loaded": True,
+            "transport_status": "idle",
+            "transport_ready": False,
+            "ready": False,
+            "not_ready_reason": "transport_not_started",
+        },
+    )
+
+    with build_test_client(monkeypatch) as client:
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    data = response.json()["data"]
+    assert data["status"] == "not_ready"
+    assert data["eeg"]["ready"] is False
+
+
+def test_health_ready_returns_200_when_eeg_is_ready(monkeypatch) -> None:
+    from app import main as main_module
+
+    monkeypatch.setattr(
+        main_module.eeg_runtime_service,
+        "status_snapshot",
+        lambda: {
+            "enabled": True,
+            "provider": "redis_stream",
+            "provider_started": True,
+            "device_status": "waiting_for_stream",
+            "model_loaded": True,
+            "transport_status": "waiting_for_stream",
+            "transport_ready": True,
+            "ready": True,
+            "not_ready_reason": None,
+        },
+    )
+
+    with build_test_client(monkeypatch) as client:
+        response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "ready"
+    assert data["eeg"]["ready"] is True
 
 
 def test_live_route_returns_step4d_shape(monkeypatch) -> None:
