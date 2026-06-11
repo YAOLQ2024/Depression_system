@@ -1,0 +1,41 @@
+services:
+  eeg-bridge:
+    build:
+      context: ../..
+      dockerfile: services/eeg-bridge/Dockerfile
+    environment:
+      REDIS_URL: redis://127.0.0.1:${REDIS_PORT:-6379}/0
+      REDIS_CONNECT_TIMEOUT_SECONDS: ${REDIS_CONNECT_TIMEOUT_SECONDS:-2}
+      REDIS_SOCKET_TIMEOUT_SECONDS: ${REDIS_SOCKET_TIMEOUT_SECONDS:-2}
+      EEG_STREAM_KEY_PREFIX: ${EEG_STREAM_KEY_PREFIX:-mcs:eeg:transport}
+      EEG_DEVICE_NAME_HINT: ${EEG_DEVICE_NAME_HINT:-EEG}
+      EEG_NOTIFY_CHAR_UUID: ${EEG_NOTIFY_CHAR_UUID:-6e400003-b5a3-f393-e0a9-e50e24dcca9e}
+      EEG_SCAN_SECONDS: ${EEG_SCAN_SECONDS:-5}
+      EEG_RECONNECT_DELAY_SECONDS: ${EEG_RECONNECT_DELAY_SECONDS:-5}
+      EEG_HOST_BRIDGE_APP_NAME: eeg-bridge
+      EEG_HOST_BRIDGE_SOURCE: jetson_eeg_bridge
+      EEG_HOST_BRIDGE_REDIS_MAXLEN: ${EEG_HOST_BRIDGE_REDIS_MAXLEN:-5000}
+      EEG_HOST_BRIDGE_REDIS_APPROX_MAXLEN: ${EEG_HOST_BRIDGE_REDIS_APPROX_MAXLEN:-true}
+      EEG_HOST_BRIDGE_PUBLISH_BATCH_SIZE: ${EEG_HOST_BRIDGE_PUBLISH_BATCH_SIZE:-32}
+      EEG_HOST_BRIDGE_PUBLISH_BATCH_TIMEOUT_MS: ${EEG_HOST_BRIDGE_PUBLISH_BATCH_TIMEOUT_MS:-20}
+      EEG_HOST_BRIDGE_QUEUE_MAXSIZE: ${EEG_HOST_BRIDGE_QUEUE_MAXSIZE:-2048}
+      EEG_HOST_BRIDGE_HEALTH_FLUSH_INTERVAL_SECONDS: ${EEG_HOST_BRIDGE_HEALTH_FLUSH_INTERVAL_SECONDS:-1}
+      EEG_HOST_BRIDGE_QUEUE_FULL_WARNING_INTERVAL_SECONDS: ${EEG_HOST_BRIDGE_QUEUE_FULL_WARNING_INTERVAL_SECONDS:-1}
+      EEG_HOST_BRIDGE_RECORD_ENABLED: ${EEG_HOST_BRIDGE_RECORD_ENABLED:-false}
+      EEG_HOST_BRIDGE_RECORD_DIR: /app/tools/eeg-tools/data/records
+      EEG_HOST_BRIDGE_STATUS_FILE: /app/tools/eeg-tools/tmp/status.json
+      EEG_HOST_BRIDGE_LOG_LEVEL: ${EEG_HOST_BRIDGE_LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_started
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
+      - eeg_bridge_data:/app/tools/eeg-tools/data
+      - eeg_bridge_tmp:/app/tools/eeg-tools/tmp
+
+volumes:
+  eeg_bridge_data:
+  eeg_bridge_tmp:

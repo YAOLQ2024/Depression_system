@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import io
 import logging
+import os
 import pickle
+import socket
 import threading
+from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -17,6 +22,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.config import get_settings
 from app.database import get_db_session
 from app.models import MultimodalCapture, MultimodalInferenceResult, MultimodalSession
+from app.redis import get_optional_redis_client
 from app.services.eeg_live_state_store import (
     clear_eeg_turn_hot_state,
     read_eeg_live_payload,
@@ -34,6 +40,13 @@ EEG_LABELS = {
     1: "\u4e2d\u6027",
     2: "\u79ef\u6781",
 }
+EEG_TRANSPORT_READY_STATUSES = {
+    "scanning",
+    "connecting",
+    "connected",
+    "streaming",
+    "waiting_for_stream",
+}
 
 
 def _utcnow() -> datetime:
@@ -46,6 +59,31 @@ def _isoformat(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    if value in (None, "", b""):
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        pass
+    try:
+        numeric = float(normalized)
+    except ValueError:
+        return None
+    if numeric > 10_000_000_000:
+        numeric /= 1000.0
+    return datetime.fromtimestamp(numeric, tz=timezone.utc)
 
 
 def _top_labels_from_scores(scores: dict[str, float], *, limit: int = 3) -> list[dict[str, Any]]:
@@ -67,7 +105,7 @@ def _copy_labels(labels: list[dict[str, Any]] | None, *, limit: int = 3) -> list
     return copied
 
 
-def _softmax(scores: Sequence[float]) -> np.ndarray:
+def _softmax(scores: Sequence[float] | np.ndarray) -> np.ndarray:
     values = np.asarray(scores, dtype=np.float32)
     values = values - np.max(values)
     exp_values = np.exp(values)
@@ -155,10 +193,313 @@ class EegTurnBinding:
     current_window: EegWindowBuffer = field(default_factory=EegWindowBuffer)
 
 
-class EEGBleProvider:
-    def __init__(self, *, on_bytes: Callable[[bytes], None]) -> None:
-        settings = get_settings()
+class EEGTransportProvider(ABC):
+    def __init__(self, *, on_bytes: Callable[[bytes], None], provider_name: str) -> None:
         self._on_bytes = on_bytes
+        self._provider_name = provider_name
+        self._status = "idle"
+        self._device_id: str | None = None
+        self._last_error: str | None = None
+        self._last_packet_at: datetime | None = None
+        self._last_source_at: datetime | None = None
+        self._last_packet_seq: int | None = None
+        self._status_callback: Callable[[str, str | None, str | None], None] | None = None
+        self._status_details: dict[str, Any] = {}
+
+    def set_status_callback(
+        self,
+        callback: Callable[[str, str | None, str | None], None],
+    ) -> None:
+        self._status_callback = callback
+
+    def state_snapshot(self) -> dict[str, Any]:
+        lag_source = self._last_source_at or self._last_packet_at
+        lag_ms = None
+        if lag_source is not None:
+            lag_ms = max(0, int(round((_utcnow() - lag_source).total_seconds() * 1000)))
+        return {
+            "transport_provider": self._provider_name,
+            "transport_status": self._status,
+            "device_id": self._device_id,
+            "last_error": self._last_error,
+            "last_transport_at": self._last_packet_at,
+            "last_packet_seq": self._last_packet_seq,
+            "transport_lag_ms": lag_ms,
+            **self._status_details,
+        }
+
+    def _emit_status(
+        self,
+        status: str,
+        *,
+        device_id: str | None = None,
+        error: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self._status = status
+        if device_id is not None:
+            self._device_id = device_id
+        if error:
+            self._last_error = error
+        elif status in {"idle", "scanning", "connecting", "connected", "streaming", "waiting_for_stream"}:
+            self._last_error = None
+        if details:
+            self._status_details.update(details)
+        if self._status_callback is not None:
+            self._status_callback(status, self._device_id, self._last_error)
+
+    def _record_packet(
+        self,
+        *,
+        device_id: str | None = None,
+        seq: int | None = None,
+        source_timestamp: datetime | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self._last_packet_at = _utcnow()
+        self._last_source_at = source_timestamp or self._last_packet_at
+        if device_id is not None:
+            self._device_id = device_id
+        if seq is not None:
+            self._last_packet_seq = int(seq)
+        if details:
+            self._status_details.update(details)
+
+    @abstractmethod
+    def start(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def stop(self) -> None:
+        raise NotImplementedError
+
+
+class EEGRedisStreamProvider(EEGTransportProvider):
+    def __init__(self, *, on_bytes: Callable[[bytes], None]) -> None:
+        super().__init__(on_bytes=on_bytes, provider_name="redis_stream")
+        settings = get_settings()
+        configured_prefix = str(settings["eeg_stream_key_prefix"]).strip() or "mcs:eeg:transport"
+        if configured_prefix.rsplit(":", 1)[-1] == "transport":
+            configured_stream_key = f"{configured_prefix}:default"
+        else:
+            configured_stream_key = configured_prefix
+        default_consumer_name = f"{socket.gethostname()}-{os.getpid()}"
+        self._stream_key = configured_stream_key
+        self._consumer_group = str(settings["eeg_stream_consumer_group"]).strip() or "multimodal-eeg"
+        self._consumer_name = str(settings["eeg_stream_consumer_name"]).strip() or default_consumer_name
+        self._block_ms = max(1, int(settings["eeg_stream_block_ms"]))
+        self._batch_size = max(1, int(settings["eeg_stream_batch_size"]))
+        self._reconnect_delay_seconds = float(settings["eeg_reconnect_delay_seconds"])
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._status_details.update(
+            {
+                "redis_stream_key": self._stream_key,
+                "redis_consumer_group": self._consumer_group,
+            }
+        )
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="eeg-redis-stream-provider",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2)
+        if thread is not None and thread.is_alive():
+            logger.warning("EEG redis-stream provider thread did not exit cleanly before timeout")
+            return
+        self._thread = None
+
+    @staticmethod
+    def _field_value(fields: dict[Any, Any], name: str) -> bytes | str | None:
+        return fields.get(name) or fields.get(name.encode("utf-8"))
+
+    def _decode_payload_bytes(self, fields: dict[Any, Any]) -> bytes:
+        payload_hex = self._field_value(fields, "payload_hex")
+        if payload_hex not in (None, "", b""):
+            if isinstance(payload_hex, bytes):
+                payload_hex = payload_hex.decode("utf-8", errors="ignore")
+            return binascii.unhexlify(str(payload_hex).strip())
+
+        payload_base64 = self._field_value(fields, "payload_base64")
+        if payload_base64 not in (None, "", b""):
+            if isinstance(payload_base64, bytes):
+                payload_base64 = payload_base64.decode("utf-8", errors="ignore")
+            return base64.b64decode(str(payload_base64).strip())
+
+        raw_payload = self._field_value(fields, "payload")
+        if isinstance(raw_payload, bytes):
+            return raw_payload
+        if isinstance(raw_payload, str):
+            return raw_payload.encode("utf-8")
+        raise ValueError("missing_transport_payload")
+
+    def _ensure_consumer_group(self, client: Any) -> None:
+        try:
+            client.xgroup_create(
+                name=self._stream_key,
+                groupname=self._consumer_group,
+                id="$",
+                mkstream=True,
+            )
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    def _ack_entry(self, client: Any, entry_id: Any) -> None:
+        try:
+            client.xack(self._stream_key, self._consumer_group, entry_id)
+        except Exception:
+            logger.warning(
+                "EEG redis-stream ack failed stream=%s entry_id=%s",
+                self._stream_key,
+                entry_id,
+                exc_info=True,
+            )
+
+    def _consume_entries(self, client: Any, entries: list[tuple[Any, dict[Any, Any]]]) -> None:
+        for entry_id, fields in entries:
+            device_id = self._field_value(fields, "device_id")
+            if isinstance(device_id, bytes):
+                device_id = device_id.decode("utf-8", errors="ignore")
+            device_id = str(device_id or "").strip() or None
+
+            seq_value = self._field_value(fields, "seq") or self._field_value(fields, "sample_index")
+            if isinstance(seq_value, bytes):
+                seq_value = seq_value.decode("utf-8", errors="ignore")
+            seq = None
+            if seq_value not in (None, "", b""):
+                try:
+                    seq = int(str(seq_value).strip())
+                except ValueError:
+                    seq = None
+
+            source_timestamp = _parse_timestamp(
+                self._field_value(fields, "received_at") or self._field_value(fields, "ts")
+            )
+
+            try:
+                payload = self._decode_payload_bytes(fields)
+            except Exception as exc:
+                logger.warning(
+                    "EEG redis-stream payload decode failed stream=%s entry_id=%s",
+                    self._stream_key,
+                    entry_id,
+                    exc_info=True,
+                )
+                self._emit_status(
+                    "streaming",
+                    device_id=device_id,
+                    error=str(exc),
+                    details={
+                        "redis_stream_key": self._stream_key,
+                        "redis_consumer_group": self._consumer_group,
+                    },
+                )
+                self._ack_entry(client, entry_id)
+                continue
+
+            self._record_packet(
+                device_id=device_id,
+                seq=seq,
+                source_timestamp=source_timestamp,
+                details={
+                    "redis_stream_key": self._stream_key,
+                    "redis_consumer_group": self._consumer_group,
+                },
+            )
+            self._emit_status(
+                "streaming",
+                device_id=device_id,
+                details={
+                    "redis_stream_key": self._stream_key,
+                    "redis_consumer_group": self._consumer_group,
+                },
+            )
+
+            try:
+                self._on_bytes(payload)
+            except Exception as exc:
+                logger.warning(
+                    "EEG redis-stream ingest failed stream=%s entry_id=%s",
+                    self._stream_key,
+                    entry_id,
+                    exc_info=True,
+                )
+                self._emit_status(
+                    "streaming",
+                    device_id=device_id,
+                    error=str(exc),
+                    details={
+                        "redis_stream_key": self._stream_key,
+                        "redis_consumer_group": self._consumer_group,
+                    },
+                )
+            finally:
+                self._ack_entry(client, entry_id)
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            client = get_optional_redis_client()
+            if client is None:
+                self._emit_status(
+                    "disconnected",
+                    error="redis_disabled",
+                    details={
+                        "redis_stream_key": self._stream_key,
+                        "redis_consumer_group": self._consumer_group,
+                    },
+                )
+                self._stop_event.wait(self._reconnect_delay_seconds)
+                continue
+            try:
+                self._ensure_consumer_group(client)
+                self._emit_status(
+                    "waiting_for_stream",
+                    details={
+                        "redis_stream_key": self._stream_key,
+                        "redis_consumer_group": self._consumer_group,
+                    },
+                )
+                while not self._stop_event.is_set():
+                    records = client.xreadgroup(
+                        groupname=self._consumer_group,
+                        consumername=self._consumer_name,
+                        streams={self._stream_key: ">"},
+                        count=self._batch_size,
+                        block=self._block_ms,
+                    )
+                    if not records:
+                        continue
+                    for _, entries in records:  # type: ignore[union-attr]
+                        self._consume_entries(client, entries)
+            except Exception as exc:
+                logger.exception("EEG redis-stream provider loop failed")
+                self._emit_status(
+                    "disconnected",
+                    error=str(exc),
+                    details={
+                        "redis_stream_key": self._stream_key,
+                        "redis_consumer_group": self._consumer_group,
+                    },
+                )
+                self._stop_event.wait(self._reconnect_delay_seconds)
+
+
+class EEGBleProvider(EEGTransportProvider):
+    def __init__(self, *, on_bytes: Callable[[bytes], None]) -> None:
+        super().__init__(on_bytes=on_bytes, provider_name="ble")
+        settings = get_settings()
         self._name_hint = str(settings["eeg_device_name_hint"])
         self._notify_uuid = str(settings["eeg_notify_char_uuid"])
         self._scan_seconds = float(settings["eeg_scan_seconds"])
@@ -167,13 +508,6 @@ class EEGBleProvider:
         self._stopping = threading.Event()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._status_callback: Callable[[str, str | None, str | None], None] | None = None
-
-    def set_status_callback(
-        self,
-        callback: Callable[[str, str | None, str | None], None],
-    ) -> None:
-        self._status_callback = callback
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -202,11 +536,10 @@ class EEGBleProvider:
         self._thread = None
         self._loop = None
 
-    def _emit_status(self, status: str, *, device_id: str | None = None, error: str | None = None) -> None:
+    def _emit_status(self, status: str, *, device_id: str | None = None, error: str | None = None, details: dict[str, Any] | None = None) -> None:
         if self._stopping.is_set():
             return
-        if self._status_callback is not None:
-            self._status_callback(status, device_id, error)
+        super()._emit_status(status, device_id=device_id, error=error, details=details)
 
     @staticmethod
     def _device_name(device: Any) -> str:
@@ -302,6 +635,7 @@ class EEGBleProvider:
                     self._emit_status("connected", device_id=address)
 
                     def _handle_notification(_: Any, data: bytearray) -> None:
+                        self._record_packet(device_id=address)
                         self._on_bytes(bytes(data))
 
                     await client.start_notify(self._notify_uuid, _handle_notification)
@@ -322,6 +656,8 @@ class EEGRuntimeService:
         settings = get_settings()
         self._enabled = bool(settings["eeg_enabled"])
         self._provider_mode = str(settings["eeg_provider"])
+        self._auto_start_transport = bool(settings["eeg_auto_start_transport"])
+        self._require_transport_for_ready = bool(settings["eeg_require_transport_for_ready"])
         self._channel_names = list(settings["eeg_channel_names"])
         self._sampling_rate = int(settings["eeg_sampling_rate"])
         self._preview_seconds = max(1, int(settings["eeg_preview_seconds"]))
@@ -332,12 +668,20 @@ class EEGRuntimeService:
         self._preview_sample_limit = max(1, self._sampling_rate * self._preview_seconds)
         self._decoder = EEGPacketDecoder()
         self._lock = threading.RLock()
-        self._provider = EEGBleProvider(on_bytes=self.ingest_transport_bytes)
-        self._provider.set_status_callback(self._update_device_status)
+        self._last_error: str | None = None
+        self._provider = self._create_transport_provider()
+        if self._provider is not None:
+            self._provider.set_status_callback(self._update_device_status)
         self._provider_started = False
         self._device_status = "disabled" if not self._enabled else "idle"
         self._device_id: str | None = None
-        self._last_error: str | None = None
+        self._transport_provider = self._provider_mode
+        self._transport_status = self._device_status
+        self._last_transport_at: datetime | None = None
+        self._last_packet_seq: int | None = None
+        self._transport_lag_ms: int | None = None
+        self._redis_stream_key: str | None = None
+        self._redis_consumer_group: str | None = None
         self._active_binding: EegTurnBinding | None = None
         self._memory_live_payloads: dict[str, dict[str, Any]] = {}
         self._clf = None
@@ -348,43 +692,131 @@ class EEGRuntimeService:
         self._model_version: str | None = None
         self._model_loaded = False
         self._live_update_callback: Callable[[str, dict[str, Any], dict[str, Any] | None], None] | None = None
+        self._sync_transport_state_locked()
+
+    def _create_transport_provider(self) -> EEGTransportProvider | None:
+        if self._provider_mode == "ble":
+            return EEGBleProvider(on_bytes=self.ingest_transport_bytes)
+        if self._provider_mode == "redis_stream":
+            return EEGRedisStreamProvider(on_bytes=self.ingest_transport_bytes)
+        self._last_error = f"unsupported_eeg_provider:{self._provider_mode}"
+        logger.warning("Unsupported EEG provider mode: %s", self._provider_mode)
+        return None
+
+    def warmup_model(self) -> bool:
+        with self._lock:
+            return self._load_model_locked()
+
+    def ensure_transport_started(self) -> dict[str, Any]:
+        with self._lock:
+            self._ensure_provider_started_locked()
+            return self._build_status_snapshot_locked()
 
     def warmup(self) -> dict[str, Any]:
         with self._lock:
-            model_loaded = self._load_model_locked()
-            # 服务启动时自动开始 BLE 扫描，无需等待 begin_turn
-            self._ensure_provider_started_locked()
-            return {
-                "enabled": self._enabled,
-                "provider": self._provider_mode,
-                "device_status": self._device_status,
-                "model_loaded": model_loaded,
-                "model_version": self._model_version,
-                "channel_names": list(self._channel_names),
-                "sampling_rate": self._sampling_rate,
-            }
+            self._load_model_locked()
+            return self._build_status_snapshot_locked()
 
     def status_snapshot(self) -> dict[str, Any]:
         with self._lock:
-            return {
-                "enabled": self._enabled,
-                "provider": self._provider_mode,
-                "provider_started": self._provider_started,
-                "device_status": self._device_status,
-                "device_id": self._device_id,
-                "last_error": self._last_error,
-                "model_loaded": bool(
-                    self._clf is not None
-                    and self._scaler is not None
-                    and self._selected_features is not None
-                    and self._selected_features.size > 0
-                    and bool(self._all_feature_names)
-                ),
-                "model_name": self._model_name,
-                "model_version": self._model_version,
-                "channel_names": list(self._channel_names),
-                "sampling_rate": self._sampling_rate,
-            }
+            return self._build_status_snapshot_locked()
+
+    def _sync_transport_state_locked(self) -> None:
+        if self._provider is None:
+            self._transport_provider = self._provider_mode
+            self._transport_status = "disabled" if not self._enabled else "idle"
+            self._device_status = self._transport_status
+            self._device_id = None
+            self._last_transport_at = None
+            self._last_packet_seq = None
+            self._transport_lag_ms = None
+            self._redis_stream_key = None
+            self._redis_consumer_group = None
+            return
+
+        state = self._provider.state_snapshot()
+        self._transport_provider = str(state.get("transport_provider") or self._provider_mode)
+        self._transport_status = str(state.get("transport_status") or ("disabled" if not self._enabled else "idle"))
+        self._device_status = self._transport_status
+        self._device_id = state.get("device_id")
+        provider_last_error = state.get("last_error")
+        if provider_last_error:
+            self._last_error = str(provider_last_error)
+        elif self._transport_status in {"idle", *EEG_TRANSPORT_READY_STATUSES}:
+            self._last_error = None
+        provider_last_transport_at = state.get("last_transport_at")
+        if provider_last_transport_at is not None:
+            self._last_transport_at = provider_last_transport_at
+        provider_last_packet_seq = state.get("last_packet_seq")
+        if provider_last_packet_seq is not None:
+            self._last_packet_seq = provider_last_packet_seq
+        provider_transport_lag_ms = state.get("transport_lag_ms")
+        if provider_transport_lag_ms is not None:
+            self._transport_lag_ms = provider_transport_lag_ms
+        elif self._last_transport_at is None:
+            self._transport_lag_ms = None
+        self._redis_stream_key = state.get("redis_stream_key")
+        self._redis_consumer_group = state.get("redis_consumer_group")
+
+    def _transport_ready_locked(self) -> bool:
+        if not self._enabled or self._provider is None or not self._provider_started:
+            return False
+        return self._transport_status in EEG_TRANSPORT_READY_STATUSES
+
+    def _not_ready_reason_locked(self, *, model_loaded: bool, transport_ready: bool) -> str | None:
+        if not self._enabled:
+            return None
+        if not model_loaded:
+            return self._last_error or "eeg_model_not_loaded"
+        if not self._require_transport_for_ready:
+            return None
+        if self._provider is None:
+            return self._last_error or "transport_provider_unavailable"
+        if not self._provider_started:
+            return "transport_not_started"
+        if not transport_ready:
+            return f"transport_status:{self._transport_status}"
+        return None
+
+    def _build_status_snapshot_locked(self) -> dict[str, Any]:
+        self._sync_transport_state_locked()
+        model_loaded = bool(
+            self._clf is not None
+            and self._scaler is not None
+            and self._selected_features is not None
+            and self._selected_features.size > 0
+            and bool(self._all_feature_names)
+        )
+        transport_ready = self._transport_ready_locked()
+        not_ready_reason = self._not_ready_reason_locked(
+            model_loaded=model_loaded,
+            transport_ready=transport_ready,
+        )
+        return {
+            "enabled": self._enabled,
+            "provider": self._provider_mode,
+            "provider_started": self._provider_started,
+            "device_status": self._device_status,
+            "device_id": self._device_id,
+            "last_error": self._last_error,
+            "model_loaded": model_loaded,
+            "model_name": self._model_name,
+            "model_version": self._model_version,
+            "channel_names": list(self._channel_names),
+            "sampling_rate": self._sampling_rate,
+            "transport_provider": self._transport_provider,
+            "transport_status": self._transport_status,
+            "last_transport_at": _isoformat(self._last_transport_at),
+            "last_packet_seq": self._last_packet_seq,
+            "transport_lag_ms": self._transport_lag_ms,
+            "redis_stream_key": self._redis_stream_key,
+            "redis_consumer_group": self._redis_consumer_group,
+            "require_transport_for_ready": self._require_transport_for_ready,
+            "auto_start_transport": self._auto_start_transport,
+            "transport_ready": transport_ready,
+            "ready": not self._enabled or not_ready_reason is None,
+            "not_ready_reason": not_ready_reason,
+        }
 
     def shutdown(self) -> None:
         with self._lock:
@@ -416,6 +848,8 @@ class EEGRuntimeService:
                 return self._build_binding_status_payload_locked(active)
             if active is not None:
                 self._finish_binding_locked(active, reason="rebound")
+            carryover_preview = self._load_preview_carryover_locked(session_id)
+            carryover_results = self._load_result_carryover_locked(session_id)
             binding = EegTurnBinding(
                 session_id=session_id,
                 turn_id=turn_id,
@@ -423,8 +857,9 @@ class EEGRuntimeService:
                 stage_id=stage_id,
                 question_key=question_key,
                 started_at=_utcnow(),
-                preview_buffer=deque(maxlen=self._preview_sample_limit),
-                latest_results=deque(maxlen=self._latest_results_limit),
+                preview_buffer=deque(carryover_preview, maxlen=self._preview_sample_limit),
+                latest_results=deque(carryover_results, maxlen=self._latest_results_limit),
+                live_stream_reset_pending=not bool(carryover_preview),
             )
             self._active_binding = binding
             self._write_binding_live_locked(binding)
@@ -435,7 +870,8 @@ class EEGRuntimeService:
         with self._lock:
             active = self._active_binding
             if active is None:
-                # BLE provider 保持运行，下次 turn 无需重新扫描
+                # Transport provider keeps running so the next turn can attach
+                # without a full reconnect / consumer restart.
                 clear_eeg_turn_hot_state(session_id, turn_id, window_indexes=[])
                 return {
                     "session_id": session_id,
@@ -455,8 +891,7 @@ class EEGRuntimeService:
                 }
             self._finish_binding_locked(active, reason=reason)
             self._active_binding = None
-            # BLE provider 保持运行，断连后自动重连，下次 turn 即刻就绪
-            # 仅在 shutdown() 时才真正停止
+            # Transport provider remains running and is only stopped on shutdown().
             return {
                 "session_id": session_id,
                 "turn_id": turn_id,
@@ -480,24 +915,32 @@ class EEGRuntimeService:
 
     def ingest_transport_bytes(self, chunk: bytes) -> None:
         with self._lock:
+            self._last_transport_at = _utcnow()
+            self._transport_lag_ms = 0
             for packet in self._decoder.feed(chunk):
                 if isinstance(packet, WavePacket):
+                    self._last_packet_seq = int(packet.seq)
                     self._handle_wave_packet_locked(packet)
                 elif isinstance(packet, FeaturePacket):
                     self._handle_feature_packet_locked(packet)
 
     def _ensure_provider_started_locked(self) -> None:
-        if not self._enabled or self._provider_mode != "ble" or self._provider_started:
+        if not self._enabled or self._provider is None or self._provider_started:
             return
         self._provider.start()
         self._provider_started = True
+        self._sync_transport_state_locked()
 
     def _stop_provider_locked(self, *, clear_error: bool) -> None:
-        if self._provider_started:
+        if self._provider_started and self._provider is not None:
             self._provider.stop()
             self._provider_started = False
         self._device_status = "disabled" if not self._enabled else "idle"
+        self._transport_status = self._device_status
         self._device_id = None
+        self._last_transport_at = None
+        self._last_packet_seq = None
+        self._transport_lag_ms = None
         if clear_error:
             self._last_error = None
 
@@ -555,12 +998,15 @@ class EEGRuntimeService:
 
     def _update_device_status(self, status: str, device_id: str | None, error: str | None) -> None:
         with self._lock:
-            self._device_status = status
-            self._device_id = device_id
-            if error:
-                self._last_error = error
-            elif status in {"idle", "scanning", "connecting", "connected", "streaming"}:
-                self._last_error = None
+            self._sync_transport_state_locked()
+            if self._provider is None:
+                self._device_status = status
+                self._transport_status = status
+                self._device_id = device_id
+                if error:
+                    self._last_error = error
+                elif status in {"idle", "scanning", "connecting", "connected", "streaming", "waiting_for_stream"}:
+                    self._last_error = None
             active = self._active_binding
             if active is not None:
                 self._write_binding_live_locked(active)
@@ -573,7 +1019,7 @@ class EEGRuntimeService:
         sample = EegWaveSample(
             seq=int(packet.seq),
             captured_at=captured_at,
-            values=tuple(packet.channels),
+            values=(float(packet.channels[0]), float(packet.channels[1]), float(packet.channels[2])),
         )
         current_window = binding.current_window
         current_window.sample_started_at = current_window.sample_started_at or captured_at
@@ -625,6 +1071,26 @@ class EEGRuntimeService:
             return len(self._all_feature_names)
         return MODEL_FEATURE_COUNT
 
+    def _load_preview_carryover_locked(self, session_id: str) -> list[dict[str, Any]]:
+        payload = self._memory_live_payloads.get(session_id) or read_eeg_live_payload(session_id)
+        eeg_waves = dict(payload.get("eeg_waves") or {}) if isinstance(payload, dict) else {}
+        samples = eeg_waves.get("samples")
+        if not isinstance(samples, list):
+            return []
+        return [dict(sample) for sample in samples[-self._preview_sample_limit :] if isinstance(sample, dict)]
+
+    def _load_result_carryover_locked(self, session_id: str) -> list[dict[str, Any]]:
+        payload = self._memory_live_payloads.get(session_id) or read_eeg_live_payload(session_id)
+        eeg_live = dict(payload.get("eeg_live") or {}) if isinstance(payload, dict) else {}
+        latest_results = eeg_live.get("latest_results")
+        if not isinstance(latest_results, list):
+            return []
+        return [
+            dict(result)
+            for result in latest_results[-self._latest_results_limit :]
+            if isinstance(result, dict)
+        ]
+
     def _finish_binding_locked(self, binding: EegTurnBinding, *, reason: str) -> None:
         self._finalize_window_locked(binding, reason=reason, force=True)
         clear_eeg_turn_hot_state(
@@ -635,10 +1101,12 @@ class EEGRuntimeService:
         base_payload = self._build_live_payload_locked(binding)
         final_payload = {
             **base_payload,
+            "eeg_live": {
+                **dict(base_payload.get("eeg_live") or {}),
+                "turn_id": None,
+            },
             "eeg_waves": {
                 **dict(base_payload.get("eeg_waves") or {}),
-                "samples": [],
-                "status": "pending",
             },
         }
         self._store_live_payload_locked(binding.session_id, final_payload)
@@ -733,7 +1201,6 @@ class EEGRuntimeService:
 
         probabilities = _predict_probabilities(self._clf, scaled)
 
-        label_map = {0: "消极", 1: "中性", 2: "积极"}
         score_map = {
             EEG_LABELS.get(index, str(index)): float(probabilities[index])
             for index in range(min(len(probabilities), len(EEG_LABELS)))
@@ -978,11 +1445,14 @@ class EEGRuntimeService:
         binding.live_stream_reset_pending = False
 
     def _build_binding_status_payload_locked(self, binding: EegTurnBinding) -> dict[str, Any]:
+        self._sync_transport_state_locked()
         return {
             "session_id": binding.session_id,
             "turn_id": binding.turn_id,
             "device_status": self._device_status,
             "provider": self._provider_mode,
+            "transport_provider": self._transport_provider,
+            "transport_status": self._transport_status,
             "model_loaded": (
                 self._clf is not None
                 and self._scaler is not None

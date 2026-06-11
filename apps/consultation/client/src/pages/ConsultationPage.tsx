@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, LoaderCircle, PlayCircle, VideoOff } from "lucide-react";
 
@@ -38,6 +38,7 @@ import {
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
 import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
+import { mergeConsultationMultimodalLive } from "../lib/multimodalLiveMerge";
 import type {
   ConsultationMultimodalLive,
   ConsultationMultimodalLivePatch,
@@ -91,6 +92,8 @@ export default function ConsultationPage() {
   const lastRecordingUrlRef = useRef<string | null>(null);
   const answerWindowPromptKeyRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
+  const livePatchBufferRef = useRef<ConsultationMultimodalLive | null>(null);
+  const livePatchFlushTimerRef = useRef<number | null>(null);
   const consultationStatusRef = useRef<string | null>(consultation?.status ?? null);
   const currentQuestionItemRef = useRef(consultation?.current_question_item ?? null);
 
@@ -189,17 +192,11 @@ export default function ConsultationPage() {
           response_completed_at: submittedAudio.completedAtIso,
         });
         await captureSupplementalFrame(consultationTurnId);
-        if (submittedAudio.transcriptReadyAudioTurn.processing_status === "completed") {
-          await refreshLiveSnapshot();
-        } else {
+        if (submittedAudio.transcriptReadyAudioTurn.processing_status !== "completed") {
           void waitForCompletedAudioTurn(
             submittedAudio.sessionId,
             submittedAudio.uploadedAudioTurn.audio_turn_id,
-          ).then(async (completedAudioTurn) => {
-            if (completedAudioTurn?.processing_status === "completed") {
-              await refreshLiveSnapshot();
-            }
-          }).catch(() => {});
+          ).catch(() => {});
         }
         pushToast("转写成功", "success", { durationMs: 1800 });
       } catch (caught) {
@@ -395,8 +392,29 @@ export default function ConsultationPage() {
     actions.resetFeedback();
   });
 
+  const flushBufferedLiveSnapshot = useEffectEvent(() => {
+    const buffered = livePatchBufferRef.current;
+    if (!buffered) {
+      return;
+    }
+    livePatchBufferRef.current = null;
+    startTransition(() => {
+      actions.applyConsultationMultimodalLive(buffered);
+    });
+  });
+
   const applyLiveSnapshot = useEffectEvent((live: ConsultationMultimodalLivePatch) => {
-    actions.applyConsultationMultimodalLive(live);
+    livePatchBufferRef.current = mergeConsultationMultimodalLive(
+      livePatchBufferRef.current,
+      live,
+    );
+    if (livePatchFlushTimerRef.current !== null) {
+      return;
+    }
+    livePatchFlushTimerRef.current = window.setTimeout(() => {
+      livePatchFlushTimerRef.current = null;
+      flushBufferedLiveSnapshot();
+    }, 180);
   });
 
   const {
@@ -408,10 +426,11 @@ export default function ConsultationPage() {
         ? getConsultationMultimodalLiveStreamUrl(consultation.session_id)
         : null,
     onMessage: applyLiveSnapshot,
+    enabled: isOpen,
   });
 
   const refreshLiveSnapshot = useEffectEvent(async () => {
-    if (!consultation?.session_id) {
+    if (!consultation?.session_id || !isOpen) {
       return null;
     }
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
@@ -523,7 +542,7 @@ export default function ConsultationPage() {
   }, [currentQuestionKey]);
 
   useEffect(() => {
-    if (!consultation) {
+    if (!consultation || !isOpen) {
       return;
     }
 
@@ -536,11 +555,14 @@ export default function ConsultationPage() {
     }, LIVE_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
-  }, [consultation?.session_id, isLiveStreamActive]);
+  }, [consultation?.session_id, isLiveStreamActive, isOpen]);
 
   useEffect(() => {
     return () => {
       isUnmountingRef.current = true;
+      if (livePatchFlushTimerRef.current !== null) {
+        window.clearTimeout(livePatchFlushTimerRef.current);
+      }
       if (lastRecordingUrlRef.current) {
         URL.revokeObjectURL(lastRecordingUrlRef.current);
       }

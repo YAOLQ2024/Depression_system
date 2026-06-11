@@ -182,11 +182,30 @@ def get_settings() -> dict:
         "pose_model_dir": str(model_root / "pose_emotion"),
         "eeg_enabled": _as_bool(os.getenv("EEG_ENABLED"), False),
         "eeg_provider": os.getenv("EEG_PROVIDER", "ble").strip().lower() or "ble",
+        "eeg_auto_start_transport": _as_bool(
+            os.getenv("EEG_AUTO_START_TRANSPORT"),
+            False,
+        ),
+        "eeg_require_transport_for_ready": _as_bool(
+            os.getenv("EEG_REQUIRE_TRANSPORT_FOR_READY"),
+            False,
+        ),
         "eeg_device_name_hint": os.getenv("EEG_DEVICE_NAME_HINT", "EEG").strip() or "EEG",
         "eeg_notify_char_uuid": (
             os.getenv("EEG_NOTIFY_CHAR_UUID", "6e400003-b5a3-f393-e0a9-e50e24dcca9e").strip()
             or "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
         ),
+        "eeg_stream_key_prefix": (
+            os.getenv("EEG_STREAM_KEY_PREFIX", "mcs:eeg:transport").strip()
+            or "mcs:eeg:transport"
+        ),
+        "eeg_stream_consumer_group": (
+            os.getenv("EEG_STREAM_CONSUMER_GROUP", "multimodal-eeg").strip()
+            or "multimodal-eeg"
+        ),
+        "eeg_stream_consumer_name": os.getenv("EEG_STREAM_CONSUMER_NAME", "").strip(),
+        "eeg_stream_block_ms": _as_int(os.getenv("EEG_STREAM_BLOCK_MS"), 1000),
+        "eeg_stream_batch_size": _as_int(os.getenv("EEG_STREAM_BATCH_SIZE"), 16),
         "eeg_scan_seconds": float(os.getenv("EEG_SCAN_SECONDS", "5")),
         "eeg_reconnect_delay_seconds": float(os.getenv("EEG_RECONNECT_DELAY_SECONDS", "5")),
         "eeg_sampling_rate": _as_int(os.getenv("EEG_SAMPLING_RATE"), 500),
