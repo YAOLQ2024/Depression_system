@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -249,6 +251,33 @@ def get_encounter_detail_endpoint(
         from app.services.encounter_service import get_encounter_detail
         payload = get_encounter_detail(x_mcs_user_id, encounter_id)
         return success_response(payload)
+    except EncounterError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=error_response(message=exc.message, code=exc.status_code),
+        )
+
+
+@router.get("/encounters/{encounter_id}/pdf")
+def download_encounter_pdf(
+    encounter_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    if not x_mcs_user_id:
+        raise HTTPException(status_code=400, detail=error_response(message="missing user id", code=400))
+    try:
+        from app.services.encounter_service import get_encounter_detail
+        from app.services.pdf_report import generate_encounter_pdf
+
+        detail = get_encounter_detail(x_mcs_user_id, encounter_id)
+        pdf_bytes = generate_encounter_pdf(detail)
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="encounter-{encounter_id}.pdf"',
+            },
+        )
     except EncounterError as exc:
         raise HTTPException(
             status_code=exc.status_code,
