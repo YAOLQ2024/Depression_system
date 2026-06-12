@@ -74,3 +74,24 @@ Phase B 目标：
 
 - 目前 `PUT /api/v1/users/me/profile` 这个接口名称先保持不变。
 - 但在新流程语义下，它当前承载的是“问诊准备阶段的基础资料”，不是完整症状筛查或高风险问诊结果。
+- EEG 当前冻结边界是：Docker 内保留唯一一份业务侧 `multimodal-service`；不要再把完整 `multimodal-service` 通过宿主机地址作为默认开发链路切出去。
+
+## Windows EEG 默认开发流程
+
+截至 `2026-06-09`，Windows 默认 EEG 开发流程已经切换为：
+
+1. 启动 Docker 主链：
+   `docker compose -f infra/compose/docker-compose.dev.yml up -d --build`
+2. 真机联调时，在宿主机启动轻量 bridge：
+   `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command bridge`
+3. 无设备或回归联调时，在宿主机启动 replay：
+   `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command replay -Mode simulate`
+4. 如需回放真实录制文件：
+   `powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command replay -Mode raw -ReplayFile <jsonl路径> -Speed 1.0`
+
+重要约束：
+
+- 默认链路下，`consultation / assessment / risk / gateway` 都固定访问容器内 `http://multimodal-service:8000`
+- 不要在正常开发中再设置 `MCS_MULTIMODAL_SERVICE_URL`
+- 不要同时启动真实 bridge 和 replay 往同一条 stream 推数据
+- 预留的 Jetson bridge 容器仅通过 `infra/compose/docker-compose.jetson-eeg-bridge.yml` 显式启用，Windows 默认开发阶段不要加载它

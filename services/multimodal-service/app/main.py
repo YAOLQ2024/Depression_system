@@ -5,6 +5,7 @@ from __future__ import annotations
 # Keep this module lightweight so Docker rebuild tests only touch the app layer.
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.api.multimodal import router as multimodal_router
 from app.api.non_eeg_inference import legacy_router, router as non_eeg_inference_router
@@ -31,7 +32,9 @@ def startup() -> None:
     settings["dolphin_model_dir"].mkdir(parents=True, exist_ok=True)
     recover_incomplete_audio_turns()
     try:
-        eeg_runtime_service.warmup()
+        eeg_runtime_service.warmup_model()
+        if settings["eeg_auto_start_transport"]:
+            eeg_runtime_service.ensure_transport_started()
     except Exception:
         pass
     try:
@@ -55,12 +58,17 @@ def health_live():
 
 @app.get("/health/ready")
 def health_ready():
-    return success_response(
-        {
-            "status": "ready",
-            "service": "multimodal-service",
-            "eeg": eeg_runtime_service.status_snapshot(),
-        }
+    eeg_status = eeg_runtime_service.status_snapshot()
+    ready = bool(eeg_status.get("ready", True))
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content=success_response(
+            {
+                "status": "ready" if ready else "not_ready",
+                "service": "multimodal-service",
+                "eeg": eeg_status,
+            }
+        ),
     )
 
 

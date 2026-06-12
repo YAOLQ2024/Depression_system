@@ -214,10 +214,7 @@
 
 ### 4.5 测试脚本命名
 
-当前：
-
-- `run_face_modality_checks.ps1`
-- `run_pose_modality_checks.ps1`
+当前曾存在两个人脸 / 姿态模态检查脚本。
 
 这两个名字不算错误，但顺序略别扭。
 

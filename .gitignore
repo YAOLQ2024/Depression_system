@@ -30,7 +30,18 @@ docs/superpowers/
 refer/
 
 tmp/
+tools/eeg-tools/.env
+tools/eeg-tools/data/
+tools/eeg-tools/tmp/
+tools/eeg-tools/build/
+tools/eeg-tools/dist/
+tools/eeg-tools/*.spec
+eeg-bridge.exe
 
 **/test/
 **/tests/
 !services/multimodal-service/tests/
+!tools/eeg-tools/tests/
+!tools/eeg-tools/tests/*.py
+services/multimodal-service/tests/test_multimodal_scope_rules.py
+services/multimodal-service/tests/test_multimodal_visual_service.py
