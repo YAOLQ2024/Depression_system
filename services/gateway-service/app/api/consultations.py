@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import io
+import os
+
+import httpx
 from fastapi import APIRouter, Cookie, File, Form, Header, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 
@@ -349,3 +353,30 @@ def get_encounter_detail(
     if upstream["status"] >= 400:
         raise _proxy_error(upstream)
     return upstream["payload"]
+
+
+@router.get("/encounters/{encounter_id}/pdf")
+def download_encounter_pdf(
+    encounter_id: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    consultation_base = os.environ.get("CONSULTATION_SERVICE_URL", "http://consultation-service:8000")
+    resp = httpx.get(
+        f"{consultation_base}/api/v1/encounters/{encounter_id}/pdf",
+        headers={"x-mcs-user-id": user["id"]},
+        timeout=30.0,
+    )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return StreamingResponse(
+        io.BytesIO(resp.content),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": resp.headers.get(
+                "content-disposition",
+                f'attachment; filename="encounter-{encounter_id}.pdf"',
+            ),
+        },
+    )

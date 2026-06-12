@@ -118,3 +118,30 @@ export async function listEncounters(
 export async function getEncounterDetail(encounterId: string): Promise<EncounterDetailResponse> {
   return apiRequest<EncounterDetailResponse>(`/encounters/${encounterId}`);
 }
+
+export async function downloadEncounterPdf(encounterId: string): Promise<void> {
+  const token = (() => {
+    try {
+      return localStorage.getItem("mcs_session_token") || sessionStorage.getItem("mcs_session_token") || "";
+    } catch {
+      return "";
+    }
+  })();
+  const url = buildApiUrl(`/encounters/${encounterId}/pdf`);
+  const response = await fetch(url, {
+    credentials: "include",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    throw new Error(`下载失败 (${response.status})`);
+  }
+  const blob = await response.blob();
+  const downloadUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = `encounter-${encounterId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(downloadUrl);
+}

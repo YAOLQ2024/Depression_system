@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { downloadEncounterPdf } from "../services/api/consultation.api";
 import { APP_PATHS } from "../routes";
 import { useHistoryDetail } from "../hooks/useHistoryDetail";
 import { EncounterTimeline } from "../components/EncounterTimeline";
@@ -25,6 +27,22 @@ export default function HistoryDetailPage() {
 
   const encounter = state.encounter;
 
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const handleDownloadPdf = async () => {
+    if (!id) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadEncounterPdf(id);
+    } catch (err: any) {
+      setDownloadError(err?.message || "下载失败");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950/20 to-slate-950">
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -36,6 +54,15 @@ export default function HistoryDetailPage() {
           >
             ← 返回历史列表
           </button>
+          {encounter && encounter.status === "completed" && (
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              className="text-sm text-indigo-400 hover:text-indigo-300 disabled:text-slate-500 transition-colors"
+            >
+              {downloading ? "生成中..." : "下载 PDF 报告"}
+            </button>
+          )}
         </div>
 
         {/* 加载状态 */}
@@ -56,6 +83,9 @@ export default function HistoryDetailPage() {
               重试
             </button>
           </div>
+        )}
+        {downloadError && (
+          <div className="mt-2 text-center text-red-400 text-xs">{downloadError}</div>
         )}
 
         {/* 详情内容 */}
