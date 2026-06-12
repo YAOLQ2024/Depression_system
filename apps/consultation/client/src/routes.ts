@@ -10,6 +10,8 @@ export const APP_PATHS = {
   result: "/result",
   intervention: "/intervention",
   interventionVideo: "/intervention/video",
+  interventionGame: "/intervention/game",
+  interventionStory: "/intervention/story",
   seamlessVideoDemo: "/labs/seamless-video-player",
 } as const;
 

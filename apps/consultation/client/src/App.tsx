@@ -10,6 +10,8 @@ import ConsultationPage from "./pages/ConsultationPage";
 import ScaleQuestionnairePage from "./pages/ScaleQuestionnairePage";
 import ResultPage from "./pages/ResultPage";
 import InterventionPage from "./pages/InterventionPage";
+import InterventionGamePage from "./pages/InterventionGamePage";
+import InterventionStoryPage from "./pages/InterventionStoryPage";
 import InterventionVideoPage from "./pages/InterventionVideoPage";
 import SeamlessVideoPlayerDemoPage from "./pages/SeamlessVideoPlayerDemoPage";
 import { ConsultationAppProvider } from "./app/ConsultationAppContext";
@@ -59,6 +61,8 @@ function App() {
         <Route path={APP_PATHS.result} element={protectedElement(<ResultPage />)} />
         <Route path={APP_PATHS.intervention} element={protectedElement(<InterventionPage />)} />
         <Route path={APP_PATHS.interventionVideo} element={protectedElement(<InterventionVideoPage />)} />
+        <Route path={APP_PATHS.interventionGame} element={protectedElement(<InterventionGamePage />)} />
+        <Route path={APP_PATHS.interventionStory} element={protectedElement(<InterventionStoryPage />)} />
         <Route path={APP_PATHS.seamlessVideoDemo} element={protectedElement(<SeamlessVideoPlayerDemoPage />)} />
 
         <Route path="*" element={<Navigate to={state.user ? state.resumePath : APP_PATHS.cover} replace />} />
