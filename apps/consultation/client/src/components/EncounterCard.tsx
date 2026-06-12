@@ -36,9 +36,10 @@ type EncounterCardProps = {
   encounter: EncounterSummary;
   onContinue?: (encounter: EncounterSummary) => void;
   onViewDetail?: (encounter: EncounterSummary) => void;
+  detailDisabled?: boolean;
 };
 
-export function EncounterCard({ encounter, onContinue, onViewDetail }: EncounterCardProps) {
+export function EncounterCard({ encounter, onContinue, onViewDetail, detailDisabled = false }: EncounterCardProps) {
   const isCompleted = encounter.status === "completed";
   const statusLabel = STATUS_LABELS[encounter.status] || encounter.status;
   const flowLabel = FLOW_LABELS[encounter.current_flow_type] || "";
@@ -86,7 +87,14 @@ export function EncounterCard({ encounter, onContinue, onViewDetail }: Encounter
           {isCompleted ? (
             <button
               onClick={() => onViewDetail?.(encounter)}
-              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              disabled={detailDisabled}
+              title={detailDisabled ? "详情页即将上线" : undefined}
+              className={cn(
+                "text-xs transition-colors",
+                detailDisabled
+                  ? "text-slate-500 cursor-not-allowed opacity-60"
+                  : "text-indigo-400 hover:text-indigo-300",
+              )}
             >
               查看详情 →
             </button>
