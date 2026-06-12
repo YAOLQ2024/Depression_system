@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, LoaderCircle, PlayCircle, VideoOff } from "lucide-react";
 
@@ -783,12 +783,24 @@ export default function ConsultationPage() {
 
       <AppToast toast={toast} />
 
-      <div className="flex w-full h-full relative z-10 bg-transparent pt-8 overflow-hidden [perspective:2000px]">
+      <div
+        style={
+          {
+            "--results-panel-reserve": "min(45vw, 650px)",
+            "--results-panel-shift": "calc(var(--results-panel-reserve) / 2)",
+          } as CSSProperties
+        }
+        className="flex w-full h-full relative z-10 bg-transparent pt-8 overflow-hidden [perspective:2000px]"
+      >
         <div
           className="flex-1 relative h-full flex flex-col items-center transition-all duration-[800ms] min-h-0 perspective-[1200px]"
-          style={{ marginRight: isOpen ? "min(45vw, 650px)" : "0px" }}
         >
-          <div className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none">
+          <div
+            className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            style={{
+              transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
+            }}
+          >
             {playableVideoUri ? (
               <div className="relative flex w-full items-end justify-center">
                 <div className="relative flex h-[min(84vh,920px)] w-full max-w-[82vw] items-end justify-center">
@@ -879,7 +891,12 @@ export default function ConsultationPage() {
             )}
           </div>
 
-          <div className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm">
+          <div
+            className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            style={{
+              transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
+            }}
+          >
             {responseWindowStatusText ? (
               <div className="pointer-events-none rounded-full border border-white/18 bg-slate-950/28 px-4 py-2 text-xs text-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.24)] backdrop-blur-md">
                 {responseWindowStatusText}

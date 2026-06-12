@@ -1107,6 +1107,8 @@ export default function ScaleQuestionnairePage() {
           "--scale-panel-left": "clamp(12px, 2vw, 32px)",
           "--scale-visual-width": "calc(var(--scale-panel-width) * 0.966)",
           "--scale-total-offset": "calc(var(--scale-panel-left) + var(--scale-visual-width))",
+          "--results-panel-reserve": "min(46vw, 670px)",
+          "--results-panel-shift": "calc(var(--results-panel-reserve) / 2)",
         } as CSSProperties}
         className="flex w-full h-full relative z-10 bg-transparent pt-8 overflow-hidden [perspective:2000px]"
       >
@@ -1114,10 +1116,14 @@ export default function ScaleQuestionnairePage() {
           className="flex-1 relative h-full flex flex-col items-center transition-all duration-[800ms] min-h-0 min-w-0 perspective-[1200px]"
           style={{
             marginLeft: isScaleOpen ? "var(--scale-total-offset)" : "0px",
-            marginRight: isOpen ? "min(46vw, 670px)" : "0px",
           }}
         >
-          <div className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none">
+          <div
+            className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            style={{
+              transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
+            }}
+          >
             {playableVideoUri ? (
               <div className="relative flex w-full items-end justify-center">
                 <div className="relative flex h-[min(84vh,920px)] w-full max-w-[82vw] items-end justify-center">
@@ -1181,7 +1187,12 @@ export default function ScaleQuestionnairePage() {
             )}
           </div>
 
-          <div className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm">
+          <div
+            className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            style={{
+              transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
+            }}
+          >
             {stageSummaryText ? (
               <div className="pointer-events-none rounded-full border border-white/18 bg-slate-950/28 px-4 py-2 text-xs text-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.24)] backdrop-blur-md">
                 {stageSummaryText}

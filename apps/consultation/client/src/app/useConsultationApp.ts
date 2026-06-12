@@ -856,6 +856,25 @@ export function useConsultationApp() {
     }
   }
 
+  async function rehydrateFromStorage() {
+    if (!user) {
+      throw new Error("当前登录状态已失效，请重新登录。");
+    }
+
+    resetFeedback();
+    setLoading(true);
+
+    try {
+      await hydrateAuthenticatedState(user);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "恢复会话状态失败";
+      setError(message);
+      throw caught;
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleLogout() {
     try {
       await logout();
@@ -926,6 +945,7 @@ export function useConsultationApp() {
       applyAssessmentSession,
       submitAssessmentAnswerDetailed,
       refreshAssessment,
+      rehydrateFromStorage,
       handleLogout,
     },
   };

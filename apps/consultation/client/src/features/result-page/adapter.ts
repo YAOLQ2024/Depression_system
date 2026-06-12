@@ -155,7 +155,7 @@ function joinAdviceLines(items: string[]) {
 
 */
 function joinAdviceLines(items: string[]) {
-  return items.length ? items.join("; ") : null;
+  return items.length ? items.join("；") : null;
 }
 
 function getAssessmentRiskSummary(assessment: AssessmentSession | null) {
@@ -716,18 +716,18 @@ function buildAssessmentModuleDescription(
   riskSummary: Record<string, unknown> | null,
 ) {
   if (!scaleCount) {
-    return "Assessment results are pending.";
+    return "量表会话结果待接入。";
   }
 
   if (riskSummary) {
-    return `Completed ${scaleCount} scales and generated the final decision result.`;
+    return `已完成 ${scaleCount} 份量表并生成综合决策结果。`;
   }
 
   if (flattenedRiskFlags.length) {
-    return `Completed ${scaleCount} scales with ${flattenedRiskFlags.length} risk flags detected.`;
+    return `已完成 ${scaleCount} 份量表，识别到 ${flattenedRiskFlags.length} 项风险标记。`;
   }
 
-  return `Completed ${scaleCount} scales and generated the scale-level results.`;
+  return `已完成 ${scaleCount} 份量表，单量表结果已生成。`;
 }
 
 function buildMultimodalModuleDescription(
@@ -741,16 +741,16 @@ function buildMultimodalModuleDescription(
     asString(assessment?.multimodal_session_id) || asString(consultation?.multimodal_session_id);
 
   if (riskSummary && finalBundle) {
-    return "Final multimodal features were aggregated into the overall score.";
+    return "多模态终态特征已聚合并纳入综合评分。";
   }
 
   if (finalBundle) {
-    return "Final multimodal features were aggregated and are ready for scoring.";
+    return "多模态终态特征已聚合，等待决策评分。";
   }
 
   return multimodalSessionId
-    ? "A multimodal session is already bound for this assessment."
-    : "Multimodal summary is pending.";
+    ? "多模态会话已完成绑定，综合结果待补充。"
+    : "多模态综合结果待接入。";
 }
 
 function buildModules({
@@ -845,7 +845,7 @@ export function buildResultPageViewModel({
     },
     */
     ...{
-      overallSeverity: overallSeverity || "Pending",
+      overallSeverity: overallSeverity || "待接入",
       overallSeverityPending: !riskSummary,
     },
     modules: buildModules({

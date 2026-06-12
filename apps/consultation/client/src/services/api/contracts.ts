@@ -5,6 +5,7 @@ import type {
   BootstrapPayload,
   ConsultationMultimodalLive,
   ConsultationSession,
+  ConsultationSubtitleHistoryEntry,
   ConsultationTurnMultimodalBundle,
   UserRecord,
   VisualPipelineStatus,
@@ -240,8 +241,21 @@ export type EncounterTimelineEvent = {
 export type EncounterConsultationDetail = {
   id: string;
   status: string;
+  chief_complaint_raw_text?: string | null;
   chief_complaint_summary: string | null;
   assigned_doctor_persona: string | null;
+  slot_values?: Record<string, unknown>;
+  chief_complaint_structured_result?: Record<string, unknown>;
+  chief_complaint_stage_summary?: string | null;
+  current_history_structured_result?: Record<string, unknown>;
+  symptom_screening_stage_summary?: string | null;
+  high_risk_screening_result?: Record<string, unknown>;
+  high_risk_screening_stage_summary?: string | null;
+  digital_human_consultation_summary?: string | null;
+  scale_handoff_payload?: Record<string, unknown>;
+  required_scales?: string[];
+  subtitle_history?: ConsultationSubtitleHistoryEntry[];
+  context_snapshot?: Record<string, unknown>;
   created_at: string | null;
   completed_at: string | null;
   started_at: string | null;
@@ -254,6 +268,11 @@ export type EncounterAssessmentDetail = {
   created_at: string | null;
   completed_at: string | null;
   aggregate_payload: Record<string, unknown> | null;
+  scale_handoff_payload?: Record<string, unknown> | null;
+  required_scales?: string[];
+  selected_scales?: string[];
+  source_consultation_flow_run_id?: string | null;
+  multimodal_session_id?: string | null;
 };
 
 /** 评估结果条目 */
@@ -261,8 +280,10 @@ export type EncounterAssessmentResult = {
   scale_slug: string;
   raw_score: number;
   derived_score: number;
+  normalized_score?: number | null;
   interpretation_level: string | null;
   interpretation_label: string | null;
+  score_details?: Record<string, unknown> | null;
   risk_flags: Array<Record<string, unknown>>;
   completed_at: string | null;
 };
