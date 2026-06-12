@@ -304,3 +304,22 @@ async def submit_consultation_visual_capture(
     if upstream["status"] >= 400:
         raise _proxy_error(upstream)
     return upstream["payload"]
+
+
+@router.get("/encounters")
+def list_encounters(
+    cursor: str | None = None,
+    limit: int = 10,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "GET",
+        "/api/v1/encounters",
+        params={"cursor": cursor, "limit": limit},
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
