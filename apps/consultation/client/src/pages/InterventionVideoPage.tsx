@@ -1,30 +1,112 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Maximize2, Minimize2, Pause, Play, Volume2, VolumeX } from "lucide-react";
 
 import { INTERVENTION_VIDEO_PROGRAMS, type InterventionVideoProgram } from "../features/intervention/videoPrograms";
 import { ConsultationLayout } from "../layouts";
 import { APP_PATHS } from "../routes";
 
+type FullscreenElement = HTMLDivElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenDocument = Document & {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+};
+
 function toAssetUri(path: string) {
   return encodeURI(path);
 }
 
+function getLoopedVideoTime(audioTime: number, videoDuration: number) {
+  if (!Number.isFinite(videoDuration) || videoDuration <= 0) {
+    return 0;
+  }
+
+  return audioTime % videoDuration;
+}
+
+async function requestPlayerFullscreen(element: HTMLDivElement | null) {
+  if (!element) {
+    return;
+  }
+
+  const fullscreenElement = element as FullscreenElement;
+
+  if (fullscreenElement.requestFullscreen) {
+    await fullscreenElement.requestFullscreen();
+    return;
+  }
+
+  if (fullscreenElement.webkitRequestFullscreen) {
+    await fullscreenElement.webkitRequestFullscreen();
+  }
+}
+
+async function exitPlayerFullscreen() {
+  const fullscreenDocument = document as FullscreenDocument;
+
+  if (document.fullscreenElement && document.exitFullscreen) {
+    await document.exitFullscreen();
+    return;
+  }
+
+  if (fullscreenDocument.webkitFullscreenElement && fullscreenDocument.webkitExitFullscreen) {
+    await fullscreenDocument.webkitExitFullscreen();
+  }
+}
+
 export default function InterventionVideoPage() {
   const navigate = useNavigate();
+  const playerShellRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const lastNonZeroVolumeRef = useRef(1);
+
   const [activeProgram, setActiveProgram] = useState<InterventionVideoProgram | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [volume, setVolume] = useState(1);
 
   useEffect(() => {
+    const handleFullscreenChange = () => {
+      const fullscreenDocument = document as FullscreenDocument;
+      const fullscreenTarget = document.fullscreenElement ?? fullscreenDocument.webkitFullscreenElement ?? null;
+      setIsFullscreen(fullscreenTarget === playerShellRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange as EventListener);
+
     return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange as EventListener);
       audioRef.current?.pause();
       videoRef.current?.pause();
     };
   }, []);
 
-  const syncAndPlay = async (program: InterventionVideoProgram, restart: boolean) => {
+  const syncVideoWithAudio = (audioTime: number) => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
+      return;
+    }
+
+    const nextVideoTime = getLoopedVideoTime(audioTime, video.duration);
+
+    if (Math.abs(video.currentTime - nextVideoTime) > 0.35) {
+      video.currentTime = nextVideoTime;
+    }
+  };
+
+  const syncAndPlay = async (
+    program: InterventionVideoProgram,
+    options: { restart: boolean; enterFullscreen?: boolean },
+  ) => {
     const audio = audioRef.current;
     const video = videoRef.current;
 
@@ -45,13 +127,21 @@ export default function InterventionVideoPage() {
       video.load();
     }
 
-    if (restart) {
+    if (options.restart) {
       audio.currentTime = 0;
       video.currentTime = 0;
+      setCurrentTime(0);
     }
 
-    video.loop = true;
+    audio.volume = volume;
     video.muted = true;
+    video.loop = true;
+
+    if (options.enterFullscreen) {
+      void requestPlayerFullscreen(playerShellRef.current).catch(() => {
+        setPlaybackError("未能进入全屏，但视频和音乐已开始播放。");
+      });
+    }
 
     try {
       await Promise.all([video.play(), audio.play()]);
@@ -59,13 +149,13 @@ export default function InterventionVideoPage() {
       setPlaybackError("");
     } catch {
       setIsPlaying(false);
-      setPlaybackError("浏览器拦截了自动播放，请点击“继续播放”重试。");
+      setPlaybackError("浏览器拦截了播放，请点击继续按钮重试。");
     }
   };
 
   const handleSelectProgram = async (program: InterventionVideoProgram) => {
     setActiveProgram(program);
-    await syncAndPlay(program, true);
+    await syncAndPlay(program, { restart: true, enterFullscreen: true });
   };
 
   const handleTogglePlayback = async () => {
@@ -87,7 +177,7 @@ export default function InterventionVideoPage() {
       return;
     }
 
-    await syncAndPlay(activeProgram, false);
+    await syncAndPlay(activeProgram, { restart: false });
   };
 
   const handleReplay = async () => {
@@ -95,16 +185,91 @@ export default function InterventionVideoPage() {
       return;
     }
 
-    await syncAndPlay(activeProgram, true);
+    await syncAndPlay(activeProgram, { restart: true });
+  };
+
+  const handleFullscreenToggle = async () => {
+    if (!activeProgram) {
+      return;
+    }
+
+    if (isFullscreen) {
+      await exitPlayerFullscreen();
+      return;
+    }
+
+    await requestPlayerFullscreen(playerShellRef.current).catch(() => {
+      setPlaybackError("当前浏览器未能再次进入全屏。");
+    });
+  };
+
+  const handleSeek = (nextValue: number) => {
+    const audio = audioRef.current;
+    const video = videoRef.current;
+
+    if (!audio || !video) {
+      return;
+    }
+
+    audio.currentTime = nextValue;
+    setCurrentTime(nextValue);
+
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      video.currentTime = getLoopedVideoTime(nextValue, video.duration);
+    }
+  };
+
+  const handleVolumeChange = (nextVolume: number) => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    audio.volume = nextVolume;
+    setVolume(nextVolume);
+
+    if (nextVolume > 0) {
+      lastNonZeroVolumeRef.current = nextVolume;
+    }
+  };
+
+  const handleToggleMute = () => {
+    if (volume === 0) {
+      handleVolumeChange(lastNonZeroVolumeRef.current || 1);
+      return;
+    }
+
+    handleVolumeChange(0);
+  };
+
+  const handleAudioLoadedMetadata = () => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+  };
+
+  const handleAudioTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    setCurrentTime(audio.currentTime);
+    syncVideoWithAudio(audio.currentTime);
   };
 
   const handleAudioEnded = () => {
-    videoRef.current?.pause();
+    const video = videoRef.current;
 
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
+    if (video) {
+      video.pause();
+      video.currentTime = 0;
     }
 
+    setCurrentTime(duration);
     setIsPlaying(false);
   };
 
@@ -116,9 +281,7 @@ export default function InterventionVideoPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/70">Video Regulation</p>
-                <h1 className="mt-3 text-2xl font-semibold tracking-[0.08em] text-white md:text-3xl">
-                  看一段视频
-                </h1>
+                <h1 className="mt-3 text-2xl font-semibold tracking-[0.08em] text-white md:text-3xl">看一段视频</h1>
               </div>
               <button
                 type="button"
@@ -129,7 +292,10 @@ export default function InterventionVideoPage() {
               </button>
             </div>
 
-            <div className="mt-5 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-black/30">
+            <div
+              ref={playerShellRef}
+              className="relative mt-5 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-black/30"
+            >
               <video
                 ref={videoRef}
                 className="h-full w-full object-cover"
@@ -137,6 +303,63 @@ export default function InterventionVideoPage() {
                 controls={false}
                 poster="/cover-background-v2.png"
               />
+
+              {activeProgram ? (
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-4 pb-4 pt-12 md:px-6">
+                  <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-full border border-white/10 bg-black/40 px-3 py-3 backdrop-blur-xl">
+                    <button
+                      type="button"
+                      aria-label={isPlaying ? "暂停播放" : "继续播放"}
+                      onClick={() => void handleTogglePlayback()}
+                      className="flex h-11 w-11 items-center justify-center rounded-full bg-cyan-300 text-slate-950 transition hover:bg-cyan-200"
+                    >
+                      {isPlaying ? <Pause size={20} /> : <Play size={20} className="translate-x-[1px]" />}
+                    </button>
+
+                    <div className="flex-1">
+                      <input
+                        type="range"
+                        min={0}
+                        max={duration || 0}
+                        step={0.1}
+                        value={duration ? Math.min(currentTime, duration) : 0}
+                        onChange={(event) => handleSeek(Number(event.target.value))}
+                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      aria-label={isFullscreen ? "退出全屏" : "进入全屏"}
+                      onClick={() => void handleFullscreenToggle()}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white transition hover:bg-white/16"
+                    >
+                      {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={volume === 0 ? "恢复音量" : "静音"}
+                      onClick={handleToggleMute}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white transition hover:bg-white/16"
+                    >
+                      {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    </button>
+
+                    <div className="w-20 sm:w-28">
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={volume}
+                        onChange={(event) => handleVolumeChange(Number(event.target.value))}
+                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-5 flex flex-col gap-4 rounded-[28px] border border-white/10 bg-black/18 px-4 py-4 text-white/90 md:flex-row md:items-center md:justify-between md:px-5">
@@ -146,26 +369,26 @@ export default function InterventionVideoPage() {
                   {activeProgram?.title ?? "请选择一首曲目开始播放"}
                 </p>
                 <p className="mt-1 text-sm text-white/60">
-                  {activeProgram?.subtitle ?? "视频将播放“四景循环无声.mp4”，音乐与视频同步开始。"}
+                  {activeProgram?.subtitle ?? "选择音乐后将直接进入全屏播放。"}
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  onClick={handleTogglePlayback}
-                  disabled={!activeProgram}
-                  className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
-                >
-                  {isPlaying ? "暂停播放" : "继续播放"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReplay}
+                  onClick={() => void handleReplay()}
                   disabled={!activeProgram}
                   className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   从头播放
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleFullscreenToggle()}
+                  disabled={!activeProgram}
+                  className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isFullscreen ? "退出全屏" : "进入全屏"}
                 </button>
               </div>
             </div>
@@ -181,7 +404,7 @@ export default function InterventionVideoPage() {
             <p className="text-xs uppercase tracking-[0.35em] text-cyan-100/65">Program Selection</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-[0.06em] text-white">选择一段音乐</h2>
             <p className="mt-3 text-sm leading-6 text-white/68">
-              点击任一选项后，会同时播放对应音乐和同一支静音风景视频。
+              点击任一选项后，会直接进入全屏播放，你也可以随时调节音量、进度并重新进入全屏。
             </p>
 
             <div className="mt-6 flex flex-col gap-3">
@@ -205,19 +428,16 @@ export default function InterventionVideoPage() {
                 );
               })}
             </div>
-
-            <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.25em] text-white/42">播放说明</p>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-white/68">
-                <li>视频资源：`四景循环无声.mp4`</li>
-                <li>音频资源：按当前选择曲目切换</li>
-                <li>音乐播放结束时，视频会同步停止</li>
-              </ul>
-            </div>
           </aside>
         </div>
 
-        <audio ref={audioRef} onEnded={handleAudioEnded} preload="metadata" />
+        <audio
+          ref={audioRef}
+          onLoadedMetadata={handleAudioLoadedMetadata}
+          onTimeUpdate={handleAudioTimeUpdate}
+          onEnded={handleAudioEnded}
+          preload="metadata"
+        />
       </div>
     </ConsultationLayout>
   );

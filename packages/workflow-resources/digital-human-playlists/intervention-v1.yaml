@@ -1,0 +1,23 @@
+workflow_id: intervention-v1
+manifest_contract: digital-human-playlist/v1
+playlist_version: v1
+manifest_status: draft
+delivery_mode: fixed-video-playlist
+notes:
+  - "Digital human entry prompt for the intervention module."
+  - "Video binaries live in apps/consultation/client/public/digital-human/intervention-v1/."
+  - "This manifest currently covers the intervention landing prompt only."
+
+stages:
+  - stage_id: intervention-entry
+    stage_label: 调节干预入口
+    stage_order: 1
+    question_items:
+      - question_key: intervention-entry-001
+        order: 1
+        node_id: intervention-entry
+        video_asset_id: intervention-entry-001
+        video_uri: /digital-human/intervention-v1/intervention-entry-001.webm
+        question_text: 接下来进入调节干预模块，选择一个你想要的调节方式。
+        subtitle_text: null
+        response_required: false

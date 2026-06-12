@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>陪小鹿呼吸 - 全屏版</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      color: #315848;
+      background: #cfe8d8;
+    }
+
+    .game {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 8%, rgba(255,255,255,0.88), transparent 30%),
+        linear-gradient(180deg, #d8f4ef 0%, #c9e8d8 45%, #9fbea3 100%);
+    }
+
+    .sunlight {
+      position: absolute;
+      inset: -20%;
+      background:
+        radial-gradient(circle at 50% 4%, rgba(255,255,220,0.82), transparent 27%),
+        linear-gradient(115deg, transparent 22%, rgba(255,255,255,0.18) 36%, transparent 52%);
+      animation: sunlight 8s ease-in-out infinite alternate;
+    }
+
+    @keyframes sunlight {
+      from { opacity: 0.58; transform: translateY(0); }
+      to { opacity: 0.92; transform: translateY(16px); }
+    }
+
+    .tree {
+      position: absolute;
+      bottom: 16vh;
+      width: clamp(70px, 8vw, 130px);
+      height: clamp(290px, 52vh, 520px);
+      background: linear-gradient(90deg, #46684f, #6f8e68);
+      border-radius: 80px 80px 14px 14px;
+      opacity: 0.45;
+    }
+
+    .tree::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -26%;
+      transform: translateX(-50%);
+      width: clamp(160px, 18vw, 300px);
+      height: clamp(160px, 18vw, 300px);
+      background: #78a27b;
+      border-radius: 50%;
+      filter: blur(1px);
+    }
+
+    .tree.left { left: 3vw; transform: scale(1.08); }
+    .tree.left2 { left: 16vw; transform: scale(0.78); opacity: 0.28; }
+    .tree.mid { left: 28vw; transform: scale(0.86); opacity: 0.32; }
+    .tree.right { right: 4vw; transform: scale(1.18); }
+    .tree.right2 { right: 19vw; transform: scale(0.82); opacity: 0.3; }
+
+    .ground {
+      position: absolute;
+      left: -8vw;
+      right: -8vw;
+      bottom: -16vh;
+      height: 42vh;
+      background: radial-gradient(ellipse at center, #91b98d 0%, #6f9c75 62%, #5d835f 100%);
+      border-radius: 50% 50% 0 0;
+    }
+
+    .stream {
+      position: absolute;
+      left: 8vw;
+      right: 8vw;
+      bottom: 7vh;
+      height: clamp(48px, 8vh, 86px);
+      background: linear-gradient(90deg, rgba(173,220,217,0.52), rgba(230,250,246,0.94), rgba(151,205,209,0.58));
+      border-radius: 50%;
+      filter: blur(0.2px);
+      animation: stream 5s ease-in-out infinite alternate;
+    }
+
+    @keyframes stream {
+      from { transform: translateX(-10px) scaleX(1); opacity: 0.68; }
+      to { transform: translateX(10px) scaleX(1.04); opacity: 0.9; }
+    }
+
+    .panel {
+      position: absolute;
+      left: 50%;
+      top: clamp(24px, 6vh, 56px);
+      transform: translateX(-50%);
+      width: min(86vw, 720px);
+      padding: clamp(16px, 2.2vw, 26px) clamp(20px, 3vw, 34px);
+      border-radius: 26px;
+      background: rgba(255,255,255,0.44);
+      backdrop-filter: blur(14px);
+      text-align: center;
+      box-shadow: 0 12px 32px rgba(73,105,83,0.12);
+      z-index: 5;
+    }
+
+    h1 {
+      font-size: clamp(25px, 3vw, 38px);
+      margin-bottom: 8px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .instruction {
+      font-size: clamp(19px, 2.4vw, 30px);
+      line-height: 1.5;
+      min-height: 1.6em;
+    }
+
+    .subtext {
+      margin-top: 4px;
+      font-size: clamp(14px, 1.4vw, 18px);
+      opacity: 0.78;
+    }
+
+    .breath-circle-wrap {
+      position: absolute;
+      left: 50%;
+      top: 45%;
+      width: clamp(240px, 32vw, 430px);
+      height: clamp(240px, 32vw, 430px);
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 4;
+    }
+
+    .breath-circle {
+      width: clamp(130px, 15vw, 210px);
+      height: clamp(130px, 15vw, 210px);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 38% 32%, rgba(255,255,255,1) 0%, rgba(255,255,255,0.96) 26%, rgba(101,214,187,0.92) 62%, rgba(49,139,121,0.85) 100%);
+      border: 4px solid rgba(255,255,255,0.96);
+      box-shadow:
+        0 0 0 10px rgba(255,255,255,0.34),
+        0 0 42px rgba(38,150,124,0.58),
+        0 0 88px rgba(230,255,244,0.95),
+        inset 0 0 28px rgba(255,255,255,0.9);
+      transition: transform 4s ease-in-out, opacity 1s ease;
+    }
+
+    .breath-circle.inhale { transform: scale(1.52); }
+    .breath-circle.hold { transform: scale(1.52); }
+    .breath-circle.exhale { transform: scale(0.82); }
+
+    .halo {
+      position: absolute;
+      width: clamp(190px, 24vw, 340px);
+      height: clamp(190px, 24vw, 340px);
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.72);
+      box-shadow: 0 0 32px rgba(255,255,255,0.66);
+      animation: haloPulse 6s ease-in-out infinite;
+    }
+
+    @keyframes haloPulse {
+      0%, 100% { transform: scale(0.88); opacity: 0.45; }
+      50% { transform: scale(1.24); opacity: 0.92; }
+    }
+
+    .deer {
+      position: absolute;
+      left: 50%;
+      bottom: 13vh;
+      width: clamp(120px, 15vw, 190px);
+      height: clamp(94px, 12vw, 150px);
+      transform: translateX(-50%);
+      transition: transform 1.2s ease;
+      z-index: 3;
+    }
+
+    .deer.relaxed { transform: translateX(-50%) translateY(5px); }
+
+    .body {
+      position: absolute;
+      left: 18%;
+      bottom: 8%;
+      width: 65%;
+      height: 52%;
+      background: #b98a61;
+      border-radius: 48% 52% 45% 45%;
+    }
+
+    .head {
+      position: absolute;
+      right: 0;
+      bottom: 46%;
+      width: 40%;
+      height: 45%;
+      background: #c99a6e;
+      border-radius: 55% 45% 48% 52%;
+      transform-origin: 15px 35px;
+      animation: deerBreathe 6s ease-in-out infinite;
+    }
+
+    @keyframes deerBreathe {
+      0%, 100% { transform: rotate(-4deg); }
+      50% { transform: rotate(5deg); }
+    }
+
+    .ear {
+      position: absolute;
+      width: 28%;
+      height: 58%;
+      background: #a97855;
+      border-radius: 50% 50% 20% 20%;
+      top: -32%;
+    }
+
+    .ear.one { left: 20%; transform: rotate(-25deg); }
+    .ear.two { right: 20%; transform: rotate(25deg); }
+
+    .eye {
+      position: absolute;
+      right: 24%;
+      top: 42%;
+      width: 12%;
+      height: 12%;
+      background: #3c2f2a;
+      border-radius: 50%;
+    }
+
+    .leg {
+      position: absolute;
+      bottom: -24%;
+      width: 8%;
+      height: 34%;
+      background: #8a654c;
+      border-radius: 8px;
+    }
+
+    .leg.a { left: 27%; }
+    .leg.b { left: 49%; }
+    .leg.c { left: 66%; }
+
+    .progress {
+      position: absolute;
+      left: 50%;
+      bottom: 4vh;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      z-index: 6;
+    }
+
+    .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.55);
+      box-shadow: inset 0 0 0 1px rgba(49,88,72,0.15);
+      transition: transform 0.5s ease, background 0.5s ease;
+    }
+
+    .dot.done {
+      background: rgba(255,255,255,0.96);
+      transform: scale(1.25);
+    }
+
+    .controls {
+      position: absolute;
+      right: clamp(18px, 4vw, 54px);
+      bottom: clamp(18px, 4vh, 46px);
+      display: flex;
+      gap: 12px;
+      z-index: 7;
+    }
+
+    .button {
+      border: none;
+      padding: 13px 21px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.76);
+      color: #315848;
+      font-size: clamp(15px, 1.4vw, 18px);
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(47,85,67,0.16);
+    }
+
+    .button:hover { background: rgba(255,255,255,0.94); }
+    .button.exit { background: rgba(255,255,255,0.5); color: #537063; }
+    .button:disabled { opacity: 0.68; cursor: default; }
+
+    .mist {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.28);
+      pointer-events: none;
+      transition: opacity 2s ease;
+      z-index: 2;
+    }
+
+    .mist.clear { opacity: 0.04; }
+
+    @media (max-width: 640px) {
+      .panel {
+        top: 24px;
+        width: 90vw;
+      }
+
+      .breath-circle-wrap {
+        top: 46%;
+      }
+
+      .controls {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        bottom: 8vh;
+      }
+
+      .progress {
+        bottom: 3vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="game" aria-label="陪小鹿呼吸小游戏全屏版">
+    <div class="sunlight"></div>
+    <div class="tree left"></div>
+    <div class="tree left2"></div>
+    <div class="tree mid"></div>
+    <div class="tree right"></div>
+    <div class="tree right2"></div>
+    <div class="ground"></div>
+    <div class="stream"></div>
+    <div class="mist" id="mist"></div>
+
+    <section class="panel">
+      <h1>陪小鹿呼吸</h1>
+      <div class="instruction" id="instruction">点击开始，跟着光圈慢慢呼吸</div>
+      <div class="subtext" id="subtext">不用追求完美，只要慢一点就好</div>
+    </section>
+
+    <div class="breath-circle-wrap">
+      <div class="halo"></div>
+      <div class="breath-circle" id="circle"></div>
+    </div>
+
+    <div class="deer" id="deer">
+      <div class="body"></div>
+      <div class="head">
+        <div class="ear one"></div>
+        <div class="ear two"></div>
+        <div class="eye"></div>
+      </div>
+      <div class="leg a"></div>
+      <div class="leg b"></div>
+      <div class="leg c"></div>
+    </div>
+
+    <div class="progress" id="progress"></div>
+
+    <div class="controls">
+      <button class="button exit" id="exitBtn">重置</button>
+      <button class="button" id="startBtn">开始</button>
+    </div>
+  </main>
+
+  <script>
+    const circle = document.getElementById('circle');
+    const instruction = document.getElementById('instruction');
+    const subtext = document.getElementById('subtext');
+    const startBtn = document.getElementById('startBtn');
+    const exitBtn = document.getElementById('exitBtn');
+    const progress = document.getElementById('progress');
+    const mist = document.getElementById('mist');
+    const deer = document.getElementById('deer');
+
+    const totalRounds = 3;
+    let round = 0;
+    let running = false;
+    let exited = false;
+    let timers = [];
+
+    function sleep(ms) {
+      return new Promise(resolve => {
+        const timer = setTimeout(resolve, ms);
+        timers.push(timer);
+      });
+    }
+
+    function clearTimers() {
+      timers.forEach(clearTimeout);
+      timers = [];
+    }
+
+    function initProgress() {
+      progress.innerHTML = '';
+      for (let i = 0; i < totalRounds; i++) {
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        progress.appendChild(dot);
+      }
+    }
+
+    function updateProgress() {
+      [...progress.children].forEach((dot, index) => {
+        dot.classList.toggle('done', index < round);
+      });
+    }
+
+    function resetToInitial() {
+      clearTimers();
+      running = false;
+      exited = true;
+      round = 0;
+      updateProgress();
+      circle.className = 'breath-circle';
+      mist.classList.remove('clear');
+      deer.classList.remove('relaxed');
+      instruction.textContent = '已经退出，可以随时重新开始';
+      subtext.textContent = '停下来也是可以的，按自己的节奏来';
+      startBtn.textContent = '重新开始';
+      startBtn.disabled = false;
+    }
+
+    async function breatheOnce() {
+      if (exited) return;
+      instruction.textContent = '慢慢吸气';
+      subtext.textContent = '想象清晨的空气进入身体';
+      circle.className = 'breath-circle inhale';
+      await sleep(4000);
+
+      if (exited) return;
+      instruction.textContent = '轻轻停一下';
+      subtext.textContent = '不用用力，只是安静地停留';
+      circle.className = 'breath-circle hold';
+      await sleep(1600);
+
+      if (exited) return;
+      instruction.textContent = '慢慢呼气';
+      subtext.textContent = '把紧绷感一点点放下来';
+      circle.className = 'breath-circle exhale';
+      await sleep(5000);
+
+      if (exited) return;
+      round++;
+      updateProgress();
+    }
+
+    async function startGame() {
+      if (running) return;
+      clearTimers();
+      running = true;
+      exited = false;
+      round = 0;
+      updateProgress();
+      mist.classList.remove('clear');
+      deer.classList.remove('relaxed');
+      startBtn.textContent = '进行中';
+      startBtn.disabled = true;
+
+      for (let i = 0; i < totalRounds; i++) {
+        await breatheOnce();
+        if (exited) return;
+      }
+
+      instruction.textContent = '做得很好，小鹿安静下来了';
+      subtext.textContent = '现在可以停在这里，给自己一点温柔的时间';
+      circle.className = 'breath-circle';
+      mist.classList.add('clear');
+      deer.classList.add('relaxed');
+      startBtn.textContent = '再来一次';
+      startBtn.disabled = false;
+      running = false;
+    }
+
+    initProgress();
+    startBtn.addEventListener('click', startGame);
+    exitBtn.addEventListener('click', resetToInitial);
+  </script>
+</body>
+</html>

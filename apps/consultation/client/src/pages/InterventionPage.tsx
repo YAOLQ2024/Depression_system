@@ -1,8 +1,11 @@
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, type Variants } from "motion/react";
 
 import { ConsultationLayout } from "../layouts";
 import { APP_PATHS } from "../routes";
+
+const INTERVENTION_ENTRY_VIDEO_URI = "/digital-human/intervention-v1/intervention-entry-001.webm";
 
 const buttonVariants = {
   initial: { y: 0 },
@@ -75,6 +78,16 @@ function ActionButton({ text, delay, onClick, disabled = false }: ActionButtonPr
 
 export default function InterventionPage() {
   const navigate = useNavigate();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    void video.play().catch(() => undefined);
+  }, []);
 
   return (
     <ConsultationLayout backgroundImage="/TKbg.png" title="调节干预">
@@ -82,25 +95,24 @@ export default function InterventionPage() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40" />
 
         <div className="absolute inset-x-0 bottom-0 top-16 flex items-end justify-center">
-          <img
-            src="/SZR.png"
-            alt="AI Assistant"
-            className="pointer-events-none h-[85%] max-w-none object-contain object-bottom drop-shadow-2xl"
+          <video
+            ref={videoRef}
+            src={INTERVENTION_ENTRY_VIDEO_URI}
+            playsInline
+            preload="auto"
+            className="h-[85%] max-w-none object-contain object-bottom drop-shadow-2xl"
           />
         </div>
 
         <div className="relative z-10 mb-5 w-full max-w-3xl px-6 text-center text-white">
           <p className="text-xs uppercase tracking-[0.45em] text-white/65">Intervention</p>
           <h1 className="mt-4 text-3xl font-semibold tracking-[0.12em] md:text-4xl">选择一种调节方式</h1>
-          <p className="mt-3 text-sm text-white/75 md:text-base">
-            先接入“看一段视频”主链。其余两项先保留入口样式，后续再继续接实现。
-          </p>
         </div>
 
         <div className="perspective-[1000px] relative z-10 flex w-full max-w-5xl flex-col items-center justify-center gap-6 px-6 md:flex-row md:gap-10">
           <ActionButton text="看一段视频" delay={0} onClick={() => navigate(APP_PATHS.interventionVideo)} />
-          <ActionButton text="玩一个小游戏" delay={0.2} disabled />
-          <ActionButton text="听一段故事" delay={0.4} disabled />
+          <ActionButton text="玩一个小游戏" delay={0.2} onClick={() => navigate(APP_PATHS.interventionGame)} />
+          <ActionButton text="听一段故事" delay={0.4} onClick={() => navigate(APP_PATHS.interventionStory)} />
         </div>
       </div>
     </ConsultationLayout>

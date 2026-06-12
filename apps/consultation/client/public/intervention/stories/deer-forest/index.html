@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蝴蝶落花背景画布 - 交互版</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #fcfcfc; /* 浅色背景 */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* 阻止移动端默认的滚动/缩放行为 */
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        
+        /* 右上角控制按钮容器 */
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 15px;
+            z-index: 10;
+        }
+        
+        .control-btn {
+            font-size: 20px;
+            cursor: pointer;
+            user-select: none;
+            opacity: 0.7;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 20px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            color: #555;
+            padding: 0 12px;
+            font-weight: 500;
+        }
+        
+        #music-btn {
+            border-radius: 50%;
+            width: 40px;
+            padding: 0;
+            font-size: 22px;
+        }
+
+        .control-btn:hover {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.9);
+            transform: scale(1.05);
+        }
+
+        /* 居中提示文字 */
+        #intro-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px; /* 字体大小已进一步放大 */
+            color: rgba(130, 130, 140, 0.8);
+            letter-spacing: 4px;
+            pointer-events: none; /* 防止遮挡点击事件 */
+            z-index: 5;
+            /* 延迟 1.5 秒后，用 2 秒的时间慢慢淡出 */
+            animation: fadeOut 2s ease-in-out 1.5s forwards;
+        }
+
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            100% { 
+                opacity: 0; 
+                visibility: hidden; 
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 提示文案 -->
+    <div id="intro-text">轻轻点击屏幕</div>
+
+    <!-- 右上角控制栏 -->
+    <div class="controls">
+        <div id="music-btn" class="control-btn" title="播放/暂停音乐">🎵</div>
+        <div id="exit-btn" class="control-btn" title="退出页面">退出</div>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let W = canvas.width = window.innerWidth;
+        let H = canvas.height = window.innerHeight;
+
+        // 物理常量
+        const gravity = 0.15;
+        const friction = 0.96;
+        const segmentLength = 15;
+        let ropes = [];
+        let decors = [];
+        
+        // 动画控制变量
+        let butterflies = []; // 改为数组，支持多只蝴蝶同时存在
+        let globalFrame = 0;
+
+        // 音乐控制变量
+        const bgMusic = new Audio('deer-forest-story-001.wav');
+        bgMusic.loop = true;
+        let musicStarted = false;
+        
+        // 按钮事件绑定
+        const musicBtn = document.getElementById('music-btn');
+        const exitBtn = document.getElementById('exit-btn');
+
+        musicBtn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation(); // 阻止触发蝴蝶飞出事件
+            if (bgMusic.paused) {
+                bgMusic.play().catch(err => console.log("播放失败:", err));
+                musicBtn.innerText = '🎵';
+            } else {
+                bgMusic.pause();
+                musicBtn.innerText = '🔇';
+            }
+            musicStarted = true;
+        });
+
+        exitBtn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'intervention-exit' }, window.location.origin);
+                return;
+            }
+            window.location.href = '/intervention';
+        });
+
+        // ================= 点类 (Verlet Physics) =================
+        class Point {
+            constructor(x, y, pinned = false) {
+                this.x = x;
+                this.y = y;
+                this.ox = x;
+                this.oy = y;
+                this.pinned = pinned;
+            }
+            update() {
+                if (this.pinned) return;
+                let vx = (this.x - this.ox) * friction;
+                let vy = (this.y - this.oy) * friction;
+                this.ox = this.x;
+                this.oy = this.y;
+                this.x += vx;
+                this.y += vy + gravity;
+            }
+        }
+
+        // ================= 绳索类 (珠帘) =================
+        class Rope {
+            constructor(startX) {
+                this.startX = startX;
+                this.points = [];
+                this.links = [];
+                this.caughtBy = null; // 记录是被哪只蝴蝶抓住了
+                this.offsetX = (Math.random() - 0.5) * 10;
+                this.offsetY = (Math.random() - 0.5) * 10;
+                
+                let numPoints = Math.ceil(H / segmentLength) + 5;
+                this.tieIndex = Math.floor(numPoints * 0.5); // 默认节点
+
+                // 创建点
+                for (let i = 0; i < numPoints; i++) {
+                    this.points.push(new Point(startX, i * segmentLength, i === 0));
+                }
+                // 创建约束（链接）
+                for (let i = 0; i < numPoints - 1; i++) {
+                    this.links.push({
+                        p1: this.points[i],
+                        p2: this.points[i + 1],
+                        len: segmentLength
+                    });
+                }
+            }
+
+            update() {
+                // 加入微弱的自然风吹拂效果
+                this.points.forEach(p => {
+                    if (!p.pinned && !this.caughtBy) {
+                        p.x += Math.sin(globalFrame * 0.02 + this.startX * 0.05) * 0.03;
+                    }
+                    p.update();
+                });
+
+                // 如果被蝴蝶抓住了，施加引力
+                if (this.caughtBy && (this.caughtBy.state === 1 || this.caughtBy.state === 2)) {
+                    let b = this.caughtBy;
+                    let node = this.points[this.tieIndex];
+                    let targetX = b.x + this.offsetX;
+                    let targetY = b.y + this.offsetY;
+
+                    // 安全机制：防止绳索被拉断
+                    let dx = targetX - this.startX;
+                    let dy = targetY - 0;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    let maxDist = this.tieIndex * segmentLength * 0.95;
+
+                    if (dist > maxDist) {
+                        targetX = this.startX + (dx / dist) * maxDist;
+                        targetY = (dy / dist) * maxDist;
+                    }
+
+                    // 弹性拉向目标
+                    node.x += (targetX - node.x) * 0.3;
+                    node.y += (targetY - node.y) * 0.3;
+                }
+
+                // 求解约束 (多次迭代以保证稳定性)
+                for (let iter = 0; iter < 5; iter++) {
+                    this.links.forEach(link => {
+                        let dx = link.p2.x - link.p1.x;
+                        let dy = link.p2.y - link.p1.y;
+                        let dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist === 0) return;
+                        let diff = (link.len - dist) / dist;
+                        let ox = dx * diff * 0.5;
+                        let oy = dy * diff * 0.5;
+                        if (!link.p1.pinned) { link.p1.x -= ox; link.p1.y -= oy; }
+                        if (!link.p2.pinned) { link.p2.x += ox; link.p2.y += oy; }
+                    });
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(180, 180, 220, 0.4)'; // 浅紫蓝色线条
+                ctx.lineWidth = 1;
+                ctx.moveTo(this.points[0].x, this.points[0].y);
+                for (let i = 1; i < this.points.length; i++) {
+                    ctx.lineTo(this.points[i].x, this.points[i].y);
+                }
+                ctx.stroke();
+            }
+        }
+
+        // ================= 装饰类 (花朵和叶子) =================
+        class Decor {
+            constructor(rope, nodeIndex, isGrowing = false) {
+                this.rope = rope;
+                this.nodeIndex = nodeIndex;
+                this.isFlower = Math.random() > 0.3;
+                this.falling = false;
+                this.x = 0;
+                this.y = 0;
+                this.vx = 0;
+                this.vy = 0;
+                this.angle = Math.random() * Math.PI * 2;
+                this.targetScale = 0.4 + Math.random() * 0.5;
+                this.scale = isGrowing ? 0 : this.targetScale;
+                this.rotSpeed = (Math.random() - 0.5) * 0.1;
+                this.swaySpeed = Math.random() * 0.05 + 0.02;
+            }
+
+            update() {
+                if (!this.falling) {
+                    if (this.scale < this.targetScale) {
+                        this.scale += 0.03; // 加快生长变大的速度 (从0.01提升至0.03)
+                    }
+                    let node = this.rope.points[this.nodeIndex];
+                    if (node) {
+                        this.x = node.x;
+                        this.y = node.y;
+                    }
+                } else {
+                    this.vy += 0.02;
+                    this.x += this.vx + Math.sin(this.y * this.swaySpeed) * 0.8;
+                    this.y += this.vy;
+                    this.angle += this.rotSpeed;
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+                ctx.scale(this.scale, this.scale);
+
+                if (this.isFlower) {
+                    ctx.fillStyle = 'rgba(255, 130, 180, 0.85)';
+                    for (let i = 0; i < 5; i++) {
+                        ctx.rotate((Math.PI * 2) / 5);
+                        ctx.beginPath();
+                        ctx.ellipse(5, 0, 7, 4, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.fillStyle = 'rgba(200, 50, 100, 0.9)';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.fillStyle = 'rgba(120, 210, 120, 0.8)';
+                    ctx.beginPath();
+                    ctx.ellipse(4, 0, 6, 3, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        // ================= 交互事件：点击屏幕 =================
+        window.addEventListener('pointerdown', (e) => {
+            // 第一次点击屏幕时，尝试自动播放音乐
+            if (!musicStarted) {
+                bgMusic.play().catch(err => console.log("等待用户交互以播放音乐", err));
+                musicStarted = true;
+            }
+
+            // 确定蝴蝶从左侧还是右侧飞入
+            let fromRight = Math.random() > 0.5;
+
+            // 创建新的蝴蝶对象并推入数组
+            let newButterfly = {
+                startX: fromRight ? W + 100 : -100,
+                startY: e.clientY + 80, // 从稍微靠下的位置飞入
+                targetX: e.clientX,
+                targetY: e.clientY,
+                x: fromRight ? W + 100 : -100,
+                y: e.clientY + 80,
+                state: 1, // 1: 飞向目标
+                dir: fromRight ? -1 : 1, // 飞行方向
+                actionFrame: 0 // 给每只蝴蝶分配独立的动画帧
+            };
+            butterflies.push(newButterfly);
+        });
+
+        // ================= 初始化场景 =================
+        function init() {
+            ropes = [];
+            decors = [];
+            butterflies = []; // 初始化蝴蝶数组
+            
+            let ropeCount = Math.floor(W / 25);
+            for (let i = 0; i < ropeCount; i++) {
+                let x = (W / ropeCount) * i + 10;
+                let rope = new Rope(x);
+                ropes.push(rope);
+
+                let decorCount = Math.floor(Math.random() * 4) + 2;
+                for (let j = 0; j < decorCount; j++) {
+                    let nodeIdx = Math.floor(Math.random() * (rope.points.length * 0.8)) + 5;
+                    decors.push(new Decor(rope, nodeIdx));
+                }
+            }
+        }
+
+        // ================= 画蝴蝶 =================
+        function drawButterfly(ctx, x, y, dir = 1) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(dir * Math.PI / 6); // 根据飞行方向倾斜
+            let flap = Math.abs(Math.cos(globalFrame * 0.15));
+            ctx.scale(flap * 0.7 + 0.3, 1);
+
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = 'rgba(255, 100, 150, 0.8)';
+            ctx.fillStyle = 'rgba(255, 140, 190, 0.9)';
+
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.bezierCurveTo(20, -25, 35, -10, 25, 15);
+            ctx.bezierCurveTo(15, 25, 5, 15, 0, 5);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.bezierCurveTo(-20, -25, -35, -10, -25, 15);
+            ctx.bezierCurveTo(-15, 25, -5, 15, 0, 5);
+            ctx.fill();
+            
+            ctx.restore();
+        }
+
+        // ================= 动画循环 =================
+        function animate() {
+            ctx.clearRect(0, 0, W, H);
+            
+            globalFrame++;
+
+            // 1. 交互状态更新（遍历所有蝴蝶）
+            butterflies.forEach(b => {
+                if (b.state > 0) {
+                    b.actionFrame++;
+
+                    if (b.state === 1) {
+                        // 飞向点击位置 (持续大约 1.5 秒)
+                        let t = Math.min(b.actionFrame / 90, 1);
+                        let easeOut = 1 - Math.pow(1 - t, 3); // 缓出效果，慢慢停下
+                        
+                        b.x = b.startX + easeOut * (b.targetX - b.startX);
+                        // 加上抛物线高度变化
+                        b.y = b.startY + easeOut * (b.targetY - b.startY) - Math.sin(t * Math.PI) * 60;
+
+                        // 检查并抓住沿途的绳索
+                        ropes.forEach(rope => {
+                            // 根据飞行方向判断经过了哪些绳索
+                            let canCatch = false;
+                            if (b.dir === 1 && b.x > rope.startX && rope.startX <= b.targetX + 20) {
+                                canCatch = true;
+                            } else if (b.dir === -1 && b.x < rope.startX && rope.startX >= b.targetX - 20) {
+                                canCatch = true;
+                            }
+
+                            // 只有没被其他蝴蝶抓住的绳索，才会被当前这只蝴蝶抓住
+                            if (canCatch && !rope.caughtBy) {
+                                rope.caughtBy = b;
+                                // 动态计算该在哪个高度抓住这根绳子（匹配点击高度）
+                                let closestIdx = Math.floor(b.targetY / segmentLength);
+                                // 防止越界，且保证上方留有一定长度可以产生拉扯弧度
+                                rope.tieIndex = Math.max(10, Math.min(rope.points.length - 5, closestIdx));
+                            }
+                        });
+
+                        // 到达目标点
+                        if (t === 1) {
+                            b.state = 2;
+                            b.actionFrame = 0;
+                        }
+                    } 
+                    else if (b.state === 2) {
+                        // 在目标位置停留扇动翅膀
+                        b.x = b.targetX + Math.sin(b.actionFrame * 0.05) * 5;
+                        b.y = b.targetY + Math.cos(b.actionFrame * 0.05) * 5;
+
+                        // 停留大约 1.3 秒后飞走并释放落花
+                        if (b.actionFrame >= 80) {
+                            b.state = 3;
+                            b.actionFrame = 0;
+                            
+                            // 只释放当前这只蝴蝶抓住的绳索
+                            ropes.forEach(r => {
+                                if (r.caughtBy === b) r.caughtBy = null;
+                            });
+                            
+                            decors.forEach(d => {
+                                // 让这只蝴蝶飞过路径上的花朵飘落
+                                let canFall = false;
+                                if (b.dir === 1 && d.rope.startX <= b.targetX + 20) {
+                                    canFall = true;
+                                } else if (b.dir === -1 && d.rope.startX >= b.targetX - 20) {
+                                    canFall = true;
+                                }
+
+                                if (!d.falling && canFall) {
+                                    d.falling = true;
+                                    d.vx = (Math.random() - 0.5) * 3;
+                                    d.vy = Math.random() * -1 - 0.5;
+                                }
+                            });
+                        }
+                    } 
+                    else if (b.state === 3) {
+                        // 飞走离场
+                        b.x += 6 * b.dir;
+                        b.y -= 2.5;
+                    }
+                }
+            });
+
+            // 清理飞离屏幕的蝴蝶，优化性能
+            butterflies = butterflies.filter(b => b.y > -200);
+
+            // 自动生长花瓣逻辑：加快生长频率(从10帧缩短为4帧)，提升生长概率
+            if (globalFrame % 4 === 0) {
+                let randomRope = ropes[Math.floor(Math.random() * ropes.length)];
+                let currentDecors = decors.filter(d => d.rope === randomRope && !d.falling);
+                let targetCount = 3; // 期望每根绳子大约有3个装饰
+                if (currentDecors.length < targetCount && Math.random() > 0.3) {
+                    let nodeIdx = Math.floor(Math.random() * (randomRope.points.length * 0.8)) + 5;
+                    // true 表示新长出来的（会触发从小变大的动画）
+                    decors.push(new Decor(randomRope, nodeIdx, true));
+                }
+            }
+
+            // 清理掉出屏幕外的落花，防止长时间运行卡顿
+            decors = decors.filter(d => d.y < H + 100);
+
+            // 2. 更新和绘制物理绳索
+            ropes.forEach(rope => {
+                rope.update();
+                rope.draw(ctx);
+            });
+
+            // 3. 更新和绘制花朵叶子
+            decors.forEach(decor => {
+                decor.update();
+                decor.draw(ctx);
+            });
+
+            // 4. 绘制屏幕上所有的蝴蝶
+            butterflies.forEach(b => {
+                if (b.state > 0 && b.y > -100) {
+                    drawButterfly(ctx, b.x, b.y, b.dir);
+                }
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        // 窗口大小适配
+        window.addEventListener('resize', () => {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            init(); 
+        });
+
+        // 启动
+        init();
+        animate();
+    </script>
+</body>
+</html>
