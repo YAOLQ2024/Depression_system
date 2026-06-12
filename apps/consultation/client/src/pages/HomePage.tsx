@@ -71,7 +71,7 @@ export default function HomePage() {
   };
 
   const handleOpenHistory = () => {
-    navigate(APP_PATHS.result);
+    navigate(APP_PATHS.history);
   };
 
   const handleOpenIntervention = () => {

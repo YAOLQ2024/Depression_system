@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { label: "问诊", icon: MessageSquare, path: APP_PATHS.preparation },
   { label: "量表", icon: ClipboardList, path: APP_PATHS.assessment },
   { label: "调节", icon: Activity, path: APP_PATHS.intervention },
-  { label: "历史", icon: Clock, path: APP_PATHS.result },
+  { label: "历史", icon: Clock, path: APP_PATHS.history },
 ];
 
 export function Sidebar() {
