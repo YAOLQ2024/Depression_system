@@ -236,3 +236,21 @@ def get_encounters(
             status_code=exc.status_code,
             detail=error_response(message=exc.message, code=exc.status_code),
         )
+
+
+@router.get("/encounters/{encounter_id}")
+def get_encounter_detail_endpoint(
+    encounter_id: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    if not x_mcs_user_id:
+        raise HTTPException(status_code=400, detail=error_response(message="missing user id", code=400))
+    try:
+        from app.services.encounter_service import get_encounter_detail
+        payload = get_encounter_detail(x_mcs_user_id, encounter_id)
+        return success_response(payload)
+    except EncounterError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=error_response(message=exc.message, code=exc.status_code),
+        )

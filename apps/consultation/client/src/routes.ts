@@ -14,6 +14,7 @@ export const APP_PATHS = {
   interventionStory: "/intervention/story",
   seamlessVideoDemo: "/labs/seamless-video-player",
   history: "/history",
+  historyDetail: "/history/:id",
 } as const;
 
 type ResolveAppPathArgs = {

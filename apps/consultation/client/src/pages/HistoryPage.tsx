@@ -19,6 +19,10 @@ export default function HistoryPage() {
     promptResume(encounter);
   };
 
+  const handleViewDetail = (encounter: EncounterSummary) => {
+    navigate(`${APP_PATHS.history}/${encounter.id}`);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950/20 to-slate-950">
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -47,7 +51,7 @@ export default function HistoryPage() {
               key={encounter.id}
               encounter={encounter}
               onContinue={handleContinue}
-              detailDisabled
+              onViewDetail={handleViewDetail}
             />
           ))}
         </div>

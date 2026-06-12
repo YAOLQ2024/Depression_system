@@ -331,3 +331,21 @@ def list_encounters(
     if upstream["status"] >= 400:
         raise _proxy_error(upstream)
     return upstream["payload"]
+
+
+@router.get("/encounters/{encounter_id}")
+def get_encounter_detail(
+    encounter_id: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "GET",
+        f"/api/v1/encounters/{encounter_id}",
+        None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]

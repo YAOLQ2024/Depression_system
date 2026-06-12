@@ -229,3 +229,59 @@ export type EncounterListResponse = {
   next_cursor: string | null;
   has_more: boolean;
 };
+
+/** 就诊时间线事件 */
+export type EncounterTimelineEvent = {
+  event: string;
+  at: string | null;
+};
+
+/** 问诊摘要（详情用） */
+export type EncounterConsultationDetail = {
+  id: string;
+  status: string;
+  chief_complaint_summary: string | null;
+  assigned_doctor_persona: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  started_at: string | null;
+};
+
+/** 评估摘要（详情用） */
+export type EncounterAssessmentDetail = {
+  id: string;
+  status: string;
+  created_at: string | null;
+  completed_at: string | null;
+  aggregate_payload: Record<string, unknown> | null;
+};
+
+/** 评估结果条目 */
+export type EncounterAssessmentResult = {
+  scale_slug: string;
+  raw_score: number;
+  derived_score: number;
+  interpretation_level: string | null;
+  interpretation_label: string | null;
+  risk_flags: Array<Record<string, unknown>>;
+  completed_at: string | null;
+};
+
+/** 就诊详情 */
+export type EncounterDetailData = {
+  id: string;
+  status: string;
+  current_flow_type: string;
+  created_at: string | null;
+  completed_at: string | null;
+  started_at: string | null;
+  consultation: EncounterConsultationDetail | null;
+  assessment: EncounterAssessmentDetail | null;
+  assessment_results: EncounterAssessmentResult[];
+  timeline: EncounterTimelineEvent[];
+};
+
+/** 就诊详情 API 响应 */
+export type EncounterDetailResponse = {
+  encounter: EncounterDetailData;
+};
