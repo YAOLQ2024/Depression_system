@@ -43,5 +43,6 @@ eeg-bridge.exe
 !services/multimodal-service/tests/
 !tools/eeg-tools/tests/
 !tools/eeg-tools/tests/*.py
+!services/consultation-service/tests/
 services/multimodal-service/tests/test_multimodal_scope_rules.py
 services/multimodal-service/tests/test_multimodal_visual_service.py
