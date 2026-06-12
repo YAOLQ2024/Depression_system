@@ -206,7 +206,7 @@
 - `multimodal-service` 的 pose 路由 smoke test 已通过
 - `multimodal-service` 的 pose 服务层单元测试已通过
 - `consultation-service` 的 pose bundle 缓存单元测试已通过
-- 已提供 `scripts/run_pose_modality_checks.ps1` 作为分服务验收脚本
+- 当时曾提供 pose 分服务验收脚本，现已移除
 
 当前仍属于待补齐项的主要是：
 
@@ -266,13 +266,9 @@
 
 ## 6. 当前回归与验收方式
 
-如果你本机已有可用的 `Python 3.11+` 环境，可以从仓库根目录执行：
+如果后续还要恢复 pose 的一键回归能力，建议基于当前仍存在的测试文件重新整理入口，而不是继续依赖已经移除的历史脚本。
 
-```powershell
-.\scripts\run_pose_modality_checks.ps1 -PythonExe "C:\path\to\python.exe"
-```
-
-当前脚本会顺序运行：
+当时历史脚本的职责是顺序运行：
 
 1. `multimodal-service` 路由 smoke test
 2. `multimodal-service` pose 服务层单测

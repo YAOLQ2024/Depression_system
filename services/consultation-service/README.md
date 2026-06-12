@@ -33,11 +33,7 @@
 - 有 `turn_id` 时会缓存上游返回的 `turn_bundle`
 - 无 `turn_id` 时不会误写 turn 缓存
 
-统一复验命令建议从仓库根目录执行：
-
-```powershell
-.\scripts\run_face_modality_checks.ps1 -PythonExe "C:\path\to\python.exe"
-```
+此前的人脸模态一键复验脚本已经移除，避免继续引用失效测试文件。
 
 启动方式：
 

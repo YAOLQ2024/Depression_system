@@ -104,8 +104,7 @@
 
 位置：
 
-- `scripts/run_face_modality_checks.ps1`
-- `scripts/run_pose_modality_checks.ps1`
+- 历史的一键 face / pose 回归脚本
 - 多处 README
 
 当前判断：
@@ -309,8 +308,8 @@
 - 已清理已确认的局部噪音：
   - 删除 `multimodal_session_service.py` 中无意义的 `gray = None`
 - 已重新跑通视觉模态最小回归：
-  - `run_face_modality_checks.ps1`
-  - `run_pose_modality_checks.ps1`
+  - 历史 face 回归脚本
+  - 历史 pose 回归脚本
 - 后端语法检查已通过：
   - `py_compile services/multimodal-service/app/services/multimodal_session_service.py`
 
@@ -344,7 +343,7 @@
 
 ### 6.3 回归脚本统一成一个“万能模态脚本”
 
-当前 `run_face_modality_checks.ps1` 和 `run_pose_modality_checks.ps1` 已经可用。
+当时的 face / pose 回归脚本曾经可用，但现已移除。
 
 如果现在硬合成一个超通用脚本，收益不大，反而容易把简单脚本搞复杂。
 
@@ -376,8 +375,8 @@
 2. `pose` 现有能力不回退
 3. 前端 `typecheck` 通过
 4. 前端 `build` 通过
-5. `run_face_modality_checks.ps1` 通过
-6. `run_pose_modality_checks.ps1` 通过
+5. face 回归通过
+6. pose 回归通过
 
 额外要求：
 

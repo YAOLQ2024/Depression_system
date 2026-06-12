@@ -1759,7 +1759,7 @@ def warmup_multimodal_session(
         if "pose" in modalities:
             runtime_store.get_pose_engine()
         if "eeg" in modalities:
-            eeg_runtime_service.warmup()
+            eeg_runtime_service.warmup_model()
 
         now = _utcnow()
         session.status = "warm"
