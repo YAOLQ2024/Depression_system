@@ -227,12 +227,12 @@ def get_encounters(
     x_mcs_user_id: str | None = Header(default=None),
 ):
     if not x_mcs_user_id:
-        raise HTTPException(status_code=400, detail=error_response(message="missing user id", code="missing_user_id"))
+        raise HTTPException(status_code=400, detail=error_response(message="missing user id", code=400))
     try:
         payload = list_encounters(x_mcs_user_id, cursor=cursor, limit=limit)
         return success_response(payload)
     except EncounterError as exc:
         raise HTTPException(
             status_code=exc.status_code,
-            detail=error_response(message=exc.message, code=exc.code),
+            detail=error_response(message=exc.message, code=exc.status_code),
         )

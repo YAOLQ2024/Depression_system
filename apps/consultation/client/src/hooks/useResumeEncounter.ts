@@ -60,6 +60,11 @@ export function useResumeEncounter() {
 
     const storage = getStorage();
 
+    // Clear existing session IDs first to avoid stale state
+    storage.removeItem(`${STORAGE_PREFIX_CONSULTATION}${userId}`);
+    storage.removeItem(`${STORAGE_PREFIX_ASSESSMENT}${userId}`);
+
+    // Then set the ones for this encounter
     if (encounter.consultation_session_id) {
       storage.setItem(
         `${STORAGE_PREFIX_CONSULTATION}${userId}`,

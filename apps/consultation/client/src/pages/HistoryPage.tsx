@@ -19,10 +19,6 @@ export default function HistoryPage() {
     promptResume(encounter);
   };
 
-  const handleViewDetail = (encounter: EncounterSummary) => {
-    navigate(`${APP_PATHS.history}/${encounter.id}`);
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950/20 to-slate-950">
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -51,7 +47,7 @@ export default function HistoryPage() {
               key={encounter.id}
               encounter={encounter}
               onContinue={handleContinue}
-              onViewDetail={handleViewDetail}
+              detailDisabled
             />
           ))}
         </div>
@@ -78,7 +74,15 @@ export default function HistoryPage() {
 
         {/* 错误提示 */}
         {state.error && (
-          <div className="mt-4 text-center text-red-400 text-sm">{state.error}</div>
+          <div className="mt-4 text-center">
+            <p className="text-red-400 text-sm mb-2">{state.error}</p>
+            <button
+              onClick={loadInitial}
+              className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              重试
+            </button>
+          </div>
         )}
       </div>
 
