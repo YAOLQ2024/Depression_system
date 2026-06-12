@@ -1,31 +1,29 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { APP_PATHS } from "../routes";
+import { getSessionPersistenceMode } from "../services/api/client";
 import type { EncounterSummary } from "../services/api/contracts";
 
 const STORAGE_PREFIX_CONSULTATION = "mcs_consultation_session:";
 const STORAGE_PREFIX_ASSESSMENT = "mcs_assessment_session:";
 
-function getStorage(): Storage {
+function getPrimaryStorage(): Storage {
   try {
-    const test = "__mcs_test__";
-    localStorage.setItem(test, "1");
-    localStorage.removeItem(test);
-    return localStorage;
+    return getSessionPersistenceMode() === "session" ? sessionStorage : localStorage;
   } catch {
     return sessionStorage;
   }
 }
 
-function getUserId(): string | null {
-  try {
-    const raw = localStorage.getItem("mcs_user") || sessionStorage.getItem("mcs_user");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed?.id || null;
-    }
-  } catch {}
-  return null;
+function clearPersistedSessionIds(userId: string) {
+  const consultationKey = `${STORAGE_PREFIX_CONSULTATION}${userId}`;
+  const assessmentKey = `${STORAGE_PREFIX_ASSESSMENT}${userId}`;
+  window.localStorage.removeItem(consultationKey);
+  window.localStorage.removeItem(assessmentKey);
+  window.sessionStorage.removeItem(consultationKey);
+  window.sessionStorage.removeItem(assessmentKey);
 }
 
 export type ResumeDialogState = {
@@ -35,57 +33,76 @@ export type ResumeDialogState = {
 
 export function useResumeEncounter() {
   const navigate = useNavigate();
+  const { state, actions } = useConsultationAppContext();
   const [dialog, setDialog] = useState<ResumeDialogState>({
     open: false,
     encounter: null,
   });
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const [isResuming, setIsResuming] = useState(false);
 
   const promptResume = useCallback((encounter: EncounterSummary) => {
+    setResumeError(null);
     setDialog({ open: true, encounter });
   }, []);
 
   const cancelResume = useCallback(() => {
+    if (isResuming) {
+      return;
+    }
+    setResumeError(null);
     setDialog({ open: false, encounter: null });
-  }, []);
+  }, [isResuming]);
 
-  const confirmResume = useCallback(() => {
+  const confirmResume = useCallback(async () => {
     const encounter = dialog.encounter;
-    if (!encounter) return;
-
-    const userId = getUserId();
-    if (!userId) {
-      setDialog({ open: false, encounter: null });
+    const userId = state.user?.id;
+    if (!encounter || !userId || isResuming) {
       return;
     }
 
-    const storage = getStorage();
+    setIsResuming(true);
+    setResumeError(null);
 
-    // Clear existing session IDs first to avoid stale state
-    storage.removeItem(`${STORAGE_PREFIX_CONSULTATION}${userId}`);
-    storage.removeItem(`${STORAGE_PREFIX_ASSESSMENT}${userId}`);
+    try {
+      clearPersistedSessionIds(userId);
 
-    // Then set the ones for this encounter
-    if (encounter.consultation_session_id) {
-      storage.setItem(
-        `${STORAGE_PREFIX_CONSULTATION}${userId}`,
-        encounter.consultation_session_id,
+      const storage = getPrimaryStorage();
+
+      if (encounter.consultation_session_id) {
+        storage.setItem(
+          `${STORAGE_PREFIX_CONSULTATION}${userId}`,
+          encounter.consultation_session_id,
+        );
+      }
+      if (encounter.assessment_session_id) {
+        storage.setItem(
+          `${STORAGE_PREFIX_ASSESSMENT}${userId}`,
+          encounter.assessment_session_id,
+        );
+      }
+
+      await actions.rehydrateFromStorage();
+
+      setDialog({ open: false, encounter: null });
+      navigate(
+        encounter.current_flow_type === "assessment" && encounter.assessment_session_id
+          ? APP_PATHS.assessment
+          : APP_PATHS.consultation,
       );
+    } catch (caught) {
+      setResumeError(caught instanceof Error ? caught.message : "恢复会话失败，请稍后重试。");
+    } finally {
+      setIsResuming(false);
     }
-    if (encounter.assessment_session_id) {
-      storage.setItem(
-        `${STORAGE_PREFIX_ASSESSMENT}${userId}`,
-        encounter.assessment_session_id,
-      );
-    }
+  }, [actions, dialog.encounter, isResuming, navigate, state.user?.id]);
 
-    setDialog({ open: false, encounter: null });
-
-    if (encounter.current_flow_type === "assessment" && encounter.assessment_session_id) {
-      navigate(APP_PATHS.assessment);
-    } else {
-      navigate(APP_PATHS.consultation);
-    }
-  }, [dialog.encounter, navigate]);
-
-  return { dialog, promptResume, cancelResume, confirmResume };
+  return {
+    dialog,
+    promptResume,
+    cancelResume,
+    confirmResume,
+    isResuming,
+    resumeError,
+  };
 }

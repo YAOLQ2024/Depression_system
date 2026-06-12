@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, select, text
 
 from app.database import get_db_session
 from app.models.consultation_session import ConsultationSession
@@ -17,6 +17,287 @@ class EncounterServiceError(Exception):
         self.status_code = status_code
         self.code = code
         super().__init__(message)
+
+
+def _safe_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _ensure_json_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _ensure_json_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _ensure_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _read_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _coalesce_text(*values: Any) -> str | None:
+    for value in values:
+        text = _read_text(value)
+        if text:
+            return text
+    return None
+
+
+def _load_latest_assessments_by_encounter(
+    db_session: Any,
+    encounter_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not encounter_ids:
+        return {}
+
+    rows = db_session.execute(
+        text(
+            """
+            select
+                id,
+                encounter_session_id,
+                status,
+                aggregate_payload,
+                scale_handoff_payload,
+                required_scales,
+                selected_scales,
+                created_at,
+                started_at,
+                completed_at
+            from assessment_sessions
+            where encounter_session_id in :encounter_ids
+            order by created_at desc, id desc
+            """
+        ).bindparams(bindparam("encounter_ids", expanding=True)),
+        {"encounter_ids": encounter_ids},
+    ).mappings().all()
+
+    assessment_map: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        encounter_id = str(row.get("encounter_session_id") or "").strip()
+        if encounter_id and encounter_id not in assessment_map:
+            assessment_map[encounter_id] = dict(row)
+    return assessment_map
+
+
+def _extract_assessment_summary(assessment_row: dict[str, Any] | None) -> dict[str, Any]:
+    if not assessment_row:
+        return {
+            "assessment_session_id": None,
+            "phq9_score": None,
+            "phq9_risk_level": None,
+            "overall_risk_level": None,
+        }
+
+    aggregate_payload = _ensure_json_dict(assessment_row.get("aggregate_payload"))
+    scale_result_map = _ensure_json_dict(aggregate_payload.get("scale_result_map"))
+    phq9_result = _ensure_json_dict(scale_result_map.get("phq9"))
+    risk_summary = _ensure_json_dict(aggregate_payload.get("risk_summary"))
+    return {
+        "assessment_session_id": assessment_row.get("id"),
+        "phq9_score": phq9_result.get("raw_score"),
+        "phq9_risk_level": phq9_result.get("interpretation_level"),
+        "overall_risk_level": risk_summary.get("risk_level"),
+    }
+
+
+def _load_latest_assessment_for_encounter(
+    db_session: Any,
+    encounter_id: str,
+) -> dict[str, Any] | None:
+    row = db_session.execute(
+        text(
+            """
+            select
+                id,
+                encounter_session_id,
+                status,
+                aggregate_payload,
+                scale_handoff_payload,
+                required_scales,
+                selected_scales,
+                source_consultation_flow_run_id,
+                multimodal_session_id,
+                created_at,
+                started_at,
+                completed_at
+            from assessment_sessions
+            where encounter_session_id = :encounter_id
+            order by created_at desc, id desc
+            limit 1
+            """
+        ),
+        {"encounter_id": encounter_id},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def _load_assessment_results(
+    db_session: Any,
+    assessment_session_id: str,
+) -> list[dict[str, Any]]:
+    rows = db_session.execute(
+        text(
+            """
+            select
+                scale_slug,
+                raw_score,
+                derived_score,
+                interpretation_level,
+                interpretation_label,
+                risk_flags,
+                completed_at,
+                created_at
+            from assessment_results
+            where session_id = :session_id
+            order by created_at asc, scale_slug asc
+            """
+        ),
+        {"session_id": assessment_session_id},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _build_consultation_payload(
+    consultation: ConsultationSession | None,
+) -> dict[str, Any] | None:
+    if consultation is None:
+        return None
+
+    slot_values = _ensure_json_dict(consultation.slot_values)
+    scale_handoff_payload = _ensure_json_dict(consultation.scale_handoff_payload)
+
+    return {
+        "id": consultation.id,
+        "status": consultation.status,
+        "chief_complaint_raw_text": consultation.chief_complaint_raw_text,
+        "chief_complaint_summary": consultation.chief_complaint_summary,
+        "assigned_doctor_persona": consultation.assigned_doctor_persona,
+        "slot_values": slot_values,
+        "chief_complaint_structured_result": _ensure_json_dict(
+            slot_values.get("chief_complaint_structured_result")
+        ),
+        "chief_complaint_stage_summary": _coalesce_text(
+            slot_values.get("chief_complaint_stage_summary"),
+            scale_handoff_payload.get("chief_complaint_stage_summary"),
+            consultation.chief_complaint_summary,
+        ),
+        "current_history_structured_result": _ensure_json_dict(
+            consultation.current_history_structured_result
+        ),
+        "symptom_screening_stage_summary": _coalesce_text(
+            slot_values.get("symptom_screening_stage_summary"),
+            scale_handoff_payload.get("symptom_screening_stage_summary"),
+        ),
+        "high_risk_screening_result": _ensure_json_dict(
+            consultation.high_risk_screening_result
+        ),
+        "high_risk_screening_stage_summary": _coalesce_text(
+            slot_values.get("high_risk_screening_stage_summary"),
+            scale_handoff_payload.get("high_risk_screening_stage_summary"),
+        ),
+        "digital_human_consultation_summary": _coalesce_text(
+            slot_values.get("digital_human_consultation_summary"),
+            scale_handoff_payload.get("digital_human_consultation_summary"),
+        ),
+        "scale_handoff_payload": scale_handoff_payload,
+        "required_scales": _ensure_string_list(
+            scale_handoff_payload.get("required_scales")
+        ),
+        "subtitle_history": _ensure_json_list(consultation.subtitle_history_payload),
+        "context_snapshot": _ensure_json_dict(consultation.context_snapshot),
+        "created_at": consultation.created_at.isoformat()
+        if consultation.created_at
+        else None,
+        "completed_at": consultation.completed_at.isoformat()
+        if consultation.completed_at
+        else None,
+        "started_at": consultation.started_at.isoformat()
+        if consultation.started_at
+        else None,
+    }
+
+
+def _build_assessment_payload(
+    assessment: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if assessment is None:
+        return None
+
+    aggregate_payload = _ensure_json_dict(assessment.get("aggregate_payload"))
+    scale_handoff_payload = _ensure_json_dict(
+        assessment.get("scale_handoff_payload")
+    )
+    if not scale_handoff_payload:
+        scale_handoff_payload = _ensure_json_dict(aggregate_payload.get("source_handoff"))
+
+    return {
+        "id": assessment.get("id"),
+        "status": assessment.get("status"),
+        "created_at": _isoformat(assessment.get("created_at")),
+        "completed_at": _isoformat(assessment.get("completed_at")),
+        "aggregate_payload": aggregate_payload,
+        "scale_handoff_payload": scale_handoff_payload,
+        "required_scales": _ensure_string_list(
+            assessment.get("required_scales") or scale_handoff_payload.get("required_scales")
+        ),
+        "selected_scales": _ensure_string_list(
+            assessment.get("selected_scales") or scale_handoff_payload.get("required_scales")
+        ),
+        "source_consultation_flow_run_id": assessment.get(
+            "source_consultation_flow_run_id"
+        ),
+        "multimodal_session_id": assessment.get("multimodal_session_id"),
+    }
+
+
+def _merge_assessment_result_payload(
+    assessment: dict[str, Any] | None,
+    result_row: dict[str, Any],
+) -> dict[str, Any]:
+    aggregate_payload = _ensure_json_dict((assessment or {}).get("aggregate_payload"))
+    scale_result_map = _ensure_json_dict(aggregate_payload.get("scale_result_map"))
+    scale_slug = str(result_row.get("scale_slug") or "").strip()
+    aggregate_result = _ensure_json_dict(scale_result_map.get(scale_slug))
+
+    return {
+        "scale_slug": scale_slug,
+        "raw_score": result_row.get("raw_score", aggregate_result.get("raw_score")),
+        "derived_score": result_row.get(
+            "derived_score", aggregate_result.get("derived_score")
+        ),
+        "normalized_score": aggregate_result.get("normalized_score"),
+        "interpretation_level": result_row.get(
+            "interpretation_level", aggregate_result.get("interpretation_level")
+        ),
+        "interpretation_label": result_row.get(
+            "interpretation_label", aggregate_result.get("interpretation_label")
+        ),
+        "score_details": _ensure_json_dict(aggregate_result.get("score_details")),
+        "risk_flags": _ensure_json_list(
+            result_row.get("risk_flags") or aggregate_result.get("risk_flags")
+        ),
+        "completed_at": _isoformat(
+            result_row.get("completed_at") or aggregate_result.get("completed_at")
+        ),
+    }
 
 
 def list_encounters(
@@ -69,16 +350,26 @@ def list_encounters(
                 ConsultationSession.encounter_session_id.in_(encounter_ids)
             )
         ).scalars().all()
+        assessments_by_encounter = _load_latest_assessments_by_encounter(
+            db_session, encounter_ids
+        )
 
         consultation_map: dict[str, ConsultationSession] = {}
         for c in consultations:
             eid = c.encounter_session_id
-            if eid and (eid not in consultation_map or (c.created_at or datetime.min.replace(tzinfo=timezone.utc)) > (consultation_map[eid].created_at or datetime.min.replace(tzinfo=timezone.utc))):
+            if eid and (
+                eid not in consultation_map
+                or _safe_datetime(c.created_at)
+                > _safe_datetime(consultation_map[eid].created_at)
+            ):
                 consultation_map[eid] = c
 
         result: list[dict[str, Any]] = []
         for encounter in encounters:
             consultation = consultation_map.get(encounter.id)
+            assessment_summary = _extract_assessment_summary(
+                assessments_by_encounter.get(encounter.id)
+            )
             result.append({
                 "id": encounter.id,
                 "status": encounter.status,
@@ -86,11 +377,11 @@ def list_encounters(
                 "created_at": encounter.created_at.isoformat() if encounter.created_at else None,
                 "completed_at": encounter.completed_at.isoformat() if encounter.completed_at else None,
                 "consultation_session_id": consultation.id if consultation else None,
-                "assessment_session_id": None,
+                "assessment_session_id": assessment_summary["assessment_session_id"],
                 "chief_complaint_summary": consultation.chief_complaint_summary if consultation else None,
-                "phq9_score": None,
-                "phq9_risk_level": None,
-                "overall_risk_level": None,
+                "phq9_score": assessment_summary["phq9_score"],
+                "phq9_risk_level": assessment_summary["phq9_risk_level"],
+                "overall_risk_level": assessment_summary["overall_risk_level"],
             })
 
         next_cursor = encounters[-1].id if has_more else None
@@ -133,55 +424,19 @@ def get_encounter_detail(
             .limit(1)
         ).scalar_one_or_none()
 
-        # 查询关联的 assessment（当前所有 service 共享同一个 PostgreSQL）
-        from app.models.assessment_session import AssessmentSession
-        from app.models.assessment_result import AssessmentResult
-
-        assessment = db_session.execute(
-            select(AssessmentSession)
-            .where(AssessmentSession.encounter_session_id == encounter_id)
-            .order_by(AssessmentSession.created_at.desc())
-            .limit(1)
-        ).scalar_one_or_none()
+        assessment = _load_latest_assessment_for_encounter(db_session, encounter_id)
 
         assessment_results: list[dict[str, Any]] = []
-        assessment_payload: dict[str, Any] | None = None
+        assessment_payload = _build_assessment_payload(assessment)
         if assessment is not None:
-            assessment_payload = {
-                "id": assessment.id,
-                "status": assessment.status,
-                "created_at": assessment.created_at.isoformat() if assessment.created_at else None,
-                "completed_at": assessment.completed_at.isoformat() if assessment.completed_at else None,
-                "aggregate_payload": assessment.aggregate_payload,
-            }
-            results = db_session.execute(
-                select(AssessmentResult)
-                .where(AssessmentResult.session_id == assessment.id)
-                .order_by(AssessmentResult.created_at.asc())
-            ).scalars().all()
-            for r in results:
-                assessment_results.append({
-                    "scale_slug": r.scale_slug,
-                    "raw_score": r.raw_score,
-                    "derived_score": r.derived_score,
-                    "interpretation_level": r.interpretation_level,
-                    "interpretation_label": r.interpretation_label,
-                    "risk_flags": r.risk_flags,
-                    "completed_at": r.completed_at.isoformat() if r.completed_at else None,
-                })
+            results = _load_assessment_results(db_session, str(assessment.get("id")))
+            for result_row in results:
+                assessment_results.append(
+                    _merge_assessment_result_payload(assessment, result_row)
+                )
 
         # 组装问诊摘要
-        consultation_payload: dict[str, Any] | None = None
-        if consultation is not None:
-            consultation_payload = {
-                "id": consultation.id,
-                "status": consultation.status,
-                "chief_complaint_summary": consultation.chief_complaint_summary,
-                "assigned_doctor_persona": consultation.assigned_doctor_persona,
-                "created_at": consultation.created_at.isoformat() if consultation.created_at else None,
-                "completed_at": consultation.completed_at.isoformat() if consultation.completed_at else None,
-                "started_at": consultation.started_at.isoformat() if consultation.started_at else None,
-            }
+        consultation_payload = _build_consultation_payload(consultation)
 
         # 组装时间线
         timeline: list[dict[str, Any]] = []
@@ -196,12 +451,12 @@ def get_encounter_detail(
             if consultation.completed_at:
                 timeline.append({"event": "consultation_completed", "at": _isoformat(consultation.completed_at)})
         if assessment:
-            if assessment.created_at:
-                timeline.append({"event": "assessment_created", "at": _isoformat(assessment.created_at)})
-            if assessment.started_at:
-                timeline.append({"event": "assessment_started", "at": _isoformat(assessment.started_at)})
-            if assessment.completed_at:
-                timeline.append({"event": "assessment_completed", "at": _isoformat(assessment.completed_at)})
+            if assessment.get("created_at"):
+                timeline.append({"event": "assessment_created", "at": _isoformat(assessment.get("created_at"))})
+            if assessment.get("started_at"):
+                timeline.append({"event": "assessment_started", "at": _isoformat(assessment.get("started_at"))})
+            if assessment.get("completed_at"):
+                timeline.append({"event": "assessment_completed", "at": _isoformat(assessment.get("completed_at"))})
         if encounter.completed_at:
             timeline.append({"event": "encounter_completed", "at": _isoformat(encounter.completed_at)})
 

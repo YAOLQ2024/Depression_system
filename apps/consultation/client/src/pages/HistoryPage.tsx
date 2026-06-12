@@ -9,7 +9,14 @@ import type { EncounterSummary } from "../services/api/contracts";
 export default function HistoryPage() {
   const navigate = useNavigate();
   const { state, loadInitial, loadMore } = useHistoryList();
-  const { dialog, promptResume, cancelResume, confirmResume } = useResumeEncounter();
+  const {
+    dialog,
+    promptResume,
+    cancelResume,
+    confirmResume,
+    isResuming,
+    resumeError,
+  } = useResumeEncounter();
 
   useEffect(() => {
     loadInitial();
@@ -105,18 +112,27 @@ export default function HistoryPage() {
             <p className="text-xs text-slate-500 mb-5">
               {dialog.encounter.chief_complaint_summary || "无主诉摘要"}
             </p>
+            {resumeError ? (
+              <p className="mb-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {resumeError}
+              </p>
+            ) : null}
             <div className="flex justify-end gap-3">
               <button
                 onClick={cancelResume}
+                disabled={isResuming}
                 className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
               >
                 取消
               </button>
               <button
-                onClick={confirmResume}
-                className="px-4 py-2 text-sm bg-indigo-500 hover:bg-indigo-400 text-white rounded-lg transition-colors"
+                onClick={() => {
+                  void confirmResume();
+                }}
+                disabled={isResuming}
+                className="px-4 py-2 text-sm bg-indigo-500 hover:bg-indigo-400 disabled:bg-slate-600 disabled:text-slate-300 text-white rounded-lg transition-colors"
               >
-                继续
+                {isResuming ? "继续中..." : "继续"}
               </button>
             </div>
           </div>
