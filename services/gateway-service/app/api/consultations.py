@@ -314,10 +314,18 @@ def list_encounters(
     authorization: str | None = Header(default=None),
 ):
     _, user = _require_current_user(mcs_session, authorization)
+    path = "/api/v1/encounters"
+    query_parts = []
+    if cursor:
+        query_parts.append(f"cursor={cursor}")
+    if limit and limit != 10:
+        query_parts.append(f"limit={limit}")
+    if query_parts:
+        path = f"{path}?{'&'.join(query_parts)}"
     upstream = forward_consultation_request(
         "GET",
-        "/api/v1/encounters",
-        params={"cursor": cursor, "limit": limit},
+        path,
+        None,
         acting_user_id=user["id"],
     )
     if upstream["status"] >= 400:
