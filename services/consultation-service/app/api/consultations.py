@@ -7,6 +7,7 @@ from app.schemas.consultations import (
     ConsultationTurnRequest,
     CreateConsultationSessionRequest,
 )
+from app.services.encounter_service import list_encounters, EncounterServiceError as EncounterError
 from app.services.consultation_engine import (
     ConsultationServiceError,
     complete_system_question_item,
@@ -217,3 +218,21 @@ async def post_consultation_visual_capture(
     except ConsultationServiceError as exc:
         raise _translate_error(exc) from exc
     return success_response(payload, message="consultation visual capture accepted")
+
+
+@router.get("/encounters")
+def get_encounters(
+    cursor: str | None = None,
+    limit: int = 10,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    if not x_mcs_user_id:
+        raise HTTPException(status_code=400, detail=error_response(message="missing user id", code="missing_user_id"))
+    try:
+        payload = list_encounters(x_mcs_user_id, cursor=cursor, limit=limit)
+        return success_response(payload)
+    except EncounterError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=error_response(message=exc.message, code=exc.code),
+        )
