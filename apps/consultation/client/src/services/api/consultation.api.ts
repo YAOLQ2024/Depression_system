@@ -9,6 +9,7 @@ import type {
   ConsultationVisualCaptureResponse,
   SubmitConsultationTurnPayload,
 } from "./contracts";
+import type { EncounterListResponse } from "./contracts";
 
 export async function createConsultationSession(payload: CreateConsultationSessionPayload = {}) {
   const data = await apiRequest<ConsultationResponse>("/consultations", {
@@ -101,4 +102,15 @@ export async function submitConsultationVisualCapture(sessionId: string, payload
     method: "POST",
     body: buildCaptureFormData(payload),
   });
+}
+
+export async function listEncounters(
+  cursor?: string | null,
+  limit: number = 10,
+): Promise<EncounterListResponse> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  params.set("limit", String(limit));
+  const qs = params.toString();
+  return apiRequest<EncounterListResponse>(`/encounters?${qs}`);
 }

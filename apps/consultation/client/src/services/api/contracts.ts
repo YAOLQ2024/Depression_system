@@ -207,3 +207,25 @@ export type SubmitAssessmentAnswerPayload = {
 };
 
 export type BootstrapResponse = BootstrapPayload;
+
+/** 单条就诊摘要（列表用） */
+export type EncounterSummary = {
+  id: string;
+  status: string;
+  current_flow_type: string;
+  created_at: string | null;
+  completed_at: string | null;
+  consultation_session_id: string | null;
+  assessment_session_id: string | null;
+  chief_complaint_summary: string | null;
+  phq9_score: number | null;
+  phq9_risk_level: string | null;
+  overall_risk_level: string | null;
+};
+
+/** 就诊列表 API 响应 */
+export type EncounterListResponse = {
+  encounters: EncounterSummary[];
+  next_cursor: string | null;
+  has_more: boolean;
+};

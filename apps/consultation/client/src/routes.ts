@@ -13,6 +13,7 @@ export const APP_PATHS = {
   interventionGame: "/intervention/game",
   interventionStory: "/intervention/story",
   seamlessVideoDemo: "/labs/seamless-video-player",
+  history: "/history",
 } as const;
 
 type ResolveAppPathArgs = {
