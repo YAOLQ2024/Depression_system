@@ -1,3 +1,6 @@
+import { useResultTheme, themeClasses } from "../theme-context";
+import { cn } from "../../../lib/utils";
+
 interface RingChartProps {
   score: number;
   maxScore?: number;
@@ -17,6 +20,9 @@ export function RingChart({
   color = "#3B82F6",
   valueLabel,
 }: RingChartProps) {
+  const theme = useResultTheme();
+  const t = themeClasses;
+
   const safeMaxScore = maxScore > 0 ? maxScore : 100;
   const clampedScore = Math.min(Math.max(score, 0), safeMaxScore);
   const radius = size / 2;
@@ -50,8 +56,8 @@ export function RingChart({
         />
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="mb-0.5 text-xs font-semibold tracking-[0.08em] text-sky-100/80">{label}</span>
-        <span className="text-3xl font-bold leading-none text-white">{valueLabel || clampedScore}</span>
+        <span className={cn("mb-0.5 text-xs font-semibold tracking-[0.08em]", t.scoreLabel[theme])}>{label}</span>
+        <span className={cn("text-3xl font-bold leading-none", t.value[theme])}>{valueLabel || clampedScore}</span>
       </div>
     </div>
   );
