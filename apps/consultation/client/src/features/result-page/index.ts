@@ -11,4 +11,5 @@ export * from "./components/SummaryDashboard";
 export * from "./components/TrendLineChart";
 export * from "./adapter";
 export * from "./presentation";
+export * from "./theme-context";
 export * from "./types";
