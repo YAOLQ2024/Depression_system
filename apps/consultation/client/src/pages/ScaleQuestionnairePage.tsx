@@ -1131,6 +1131,7 @@ export default function ScaleQuestionnairePage() {
                     ref={playerRef}
                     currentClip={currentClip}
                     preloadClip={preloadClip}
+                    transitionDurationMs={0}
                     className="h-full w-full"
                     layerClassName="flex items-end justify-center"
                     videoClassName="h-full w-auto max-w-full object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
