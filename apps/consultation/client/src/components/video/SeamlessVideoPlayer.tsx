@@ -529,8 +529,10 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       });
     });
 
-    const sharedLayerClassName =
-      "absolute inset-0 transition-opacity will-change-[opacity] motion-reduce:transition-none";
+    const sharedLayerClassName = cn(
+      "absolute inset-0 will-change-[opacity]",
+      transitionDurationMs > 0 ? "transition-opacity motion-reduce:transition-none" : "transition-none",
+    );
     const sharedVideoClassName = "h-full w-full object-contain [background:transparent]";
 
     return (
