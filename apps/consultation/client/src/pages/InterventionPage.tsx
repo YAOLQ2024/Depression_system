@@ -100,7 +100,7 @@ export default function InterventionPage() {
             src={INTERVENTION_ENTRY_VIDEO_URI}
             playsInline
             preload="auto"
-            className="h-[85%] max-w-none object-contain object-bottom drop-shadow-2xl"
+            className="h-[92%] md:h-[98%] max-w-none object-contain object-bottom scale-[1.08] md:scale-[1.15] drop-shadow-2xl"
           />
         </div>
 
