@@ -44,6 +44,10 @@ function asStringArray(value: unknown): string[] {
     .filter((item): item is string => Boolean(item));
 }
 
+function dedupeScaleSlugs(slugs: Array<string | null | undefined>) {
+  return slugs.filter((slug, index): slug is string => Boolean(slug) && slugs.indexOf(slug) === index);
+}
+
 const INSIGHT_LABEL_MAP: Record<string, string> = {
   // 症状相关
   symptom: "症状",
@@ -298,9 +302,9 @@ export function buildEncounterAssessmentSession(
     : asStringArray(scaleHandoffPayload.required_scales);
   const selectedScales = assessment.selected_scales?.length
     ? assessment.selected_scales
-    : requiredScales.length
-      ? requiredScales
-      : fallbackScaleSlugs;
+    : fallbackScaleSlugs.length
+      ? fallbackScaleSlugs
+      : requiredScales;
 
   return {
     session_id: assessment.id,
@@ -310,7 +314,7 @@ export function buildEncounterAssessmentSession(
     multimodal_session_id: assessment.multimodal_session_id || undefined,
     status: assessment.status,
     required_scales: requiredScales,
-    selected_scales: selectedScales,
+    selected_scales: dedupeScaleSlugs(selectedScales),
     current_item_index: 0,
     scale_handoff_payload: scaleHandoffPayload,
     aggregate_payload: aggregatePayload,
@@ -457,11 +461,17 @@ function buildConsultationTranscriptGroups(
 
 function buildAssessmentTranscriptGroups(
   scaleDetails: Record<string, AssessmentScaleDetail> | null | undefined,
+  orderedScaleSlugs?: string[] | null,
 ): TranscriptStageGroup[] {
   if (!scaleDetails) return [];
   const groups: TranscriptStageGroup[] = [];
+  const scaleOrder = orderedScaleSlugs?.length
+    ? dedupeScaleSlugs([...orderedScaleSlugs, ...Object.keys(scaleDetails)])
+    : Object.keys(scaleDetails);
 
-  for (const [slug, detail] of Object.entries(scaleDetails)) {
+  for (const slug of scaleOrder) {
+    const detail = scaleDetails[slug];
+    if (!detail) continue;
     if (!detail.items?.length) continue;
 
     const entries: TranscriptEntry[] = [];
@@ -496,10 +506,11 @@ function buildAssessmentTranscriptGroups(
 export function buildFullTranscriptGroups(
   consultationEntries: ConsultationSubtitleHistoryEntry[] | null | undefined,
   scaleDetails: Record<string, AssessmentScaleDetail> | null | undefined,
+  orderedScaleSlugs?: string[] | null,
 ): TranscriptStageGroup[] {
   return [
     ...buildConsultationTranscriptGroups(consultationEntries),
-    ...buildAssessmentTranscriptGroups(scaleDetails),
+    ...buildAssessmentTranscriptGroups(scaleDetails, orderedScaleSlugs),
   ];
 }
 

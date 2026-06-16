@@ -98,6 +98,7 @@ export default function ResultPage() {
   const canRenderResult = state.assessment?.status === "completed" && viewModel.hasAssessment;
   const isDrawerOpen = activeDrawer !== null;
   const selectedScaleId = activeDrawer?.kind === "scale" ? activeDrawer.scaleId : null;
+  const counselorPaneWidth = "clamp(360px, 25vw, 500px)";
   const selectedScaleDetail = useMemo(() => {
     if (!selectedScaleId) {
       return null;
@@ -201,14 +202,14 @@ export default function ResultPage() {
               <div
                 className="hidden shrink-0 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)] xl:block"
                 style={{
-                  width: isDrawerOpen ? 0 : 360,
+                  width: isDrawerOpen ? 0 : counselorPaneWidth,
                   opacity: isDrawerOpen ? 0 : 1,
                   marginRight: isDrawerOpen ? "-5px" : 0,
                   transform: isDrawerOpen ? "translateX(-32px)" : "translateX(0)",
                   pointerEvents: isDrawerOpen ? "none" : "auto",
                 }}
               >
-                <div className="h-full w-[360px]">
+                <div className="h-full w-full">
                   <DigitalCounselor className="px-0" />
                 </div>
               </div>
@@ -221,6 +222,8 @@ export default function ResultPage() {
                         modules={modules}
                         overallScore={viewModel.overallScore}
                         overallSeverity={viewModel.overallSeverity}
+                        overallRiskLevel={viewModel.overallRiskLevel}
+                        overallRiskReason={viewModel.overallRiskReason}
                         scales={viewModel.scales}
                         selectedScaleId={selectedScaleId}
                         onOpenScaleDetail={handleOpenScaleDetail}

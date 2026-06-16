@@ -263,9 +263,18 @@ export default function ScaleQuestionnairePage() {
   const videoCompletionScheduledClipKeyRef = useRef<string | null>(null);
   const completedVideoClipKeyRef = useRef<string | null>(null);
 
+  const orderedScaleSlugs = useMemo(() => {
+    if (assessment?.selected_scales?.length) {
+      return assessment.selected_scales;
+    }
+    if (assessment?.required_scales?.length) {
+      return assessment.required_scales;
+    }
+    return state.assessmentCatalog.map((item) => item.slug);
+  }, [assessment?.required_scales, assessment?.selected_scales, state.assessmentCatalog]);
   const previewStages = useMemo(
-    () => buildScaleAssessmentPreviewStages(state.assessmentCatalog),
-    [state.assessmentCatalog],
+    () => buildScaleAssessmentPreviewStages(state.assessmentCatalog, orderedScaleSlugs),
+    [orderedScaleSlugs, state.assessmentCatalog],
   );
   const scaleSteps = useMemo(() => previewStages.map((stage) => stage.stageLabel), [previewStages]);
 

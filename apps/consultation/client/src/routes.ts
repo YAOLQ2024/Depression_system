@@ -6,6 +6,7 @@ export const APP_PATHS = {
   home: "/home",
   preparation: "/preparation",
   consultation: "/consultation",
+  assessmentSelection: "/scale-selection",
   assessment: "/scale-questionnaire",
   result: "/result",
   intervention: "/intervention",
@@ -15,6 +16,7 @@ export const APP_PATHS = {
   seamlessVideoDemo: "/labs/seamless-video-player",
   history: "/history",
   historyDetail: "/history/:id",
+  historyScaleDetail: "/history/:id/scale/:scaleId",
 } as const;
 
 type ResolveAppPathArgs = {
@@ -36,6 +38,10 @@ export function resolveResumePath({ user, consultation, assessment }: ResolveApp
     return APP_PATHS.assessment;
   }
 
+  if (consultation?.status === "handoff_ready") {
+    return APP_PATHS.assessmentSelection;
+  }
+
   if (consultation) {
     return APP_PATHS.consultation;
   }
@@ -51,6 +57,10 @@ export function resolvePostLoginPath(user: UserRecord | null) {
   return user ? APP_PATHS.home : APP_PATHS.login;
 }
 
+export function buildHistoryScaleDetailPath(encounterId: string, scaleId: string) {
+  return `${APP_PATHS.history}/${encounterId}/scale/${scaleId}`;
+}
+
 export function resolveHomeEntryPath({ user, consultation, assessment }: ResolveAppPathArgs) {
   if (!user) {
     return APP_PATHS.login;
@@ -62,6 +72,10 @@ export function resolveHomeEntryPath({ user, consultation, assessment }: Resolve
 
   if (assessment) {
     return APP_PATHS.assessment;
+  }
+
+  if (consultation?.status === "handoff_ready") {
+    return APP_PATHS.assessmentSelection;
   }
 
   if (consultation) {
@@ -82,6 +96,10 @@ export function resolveHomeEntryLabel({ user, consultation, assessment }: Resolv
 
   if (assessment) {
     return "继续量表";
+  }
+
+  if (consultation?.status === "handoff_ready") {
+    return "进入量表评估";
   }
 
   if (consultation) {

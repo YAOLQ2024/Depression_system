@@ -37,20 +37,24 @@ def create_assessment_session(
     authorization: str | None = Header(default=None),
 ):
     _, user = _require_current_user(mcs_session, authorization)
+    upstream_payload = {
+        "user_id": user["id"],
+        "encounter_session_id": payload.encounter_session_id,
+        "source_consultation_flow_run_id": (
+            payload.source_consultation_flow_run_id
+        ),
+        "multimodal_session_id": payload.multimodal_session_id,
+        "scale_handoff_payload": payload.scale_handoff_payload,
+        "selected_scales": payload.selected_scales,
+        "capture_context": payload.capture_context,
+    }
+    if "required_scales" in payload.model_fields_set:
+        upstream_payload["required_scales"] = payload.required_scales
+
     upstream = forward_assessment_request(
         "POST",
         "/api/v1/assessment/sessions",
-        {
-            "user_id": user["id"],
-            "encounter_session_id": payload.encounter_session_id,
-            "source_consultation_flow_run_id": (
-                payload.source_consultation_flow_run_id
-            ),
-            "multimodal_session_id": payload.multimodal_session_id,
-            "scale_handoff_payload": payload.scale_handoff_payload,
-            "selected_scales": payload.selected_scales,
-            "capture_context": payload.capture_context,
-        },
+        upstream_payload,
         acting_user_id=user["id"],
     )
     if upstream["status"] >= 400:

@@ -83,6 +83,26 @@ function asStringArray(value: unknown): string[] {
     .filter((item): item is string => Boolean(item));
 }
 
+function normalizeRiskLevelLabel(value: unknown) {
+  const normalized = asString(value);
+  if (!normalized) {
+    return null;
+  }
+
+  switch (normalized.toLowerCase()) {
+    case "urgent":
+      return "紧急风险";
+    case "high":
+      return "高风险";
+    case "medium":
+      return "中风险";
+    case "low":
+      return "低风险";
+    default:
+      return normalized;
+  }
+}
+
 function formatDateTime(value?: string | null) {
   const normalized = asString(value);
   if (!normalized) {
@@ -118,15 +138,44 @@ function buildCatalogMap(catalog: AssessmentCatalogItem[]) {
   return new Map(catalog.map((item) => [item.slug, item] as const));
 }
 
-function getOrderedScaleSlugs(assessment: AssessmentSession | null, results: AssessmentResult[]) {
-  const preferred = assessment?.selected_scales?.length
-    ? assessment.selected_scales
-    : assessment?.required_scales?.length
-      ? assessment.required_scales
-      : [];
-  const merged = [...preferred, ...results.map((item) => item.scale_slug)];
+function dedupeScaleSlugs(slugs: Array<string | null | undefined>) {
+  return slugs.filter((slug, index): slug is string => Boolean(slug) && slugs.indexOf(slug) === index);
+}
 
-  return merged.filter((slug, index) => Boolean(slug) && merged.indexOf(slug) === index);
+function getFallbackScaleSlugs(
+  assessment: AssessmentSession | null,
+  consultation: ConsultationSession | null,
+) {
+  if (assessment?.required_scales?.length) {
+    return assessment.required_scales;
+  }
+
+  if (consultation?.required_scales?.length) {
+    return consultation.required_scales;
+  }
+
+  return asStringArray(asRecord(assessment?.scale_handoff_payload)?.required_scales);
+}
+
+function getOrderedScaleSlugs(
+  assessment: AssessmentSession | null,
+  consultation: ConsultationSession | null,
+  results: AssessmentResult[],
+) {
+  const resultSlugs = results.map((item) => item.scale_slug);
+
+  if (assessment?.selected_scales?.length) {
+    return dedupeScaleSlugs([...assessment.selected_scales, ...resultSlugs]);
+  }
+
+  if (resultSlugs.length) {
+    return dedupeScaleSlugs(resultSlugs);
+  }
+
+  const fallback = getFallbackScaleSlugs(assessment, consultation);
+  const merged = [...fallback, ...resultSlugs];
+
+  return dedupeScaleSlugs(merged);
 }
 
 function getFlattenedRiskFlags(assessment: AssessmentSession | null) {
@@ -156,6 +205,53 @@ function joinAdviceLines(items: string[]) {
 */
 function joinAdviceLines(items: string[]) {
   return items.length ? items.join("；") : null;
+}
+
+function buildOverallRiskReason(riskSummary: Record<string, unknown> | null) {
+  const riskExplanation = asRecord(riskSummary?.risk_explanation);
+  const triggerSummaries = asStringArray(riskExplanation?.trigger_summaries);
+  if (triggerSummaries.length) {
+    const visibleSummaries = triggerSummaries.slice(0, 2);
+    const suffix = triggerSummaries.length > visibleSummaries.length ? " 等信号" : "";
+    return `触发原因：${visibleSummaries.join("；")}${suffix}`;
+  }
+
+  const explanationSummary = asString(riskExplanation?.summary);
+  if (explanationSummary) {
+    return explanationSummary;
+  }
+
+  if (Boolean(riskSummary?.requires_human_review)) {
+    return "当前结果存在需要人工复核的安全风险信号，请结合高风险筛查与量表风险条目综合判断。";
+  }
+
+  return null;
+}
+
+function formatModuleScore(value: unknown) {
+  const score = asNumber(value);
+  if (score === null) {
+    return null;
+  }
+
+  return `${score.toFixed(2)}分`;
+}
+
+function getScoreBreakdown(assessment: AssessmentSession | null) {
+  const riskSummary = getAssessmentRiskSummary(assessment);
+  return asRecord(asRecord(riskSummary?.risk_explanation)?.score_breakdown);
+}
+
+function getAssessmentModuleValue(assessment: AssessmentSession | null) {
+  const scoreBreakdown = getScoreBreakdown(assessment);
+  const scaleScore = asRecord(scoreBreakdown?.scale_score);
+  return formatModuleScore(scaleScore?.value);
+}
+
+function getMultimodalModuleValue(assessment: AssessmentSession | null) {
+  const scoreBreakdown = getScoreBreakdown(assessment);
+  const multimodalScore = asRecord(scoreBreakdown?.multimodal_score);
+  return formatModuleScore(multimodalScore?.value);
 }
 
 function getAssessmentRiskSummary(assessment: AssessmentSession | null) {
@@ -582,13 +678,6 @@ function buildScaleDetail(
   };
 }
 
-function getPreferredConsultationSummarySource(
-  assessment: AssessmentSession | null,
-  consultation: ConsultationSession | null,
-) {
-  return asRecord(assessment?.scale_handoff_payload) || consultation;
-}
-
 function readConsultationSummaryField(
   source: Record<string, unknown> | ConsultationSession | null,
   key: SummarySourceKey | "digital_human_consultation_summary",
@@ -602,6 +691,33 @@ function readConsultationSummaryField(
   }
 
   return null;
+}
+
+function hasConsultationSummaryContent(
+  source: Record<string, unknown> | ConsultationSession | null,
+) {
+  if (!source) {
+    return false;
+  }
+
+  if (readConsultationSummaryField(source, "digital_human_consultation_summary")) {
+    return true;
+  }
+
+  return CONSULTATION_SUMMARY_SECTION_DEFINITIONS.some((definition) =>
+    Boolean(readConsultationSummaryField(source, definition.sourceKey)),
+  );
+}
+
+function getPreferredConsultationSummarySource(
+  assessment: AssessmentSession | null,
+  consultation: ConsultationSession | null,
+) {
+  const handoffSource = asRecord(assessment?.scale_handoff_payload);
+  if (hasConsultationSummaryContent(handoffSource)) {
+    return handoffSource;
+  }
+  return consultation;
 }
 
 function buildConsultationSummary(
@@ -639,15 +755,8 @@ function buildConsultationSummary(
     return null;
   }
 
-  const handoffRequiredScales = asStringArray(asRecord(assessment?.scale_handoff_payload)?.required_scales);
-  const requiredScales = handoffRequiredScales.length
-    ? handoffRequiredScales
-    : assessment?.required_scales?.length
-      ? assessment.required_scales
-      : consultation?.required_scales?.length
-        ? consultation.required_scales
-        : [];
-  const requiredScaleLabels = requiredScales.map((slug) => {
+  const linkedScales = getOrderedScaleSlugs(assessment, consultation, assessment?.results || []);
+  const linkedScaleLabels = linkedScales.map((slug) => {
     const meta = catalogMap.get(slug);
     return meta?.short_name || meta?.code || slug;
   });
@@ -660,8 +769,8 @@ function buildConsultationSummary(
       : "咨询会话摘要已生成，可查看阶段性总结。",
     overallSummary: overallSummary || "咨询会话摘要待补充。",
     sections,
-    requiredScales: requiredScales.length ? requiredScales : [],
-    requiredScaleLabels,
+    linkedScales,
+    linkedScaleLabels,
   };
 }
 
@@ -760,6 +869,8 @@ function buildModules({
   scaleCount,
   flattenedRiskFlags,
   riskSummary,
+  assessmentModuleValue,
+  multimodalModuleValue,
 }: {
   assessment: AssessmentSession | null;
   consultation: ConsultationSession | null;
@@ -767,6 +878,8 @@ function buildModules({
   scaleCount: number;
   flattenedRiskFlags: Array<Record<string, unknown>>;
   riskSummary: Record<string, unknown> | null;
+  assessmentModuleValue?: string | null;
+  multimodalModuleValue?: string | null;
 }): ResultModuleCard[] {
   return [
     {
@@ -779,12 +892,14 @@ function buildModules({
     {
       id: "assessment-session",
       name: "量表会话",
+      value: assessmentModuleValue,
       description: buildAssessmentModuleDescription(scaleCount, flattenedRiskFlags, riskSummary),
       tone: "indigo",
     },
     {
       id: "multimodal-session",
       name: "多模态会话",
+      value: multimodalModuleValue,
       description: buildMultimodalModuleDescription(assessment, consultation, riskSummary),
       tone: "emerald",
     },
@@ -799,17 +914,22 @@ export function buildResultPageViewModel({
 }: ResultPageAdapterInput): ResultPageViewModel {
   const catalogMap = buildCatalogMap(assessmentCatalog);
   const results = assessment?.results || [];
-  const scaleSlugs = getOrderedScaleSlugs(assessment, results);
+  const scaleSlugs = getOrderedScaleSlugs(assessment, consultation, results);
   const resultMap = new Map(results.map((result) => [result.scale_slug, result] as const));
   const flattenedRiskFlags = getFlattenedRiskFlags(assessment);
   const riskSummary = getAssessmentRiskSummary(assessment);
   const riskFrontDisplay = asRecord(riskSummary?.front_display);
+  const assessmentModuleValue = getAssessmentModuleValue(assessment);
+  const multimodalModuleValue = getMultimodalModuleValue(assessment);
   const overallScore = asNumber(riskSummary?.depression_score);
   const overallSeverity =
-    asString(riskSummary?.risk_level_label) ||
-    asString(riskFrontDisplay?.risk_level_label) ||
     asString(riskSummary?.depression_severity_label) ||
     asString(riskSummary?.depression_severity);
+  const overallRiskLevel =
+    asString(riskSummary?.risk_level_label) ||
+    asString(riskFrontDisplay?.risk_level_label) ||
+    normalizeRiskLevelLabel(riskSummary?.risk_level);
+  const overallRiskReason = buildOverallRiskReason(riskSummary);
   const clinicalAdvice = joinAdviceLines(asStringArray(riskSummary?.referral_recommendations));
   const lifestyleAdvice = joinAdviceLines(asStringArray(riskSummary?.lifestyle_suggestions));
   const consultationSummary = buildConsultationSummary(assessment, consultation, catalogMap);
@@ -847,6 +967,9 @@ export function buildResultPageViewModel({
     ...{
       overallSeverity: overallSeverity || "待接入",
       overallSeverityPending: !riskSummary,
+      overallRiskLevel: overallRiskLevel || "待接入",
+      overallRiskLevelPending: !riskSummary,
+      overallRiskReason,
     },
     modules: buildModules({
       assessment,
@@ -855,6 +978,8 @@ export function buildResultPageViewModel({
       scaleCount: scales.filter((item) => typeof item.score === "number").length,
       flattenedRiskFlags,
       riskSummary,
+      assessmentModuleValue,
+      multimodalModuleValue,
     }),
     scales,
     scaleDetails,

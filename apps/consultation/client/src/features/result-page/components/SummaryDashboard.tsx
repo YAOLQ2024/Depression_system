@@ -16,6 +16,8 @@ interface SummaryDashboardProps {
   overallScore?: number | null;
   overallScoreLabel?: string;
   overallSeverity?: string | null;
+  overallRiskLevel?: string | null;
+  overallRiskReason?: string | null;
   scales: ResultScaleBrief[];
   selectedScaleId: string | null;
   onOpenScaleDetail: (id: string) => void;
@@ -37,6 +39,8 @@ function DashboardInner({
   overallScore,
   overallScoreLabel,
   overallSeverity,
+  overallRiskLevel,
+  overallRiskReason,
   scales,
   selectedScaleId,
   onOpenScaleDetail,
@@ -68,9 +72,16 @@ function DashboardInner({
                       {module.name}
                     </div>
                     {module.value !== undefined && module.value !== null ? (
-                      <div className={cn("truncate font-bold leading-none", t.value[theme], compact ? "text-2xl" : "text-3xl")}>
-                        {module.value}
-                      </div>
+                      <>
+                        <div className={cn("truncate font-bold leading-none", t.value[theme], compact ? "text-2xl" : "text-3xl")}>
+                          {module.value}
+                        </div>
+                        {module.description ? (
+                          <div className={cn("mt-2", t.muted[theme], compact ? "line-clamp-3 text-xs leading-5" : "text-sm leading-relaxed")}>
+                            {module.description}
+                          </div>
+                        ) : null}
+                      </>
                     ) : (
                       <div className={cn(t.muted[theme], compact ? "line-clamp-4 text-xs leading-5" : "text-sm leading-relaxed")}>
                         {module.description || "内容待接入"}
@@ -92,8 +103,9 @@ function DashboardInner({
         })}
       </div>
 
-      <GlassCard className="flex flex-col items-center gap-4 p-4 md:flex-row">
-        <div className="flex flex-1 justify-center">
+      <GlassCard className="p-4">
+        <div className="grid gap-4 md:grid-cols-[minmax(220px,0.95fr)_1px_minmax(0,0.85fr)_1px_minmax(0,0.85fr)] md:items-center">
+          <div className="flex justify-center">
           <RingChart
             score={overallScore ?? 0}
             label={overallScoreLabel}
@@ -101,11 +113,33 @@ function DashboardInner({
             strokeWidth={14}
             valueLabel={overallScore === null ? "--" : undefined}
           />
-        </div>
-        <div className={cn("mx-2 hidden h-24 w-px md:block", theme === "dark" ? "bg-gradient-to-b from-transparent via-white/15 to-transparent" : "bg-gradient-to-b from-transparent via-slate-200 to-transparent")} />
-        <div className="flex flex-[1.5] flex-col items-center text-center md:items-start md:text-left">
-          <div className={cn("mb-4 text-sm font-semibold tracking-[0.06em]", t.subtitle[theme])}>风险等级</div>
-          <SeverityBadge level={overallSeverity || "待接入"} className="px-6 py-3 text-2xl font-semibold tracking-wide" />
+          </div>
+          <div className={cn("hidden h-24 w-px md:block", theme === "dark" ? "bg-gradient-to-b from-transparent via-white/15 to-transparent" : "bg-gradient-to-b from-transparent via-slate-200 to-transparent")} />
+          <div className="flex flex-col items-center text-center md:items-start md:text-left">
+            <div className={cn("mb-4 text-sm font-semibold tracking-[0.06em]", t.subtitle[theme])}>疾病严重程度</div>
+            <SeverityBadge
+              level={overallSeverity || "待接入"}
+              className="px-5 py-3 text-xl font-semibold tracking-wide md:text-2xl"
+            />
+          </div>
+          <div className={cn("hidden h-24 w-px md:block", theme === "dark" ? "bg-gradient-to-b from-transparent via-white/15 to-transparent" : "bg-gradient-to-b from-transparent via-slate-200 to-transparent")} />
+          <div className="flex flex-col items-center text-center md:items-start md:text-left">
+            <div className={cn("mb-4 text-sm font-semibold tracking-[0.06em]", t.subtitle[theme])}>风险等级</div>
+            <SeverityBadge
+              level={overallRiskLevel || "待接入"}
+              className="px-5 py-3 text-xl font-semibold tracking-wide md:text-2xl"
+            />
+            {overallRiskReason ? (
+              <p
+                className={cn(
+                  "mt-3 max-w-[24rem] text-xs leading-6 md:text-sm",
+                  t.body[theme],
+                )}
+              >
+                {overallRiskReason}
+              </p>
+            ) : null}
+          </div>
         </div>
       </GlassCard>
 
