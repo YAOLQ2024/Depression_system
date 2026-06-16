@@ -9,14 +9,13 @@ import {
   Loader2,
   MessageSquareText,
 } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { EncounterTimeline } from "../components/EncounterTimeline";
 import { Header } from "../components/Header";
 import {
   buildResultPageViewModel,
   ConsultationSummaryDrawer,
-  DetailDrawer,
   SummaryDashboard,
 } from "../features/result-page";
 import {
@@ -31,12 +30,13 @@ import { useHistoryDetail } from "../hooks/useHistoryDetail";
 import { cn } from "../lib/utils";
 import { getAssessmentScaleDetail } from "../services/api/assessment.api";
 import { downloadEncounterPdf } from "../services/api/consultation.api";
+import { buildHistoryScaleDetailPath } from "../routes";
 import type { AssessmentScaleDetail } from "../types";
 
 const STATUS_LABELS: Record<string, string> = { draft: "草稿", in_progress: "进行中", paused: "已暂停", completed: "已完成" };
 const FLOW_LABELS: Record<string, string> = { consultation: "问诊阶段", assessment: "量表评估阶段" };
 
-type ActiveDrawerState = { kind: "scale"; scaleId: string } | { kind: "consultation" } | null;
+type ActiveDrawerState = { kind: "consultation" } | null;
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -114,6 +114,7 @@ function BackgroundDecor() {
 
 export default function HistoryDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { state: appState } = useConsultationAppContext();
   const { state, reload } = useHistoryDetail(id);
 
@@ -121,7 +122,6 @@ export default function HistoryDetailPage() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawerState>(null);
   const [assessmentScaleDetails, setAssessmentScaleDetails] = useState<Record<string, AssessmentScaleDetail>>({});
-  const [scaleDetailLoadErrors, setScaleDetailLoadErrors] = useState<Record<string, string>>({});
 
   const encounter = state.encounter;
   const consultationSession = useMemo(() => buildEncounterConsultationSession(encounter), [encounter]);
@@ -136,20 +136,17 @@ export default function HistoryDetailPage() {
 
   useEffect(() => {
     const sessionId = assessmentSession?.session_id || null;
-    if (!sessionId || !completedScaleIds.length) { setAssessmentScaleDetails({}); setScaleDetailLoadErrors({}); return; }
+    if (!sessionId || !completedScaleIds.length) { setAssessmentScaleDetails({}); return; }
     let cancelled = false;
     void (async () => {
       const settled = await Promise.allSettled(completedScaleIds.map(async (slug) => ({ scaleSlug: slug, detail: await getAssessmentScaleDetail(sessionId, slug) })));
       if (cancelled) return;
       const nextD: Record<string, AssessmentScaleDetail> = {};
-      const nextE: Record<string, string> = {};
       settled.forEach((r, i) => {
         const slug = completedScaleIds[i];
         if (r.status === "fulfilled") { nextD[slug] = r.value.detail; return; }
-        nextE[slug] = r.reason instanceof Error ? r.reason.message : "详细作答加载失败，请稍后重试。";
       });
       setAssessmentScaleDetails(nextD);
-      setScaleDetailLoadErrors(nextE);
     })();
     return () => { cancelled = true; };
   }, [assessmentSession?.session_id, completedScaleIds]);
@@ -158,15 +155,6 @@ export default function HistoryDetailPage() {
     () => buildResultPageViewModel({ assessment: assessmentSession, assessmentCatalog: appState.assessmentCatalog, assessmentScaleDetails, consultation: consultationSession }),
     [appState.assessmentCatalog, assessmentScaleDetails, assessmentSession, consultationSession],
   );
-
-  const selectedScaleId = activeDrawer?.kind === "scale" ? activeDrawer.scaleId : null;
-  const selectedScaleDetail = useMemo(() => {
-    if (!selectedScaleId) return null;
-    const detail = viewModel.scaleDetails[selectedScaleId] || null;
-    if (!detail) return null;
-    const err = scaleDetailLoadErrors[selectedScaleId];
-    return err ? { ...detail, itemResultsReady: false, itemResultsNotice: err } : detail;
-  }, [scaleDetailLoadErrors, selectedScaleId, viewModel.scaleDetails]);
 
   const modules = useMemo(
     () => viewModel.modules.map((m) =>
@@ -179,14 +167,22 @@ export default function HistoryDetailPage() {
 
   const symptomInsights = useMemo(() => buildHistoryInsightItems(consultationSession?.current_history_structured_result), [consultationSession]);
   const highRiskInsights = useMemo(() => buildHistoryInsightItems(consultationSession?.high_risk_screening_result), [consultationSession]);
-  const transcriptGroups = useMemo(() => buildFullTranscriptGroups(consultationSession?.subtitle_history, assessmentScaleDetails), [consultationSession, assessmentScaleDetails]);
+  const transcriptGroups = useMemo(
+    () =>
+      buildFullTranscriptGroups(
+        consultationSession?.subtitle_history,
+        assessmentScaleDetails,
+        assessmentSession?.selected_scales,
+      ),
+    [assessmentScaleDetails, assessmentSession?.selected_scales, consultationSession],
+  );
 
   const summaryMessage =
     asString(riskFrontDisplay?.message) || consultationSession?.digital_human_consultation_summary ||
     consultationSession?.chief_complaint_stage_summary || encounter?.consultation?.chief_complaint_summary ||
     "本次历史记录已汇总，可查看问诊摘要、量表结果与时间线。";
   const riskLevelLabel = asString(riskSummary?.risk_level_label) || asString(riskFrontDisplay?.risk_level_label) || encounter?.assessment_results[0]?.interpretation_label || null;
-  const requiredScaleLabels = viewModel.consultationSummary?.requiredScaleLabels || [];
+  const linkedScaleLabels = viewModel.consultationSummary?.linkedScaleLabels || [];
 
   const handleDownloadPdf = async () => {
     if (!id) return;
@@ -195,6 +191,23 @@ export default function HistoryDetailPage() {
     catch (err: any) { setDownloadError(err?.message || "下载失败"); }
     finally { setDownloading(false); }
   };
+
+  useEffect(() => {
+    if (!activeDrawer) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [activeDrawer]);
 
   const isCompleted = encounter?.status === "completed";
 
@@ -235,7 +248,7 @@ export default function HistoryDetailPage() {
                           {FLOW_LABELS[encounter.current_flow_type] || encounter.current_flow_type}
                         </span>
                         {riskLevelLabel && <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1", riskBadgeClasses(riskLevelLabel))}>{riskLevelLabel}</span>}
-                        {requiredScaleLabels.map((label) => <span key={label} className="rounded-full bg-violet-50/80 px-2.5 py-0.5 text-[11px] font-medium text-violet-500 ring-1 ring-violet-100">{label}</span>)}
+                        {linkedScaleLabels.map((label) => <span key={label} className="rounded-full bg-violet-50/80 px-2.5 py-0.5 text-[11px] font-medium text-violet-500 ring-1 ring-violet-100">{label}</span>)}
                       </div>
                       {/* 摘要 */}
                       <p className="text-sm leading-relaxed text-slate-600 line-clamp-2">{summaryMessage}</p>
@@ -266,9 +279,16 @@ export default function HistoryDetailPage() {
                       modules={modules}
                       overallScore={viewModel.overallScore}
                       overallSeverity={viewModel.overallSeverity}
+                      overallRiskLevel={viewModel.overallRiskLevel}
+                      overallRiskReason={viewModel.overallRiskReason}
                       scales={viewModel.scales}
-                      selectedScaleId={selectedScaleId}
-                      onOpenScaleDetail={(scaleId) => setActiveDrawer({ kind: "scale", scaleId })}
+                      selectedScaleId={null}
+                      onOpenScaleDetail={(scaleId) => {
+                        if (!id) {
+                          return;
+                        }
+                        navigate(buildHistoryScaleDetailPath(id, scaleId));
+                      }}
                       clinicalAdvice={viewModel.clinicalAdvice}
                       lifestyleAdvice={viewModel.lifestyleAdvice}
                       theme="light"
@@ -436,13 +456,9 @@ export default function HistoryDetailPage() {
 
       {activeDrawer && (
         <div className="fixed inset-0 z-50">
-          <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} type="button" aria-label="关闭详情抽屉遮罩" onClick={() => setActiveDrawer(null)} className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />
+          <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} type="button" aria-label="关闭详情抽屉遮罩" onClick={() => setActiveDrawer(null)} className="absolute inset-0 bg-slate-900/12 backdrop-blur-[6px]" />
           <motion.div initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", damping: 28, stiffness: 300 }} className="absolute inset-4 mx-auto h-[calc(100vh-2rem)] max-w-6xl md:inset-8 md:h-[calc(100vh-4rem)]">
-            {activeDrawer.kind === "consultation" ? (
-              <ConsultationSummaryDrawer open summary={viewModel.consultationSummary} onClose={() => setActiveDrawer(null)} />
-            ) : (
-              <DetailDrawer open detail={selectedScaleDetail} onClose={() => setActiveDrawer(null)} />
-            )}
+            <ConsultationSummaryDrawer open summary={viewModel.consultationSummary} onClose={() => setActiveDrawer(null)} theme="light" />
           </motion.div>
         </div>
       )}

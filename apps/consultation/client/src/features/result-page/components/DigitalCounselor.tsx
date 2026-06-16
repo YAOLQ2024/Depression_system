@@ -16,7 +16,7 @@ export function DigitalCounselor({
       <img
         src={imageSrc}
         alt={title}
-        className="relative z-10 block h-auto max-h-[calc(100vh-190px)] w-full max-w-[312px] origin-bottom scale-[1.15] translate-y-[10px] select-none object-contain object-bottom drop-shadow-[0_24px_48px_rgba(15,23,42,0.28)] xl:max-w-[328px] xl:max-h-[calc(100vh-180px)]"
+        className="relative z-10 block h-auto max-h-[calc(100vh-190px)] w-full max-w-[clamp(320px,24vw,460px)] origin-bottom scale-[1.08] translate-y-[10px] select-none object-contain object-bottom drop-shadow-[0_24px_48px_rgba(15,23,42,0.28)] xl:max-h-[calc(100vh-180px)]"
         draggable={false}
       />
     </div>

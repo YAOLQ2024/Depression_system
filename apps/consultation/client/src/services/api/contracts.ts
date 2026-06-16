@@ -181,6 +181,8 @@ export type CreateAssessmentSessionPayload = {
   source_consultation_flow_run_id?: string | null;
   multimodal_session_id?: string | null;
   scale_handoff_payload?: Record<string, unknown>;
+  selected_scales?: string[];
+  required_scales?: string[];
 };
 
 export type SubmitAssessmentAnswerPayload = {

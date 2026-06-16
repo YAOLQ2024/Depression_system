@@ -32,8 +32,22 @@ function buildQuestionKey(slug: string, order: number) {
   return `${slug}-${padQuestionNumber(order)}`;
 }
 
-export function buildScaleAssessmentPreviewStages(catalog: AssessmentCatalogItem[]) {
-  return catalog.map((item, index) => ({
+export function buildScaleAssessmentPreviewStages(
+  catalog: AssessmentCatalogItem[],
+  orderedSlugs?: string[] | null,
+) {
+  const normalizedOrderedSlugs = (orderedSlugs || [])
+    .map((slug) => String(slug || "").trim())
+    .filter(Boolean);
+
+  const orderedCatalog =
+    normalizedOrderedSlugs.length > 0
+      ? normalizedOrderedSlugs
+          .map((slug) => catalog.find((item) => String(item.slug || "").trim() === slug) || null)
+          .filter((item): item is AssessmentCatalogItem => Boolean(item))
+      : catalog;
+
+  return orderedCatalog.map((item, index) => ({
     slug: item.slug,
     code: item.code,
     stageLabel: item.short_name || item.code,

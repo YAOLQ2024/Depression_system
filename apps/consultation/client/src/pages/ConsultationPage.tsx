@@ -686,12 +686,7 @@ export default function ConsultationPage() {
       return;
     }
 
-    const createdAssessment = await actions.handleStartAssessment();
-    if (!createdAssessment) {
-      pushToast("量表会话创建失败，请稍后重试。", "warning");
-      return;
-    }
-    navigate(APP_PATHS.assessment, { state: { sessionId: createdAssessment.session_id } });
+    navigate(APP_PATHS.assessmentSelection);
   }
 
   function handleVideoTimeUpdate(event: SeamlessVideoTimeUpdateEvent) {
