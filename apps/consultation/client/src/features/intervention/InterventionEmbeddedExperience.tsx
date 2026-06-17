@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+import type { RecordInterventionEventPayload } from "../../services/api/contracts";
+import { useInterventionExecution } from "./useInterventionExecution";
 import { ConsultationLayout } from "../../layouts";
 import { APP_PATHS } from "../../routes";
 
@@ -9,6 +11,7 @@ type InterventionEmbeddedExperienceProps = {
   title: string;
   subtitle: string;
   iframeSrc: string;
+  openEvent: RecordInterventionEventPayload;
 };
 
 export function InterventionEmbeddedExperience({
@@ -16,8 +19,13 @@ export function InterventionEmbeddedExperience({
   title,
   subtitle,
   iframeSrc,
+  openEvent,
 }: InterventionEmbeddedExperienceProps) {
   const navigate = useNavigate();
+  const { buildRouteState, sessionError } = useInterventionExecution({
+    pageTag: iframeSrc,
+    openEvent,
+  });
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -26,13 +34,15 @@ export function InterventionEmbeddedExperience({
       }
 
       if (event.data?.type === "intervention-exit") {
-        navigate(APP_PATHS.intervention);
+        navigate(APP_PATHS.intervention, {
+          state: buildRouteState(),
+        });
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [navigate]);
+  }, [buildRouteState, navigate]);
 
   return (
     <ConsultationLayout backgroundImage="/bg.webp" title={title}>
@@ -47,12 +57,17 @@ export function InterventionEmbeddedExperience({
 
             <button
               type="button"
-              onClick={() => navigate(APP_PATHS.intervention)}
+              onClick={() =>
+                navigate(APP_PATHS.intervention, {
+                  state: buildRouteState(),
+                })
+              }
               className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm text-white/88 transition hover:bg-white/14"
             >
               返回干预首页
             </button>
           </div>
+          {sessionError ? <p className="text-sm text-amber-200/90">{sessionError}</p> : null}
 
           <div className="min-h-0 flex-1 overflow-hidden rounded-[32px] border border-white/14 bg-slate-950/38 shadow-[0_24px_60px_rgba(2,6,23,0.45)] backdrop-blur-xl">
             <iframe

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, type Variants } from "motion/react";
 
+import { useInterventionExecution } from "../features/intervention/useInterventionExecution";
 import { ConsultationLayout } from "../layouts";
 import { APP_PATHS } from "../routes";
 
@@ -79,6 +80,15 @@ function ActionButton({ text, delay, onClick, disabled = false }: ActionButtonPr
 export default function InterventionPage() {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const { buildRouteState, ensureSession, sessionError, trackEvent } = useInterventionExecution({
+    pageTag: "intervention-landing",
+    openEvent: {
+      event_type: "module_opened",
+      payload: {
+        page: "intervention-landing",
+      },
+    },
+  });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -107,12 +117,73 @@ export default function InterventionPage() {
         <div className="relative z-10 mb-5 w-full max-w-3xl px-6 text-center text-white">
           <p className="text-xs uppercase tracking-[0.45em] text-white/65">Intervention</p>
           <h1 className="mt-4 text-3xl font-semibold tracking-[0.12em] md:text-4xl">选择一种调节方式</h1>
+          {sessionError ? <p className="mt-3 text-sm text-amber-200/90">{sessionError}</p> : null}
         </div>
 
         <div className="perspective-[1000px] relative z-10 flex w-full max-w-5xl flex-col items-center justify-center gap-6 px-6 md:flex-row md:gap-10">
-          <ActionButton text="看一段视频" delay={0} onClick={() => navigate(APP_PATHS.interventionVideo)} />
-          <ActionButton text="玩一个小游戏" delay={0.2} onClick={() => navigate(APP_PATHS.interventionGame)} />
-          <ActionButton text="听一段故事" delay={0.4} onClick={() => navigate(APP_PATHS.interventionStory)} />
+          <ActionButton
+            text="看一段视频"
+            delay={0}
+            onClick={() => {
+              void (async () => {
+                const sessionId = await ensureSession();
+                void trackEvent({
+                  event_type: "experience_selected",
+                  program_id: "guided-video",
+                  program_title: "视频调节",
+                  delivery_mode: "video",
+                  payload: { destination: "video" },
+                });
+                navigate(APP_PATHS.interventionVideo, {
+                  state: buildRouteState({
+                    interventionSessionId: sessionId,
+                  }),
+                });
+              })();
+            }}
+          />
+          <ActionButton
+            text="玩一个小游戏"
+            delay={0.2}
+            onClick={() => {
+              void (async () => {
+                const sessionId = await ensureSession();
+                void trackEvent({
+                  event_type: "experience_selected",
+                  program_id: "breathing-rhythm-game",
+                  program_title: "呼吸节奏小游戏",
+                  delivery_mode: "game",
+                  payload: { destination: "game" },
+                });
+                navigate(APP_PATHS.interventionGame, {
+                  state: buildRouteState({
+                    interventionSessionId: sessionId,
+                  }),
+                });
+              })();
+            }}
+          />
+          <ActionButton
+            text="听一段故事"
+            delay={0.4}
+            onClick={() => {
+              void (async () => {
+                const sessionId = await ensureSession();
+                void trackEvent({
+                  event_type: "experience_selected",
+                  program_id: "deer-forest-story",
+                  program_title: "小鹿和森林故事",
+                  delivery_mode: "story",
+                  payload: { destination: "story" },
+                });
+                navigate(APP_PATHS.interventionStory, {
+                  state: buildRouteState({
+                    interventionSessionId: sessionId,
+                  }),
+                });
+              })();
+            }}
+          />
         </div>
       </div>
     </ConsultationLayout>
