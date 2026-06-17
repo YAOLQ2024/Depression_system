@@ -1,10 +1,10 @@
 workflow_id: consultation-v1
 manifest_contract: digital-human-playlist/v1
-playlist_version: v2-10-questions-plus-system-prompts
+playlist_version: v2-chief-complaint-branch-and-risk-routing
 manifest_status: draft
 delivery_mode: fixed-video-playlist
 notes:
-  - "10 response videos plus greeting, high-risk alert, and handoff videos for consultation-v1"
+  - "11 response videos plus greeting, high-risk alert, and handoff videos for consultation-v1"
   - "Each question item maps to one fixed video file."
   - "question_text is the authoritative text stored with each consultation turn."
   - "subtitle_text is an optional UI/display override; if omitted, UI can fall back to question_text."
@@ -36,8 +36,16 @@ stages:
         question_text: 您今天主要是因为什么问题来就诊？
         subtitle_text: null
         response_required: true
-      - question_key: chief-complaint-002
+      - question_key: chief-complaint-001-else
         order: 2
+        node_id: ask-chief-complaint-no-clear-problem
+        video_asset_id: chief-complaint-001-else
+        video_uri: /digital-human/consultation-v1/chief-complaint-001-else.webm
+        question_text: 如果一下子说不上来也没关系。您这次来，更多是想做个状态评估，还是最近有些变化让您开始关注自己的情况？
+        subtitle_text: null
+        response_required: true
+      - question_key: chief-complaint-002
+        order: 3
         node_id: ask-chief-complaint-002
         video_asset_id: chief-complaint-002
         video_uri: /digital-human/consultation-v1/chief-complaint-002.webm
@@ -45,7 +53,7 @@ stages:
         subtitle_text: null
         response_required: true
       - question_key: chief-complaint-003
-        order: 3
+        order: 4
         node_id: ask-chief-complaint-003
         video_asset_id: chief-complaint-003
         video_uri: /digital-human/consultation-v1/chief-complaint-003.webm

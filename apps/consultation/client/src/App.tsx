@@ -5,6 +5,7 @@ import AuthPage from "./features/auth/AuthPage";
 import { ProfileModal } from "./components/ProfileModal";
 import CoverPage from "./pages/CoverPage";
 import HomePage from "./pages/HomePage";
+import ProfilePage from "./pages/ProfilePage";
 import PreparationPage from "./pages/PreparationPage";
 import ConsultationPage from "./pages/ConsultationPage";
 import AssessmentSelectionPage from "./pages/AssessmentSelectionPage";
@@ -59,6 +60,7 @@ function App() {
         />
 
         <Route path={APP_PATHS.home} element={protectedElement(<HomePage />)} />
+        <Route path={APP_PATHS.profile} element={protectedElement(<ProfilePage />)} />
         <Route path={APP_PATHS.preparation} element={protectedElement(<PreparationPage />)} />
         <Route path={APP_PATHS.consultation} element={protectedElement(<ConsultationPage />)} />
         <Route path={APP_PATHS.assessmentSelection} element={protectedElement(<AssessmentSelectionPage />)} />
