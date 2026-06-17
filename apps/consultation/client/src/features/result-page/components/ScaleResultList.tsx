@@ -54,7 +54,7 @@ export function ScaleResultList({ scales, selectedScaleId, onScaleSelect }: Scal
 
               <div className={cn("w-[88px] text-left text-sm font-medium", t.scoreValue[theme])}>{scoreLabel}</div>
 
-              <div className="w-[108px]">
+              <div className="w-[136px] shrink-0 xl:w-[152px]">
                 <SeverityBadge level={scale.severity} />
               </div>
 

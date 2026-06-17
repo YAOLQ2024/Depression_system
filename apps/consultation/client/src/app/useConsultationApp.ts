@@ -744,8 +744,13 @@ export function useConsultationApp() {
     }
   }
 
-  async function handleStartAssessment() {
+  async function handleStartAssessment(selectedScales?: string[]) {
     if (!consultation) {
+      return null;
+    }
+
+    if (selectedScales && selectedScales.length === 0) {
+      setError("请至少选择 1 份量表。");
       return null;
     }
 
@@ -768,6 +773,8 @@ export function useConsultationApp() {
         source_consultation_flow_run_id: consultation.session_id,
         multimodal_session_id: consultation.multimodal_session_id || null,
         scale_handoff_payload: consultation.scale_handoff_payload || {},
+        selected_scales: selectedScales?.length ? [...selectedScales] : undefined,
+        required_scales: selectedScales?.length ? [] : undefined,
       });
       setAssessment(assessmentSession);
       saveAssessmentSessionId(assessmentSession.session_id);

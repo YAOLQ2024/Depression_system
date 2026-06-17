@@ -24,7 +24,7 @@ function getHomeSubtitle({
   }
 
   if (consultationStatus === "handoff_ready") {
-    return "规则问诊已完成，可以进入量表评估阶段。";
+    return "规则问诊已完成，先选择本次要完成的量表后即可进入评估。";
   }
 
   if (consultationStatus) {
@@ -44,6 +44,8 @@ function getFlowCardCopy(homeEntryPath: string, homeEntryLabel: string) {
       return { title: "问诊准备", description: "档案与设备确认" };
     case APP_PATHS.consultation:
       return { title: homeEntryLabel, description: "进入数字人问诊" };
+    case APP_PATHS.assessmentSelection:
+      return { title: homeEntryLabel, description: "先选择本次量表" };
     case APP_PATHS.assessment:
       return { title: homeEntryLabel, description: "继续量表评估" };
     case APP_PATHS.result:
@@ -75,7 +77,12 @@ export default function HomePage() {
   };
 
   const handleOpenIntervention = () => {
-    navigate(APP_PATHS.intervention);
+    navigate(APP_PATHS.intervention, {
+      state: {
+        source: "home_direct",
+        bindConsultation: false,
+      },
+    });
   };
 
   return (

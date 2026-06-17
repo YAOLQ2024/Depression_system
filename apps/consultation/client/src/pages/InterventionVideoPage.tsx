@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Maximize2, Minimize2, Pause, Play, Volume2, VolumeX } from "lucide-react";
 
+import { useInterventionExecution } from "../features/intervention/useInterventionExecution";
 import { INTERVENTION_VIDEO_PROGRAMS, type InterventionVideoProgram } from "../features/intervention/videoPrograms";
 import { ConsultationLayout } from "../layouts";
 import { APP_PATHS } from "../routes";
@@ -59,6 +60,16 @@ async function exitPlayerFullscreen() {
 
 export default function InterventionVideoPage() {
   const navigate = useNavigate();
+  const { buildRouteState, sessionError, trackEvent } = useInterventionExecution({
+    pageTag: "intervention-video",
+    openEvent: {
+      event_type: "experience_opened",
+      program_id: "guided-video",
+      program_title: "视频调节",
+      delivery_mode: "video",
+      payload: { page: "intervention-video" },
+    },
+  });
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -155,6 +166,16 @@ export default function InterventionVideoPage() {
 
   const handleSelectProgram = async (program: InterventionVideoProgram) => {
     setActiveProgram(program);
+    void trackEvent({
+      event_type: "media_selected",
+      program_id: program.id,
+      program_title: program.title,
+      delivery_mode: "video",
+      payload: {
+        audio_src: program.audioSrc,
+        video_src: program.videoSrc,
+      },
+    });
     await syncAndPlay(program, { restart: true, enterFullscreen: true });
   };
 
@@ -285,12 +306,17 @@ export default function InterventionVideoPage() {
               </div>
               <button
                 type="button"
-                onClick={() => navigate(APP_PATHS.intervention)}
+                onClick={() =>
+                  navigate(APP_PATHS.intervention, {
+                    state: buildRouteState(),
+                  })
+                }
                 className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm text-white/85 transition hover:bg-white/14"
               >
                 返回干预首页
               </button>
             </div>
+            {sessionError ? <p className="mt-3 text-sm text-amber-200/90">{sessionError}</p> : null}
 
             <div
               ref={playerShellRef}

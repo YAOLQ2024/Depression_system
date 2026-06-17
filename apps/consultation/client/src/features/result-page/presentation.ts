@@ -5,15 +5,21 @@ export function getSeverityBadgeClasses(level?: string | null) {
     return "border-slate-200 bg-slate-100/70 text-slate-600";
   }
 
-  if (level.includes("重度") || level.includes("危险")) {
+  if (
+    level.includes("紧急") ||
+    level.includes("高风险") ||
+    level.includes("高危") ||
+    level.includes("重度") ||
+    level.includes("危险")
+  ) {
     return "border-rose-200 bg-rose-50/80 text-rose-600";
   }
 
-  if (level.includes("中度") || level.includes("关注")) {
+  if (level.includes("中风险") || level.includes("中危") || level.includes("中度") || level.includes("关注")) {
     return "border-amber-200 bg-amber-50/80 text-amber-600";
   }
 
-  if (level.includes("轻度") || level.includes("正常")) {
+  if (level.includes("低风险") || level.includes("低危") || level.includes("轻度") || level.includes("正常")) {
     return "border-emerald-200 bg-emerald-50/80 text-emerald-600";
   }
 

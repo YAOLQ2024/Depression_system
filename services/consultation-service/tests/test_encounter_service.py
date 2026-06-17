@@ -275,7 +275,7 @@ class TestGetEncounterDetail:
                 "required_scales": ["phq9", "sds"],
             },
             "required_scales": ["phq9", "sds"],
-            "selected_scales": ["phq9", "sds"],
+            "selected_scales": ["phq9"],
             "source_consultation_flow_run_id": "cons-1",
             "multimodal_session_id": "mm-1",
             "created_at": datetime(2026, 5, 20, 15, 0, tzinfo=timezone.utc),
@@ -304,6 +304,7 @@ class TestGetEncounterDetail:
 
         assert result["encounter"]["assessment"]["id"] == "assess-1"
         assert result["encounter"]["assessment"]["required_scales"] == ["phq9", "sds"]
+        assert result["encounter"]["assessment"]["selected_scales"] == ["phq9"]
         assert result["encounter"]["assessment_results"][0]["scale_slug"] == "phq9"
         assert result["encounter"]["assessment_results"][0]["normalized_score"] == 56
         assert result["encounter"]["assessment_results"][0]["score_details"] == {

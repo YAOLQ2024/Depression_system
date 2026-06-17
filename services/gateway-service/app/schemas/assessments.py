@@ -12,6 +12,7 @@ class CreateAssessmentSessionRequest(BaseModel):
     multimodal_session_id: str | None = None
     scale_handoff_payload: dict[str, Any] = Field(default_factory=dict)
     selected_scales: list[str] = Field(default_factory=list)
+    required_scales: list[str] = Field(default_factory=list)
     capture_context: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")

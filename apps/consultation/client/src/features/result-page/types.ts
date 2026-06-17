@@ -63,8 +63,8 @@ export type ResultConsultationSummary = {
   description: string;
   overallSummary: string;
   sections: ResultConsultationSummarySection[];
-  requiredScales: string[];
-  requiredScaleLabels: string[];
+  linkedScales: string[];
+  linkedScaleLabels: string[];
 };
 
 export type ResultDetailPanelData = {
@@ -105,6 +105,9 @@ export type ResultPageViewModel = {
   overallScorePending: boolean;
   overallSeverity: string | null;
   overallSeverityPending: boolean;
+  overallRiskLevel: string | null;
+  overallRiskLevelPending: boolean;
+  overallRiskReason: string | null;
   modules: ResultModuleCard[];
   scales: ResultScaleBrief[];
   scaleDetails: Record<string, ResultDetailPanelData>;

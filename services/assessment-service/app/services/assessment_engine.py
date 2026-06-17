@@ -99,6 +99,38 @@ def _ensure_json_list(value: list[str] | None) -> list[str]:
     return list(value or [])
 
 
+def _normalize_active_scale_slugs(
+    candidate: Any,
+    *,
+    allow_empty: bool,
+    empty_message: str,
+    unsupported_message_prefix: str = "unsupported scale slug",
+) -> list[str]:
+    loader = get_scale_loader()
+    active_slugs = loader.active_scale_slugs
+
+    raw_slugs = candidate if isinstance(candidate, (list, tuple, set)) else []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_slug in raw_slugs:
+        slug = str(raw_slug or "").strip()
+        if not slug:
+            continue
+        if slug not in active_slugs:
+            raise AssessmentServiceError(
+                f"{unsupported_message_prefix}: {slug}",
+                code=4002,
+            )
+        if slug in seen:
+            continue
+        seen.add(slug)
+        normalized.append(slug)
+
+    if not allow_empty and not normalized:
+        raise AssessmentServiceError(empty_message, code=4003)
+    return normalized
+
+
 def _safe_float(value: Any) -> float | None:
     if value in (None, ""):
         return None
@@ -143,19 +175,33 @@ def _extract_upstream_data(upstream: dict, *, error_code: int) -> dict[str, Any]
 def _normalize_scale_sequence(payload: CreateAssessmentSessionRequest) -> list[str]:
     loader = get_scale_loader()
     active_slugs = loader.active_scale_slugs
-    candidate = payload.selected_scales or payload.scale_handoff_payload.get("required_scales") or active_slugs
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for slug in candidate:
-        if slug not in active_slugs:
-            raise AssessmentServiceError(f"unsupported scale slug: {slug}", code=4002)
-        if slug in seen:
-            continue
-        seen.add(slug)
-        normalized.append(slug)
-    if not normalized:
-        raise AssessmentServiceError("no active scales selected", code=4003)
-    return normalized
+    candidate = (
+        payload.selected_scales
+        or payload.scale_handoff_payload.get("required_scales")
+        or active_slugs
+    )
+    return _normalize_active_scale_slugs(
+        candidate,
+        allow_empty=False,
+        empty_message="no active scales selected",
+    )
+
+
+def _normalize_required_scales(
+    payload: CreateAssessmentSessionRequest,
+) -> list[str]:
+    # Distinguish "explicitly passed []" from "field omitted" so callers can
+    # intentionally clear required scales without falling back to handoff data.
+    if "required_scales" in payload.model_fields_set:
+        candidate = payload.required_scales
+    else:
+        candidate = payload.scale_handoff_payload.get("required_scales") or []
+    return _normalize_active_scale_slugs(
+        candidate,
+        allow_empty=True,
+        empty_message="",
+        unsupported_message_prefix="unsupported required scale slug",
+    )
 
 
 def _get_session_or_raise(db_session: Session, session_id: str) -> AssessmentSession:
@@ -1434,6 +1480,7 @@ def create_assessment_session(payload: CreateAssessmentSessionRequest, acting_us
         )
 
     selected_scales = _normalize_scale_sequence(payload)
+    required_scales = _normalize_required_scales(payload)
     now = _now()
     assessment_session_id = str(uuid.uuid4())
 
@@ -1450,7 +1497,7 @@ def create_assessment_session(payload: CreateAssessmentSessionRequest, acting_us
             source_consultation_flow_run_id=payload.source_consultation_flow_run_id,
             multimodal_session_id=payload.multimodal_session_id,
             status="in_progress",
-            required_scales=list(payload.scale_handoff_payload.get("required_scales") or selected_scales),
+            required_scales=required_scales,
             selected_scales=selected_scales,
             current_scale_slug=selected_scales[0],
             current_item_index=0,

@@ -9,6 +9,7 @@ from app.api.catalog import router as catalog_router
 from app.api.consultations import router as consultations_router
 from app.api.multimodal import router as multimodal_router
 from app.api.risks import router as risks_router
+from app.api.interventions import router as interventions_router
 from app.api.users import router as users_router
 from app.config import get_settings
 
@@ -32,6 +33,7 @@ app.include_router(consultations_router)
 app.include_router(multimodal_router)
 app.include_router(assessments_router)
 app.include_router(risks_router)
+app.include_router(interventions_router)
 
 
 @app.get("/health/live")
@@ -46,6 +48,7 @@ def health_ready():
         ("consultation-service", settings["consultation_service_url"]),
         ("assessment-service", settings["assessment_service_url"]),
         ("risk-service", settings["risk_service_url"]),
+        ("intervention-service", settings["intervention_service_url"]),
         ("multimodal-service", settings["multimodal_service_url"]),
     ]
 

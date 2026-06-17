@@ -7,6 +7,7 @@ import CoverPage from "./pages/CoverPage";
 import HomePage from "./pages/HomePage";
 import PreparationPage from "./pages/PreparationPage";
 import ConsultationPage from "./pages/ConsultationPage";
+import AssessmentSelectionPage from "./pages/AssessmentSelectionPage";
 import ScaleQuestionnairePage from "./pages/ScaleQuestionnairePage";
 import ResultPage from "./pages/ResultPage";
 import InterventionPage from "./pages/InterventionPage";
@@ -16,6 +17,7 @@ import InterventionVideoPage from "./pages/InterventionVideoPage";
 import SeamlessVideoPlayerDemoPage from "./pages/SeamlessVideoPlayerDemoPage";
 import HistoryPage from "./pages/HistoryPage";
 import HistoryDetailPage from "./pages/HistoryDetailPage";
+import HistoryScaleDetailPage from "./pages/HistoryScaleDetailPage";
 import { ConsultationAppProvider } from "./app/ConsultationAppContext";
 import { useConsultationApp } from "./app/useConsultationApp";
 import { APP_PATHS } from "./routes";
@@ -59,6 +61,7 @@ function App() {
         <Route path={APP_PATHS.home} element={protectedElement(<HomePage />)} />
         <Route path={APP_PATHS.preparation} element={protectedElement(<PreparationPage />)} />
         <Route path={APP_PATHS.consultation} element={protectedElement(<ConsultationPage />)} />
+        <Route path={APP_PATHS.assessmentSelection} element={protectedElement(<AssessmentSelectionPage />)} />
         <Route path={APP_PATHS.assessment} element={protectedElement(<ScaleQuestionnairePage />)} />
         <Route path={APP_PATHS.result} element={protectedElement(<ResultPage />)} />
         <Route path={APP_PATHS.intervention} element={protectedElement(<InterventionPage />)} />
@@ -68,6 +71,7 @@ function App() {
         <Route path={APP_PATHS.seamlessVideoDemo} element={protectedElement(<SeamlessVideoPlayerDemoPage />)} />
         <Route path={APP_PATHS.history} element={protectedElement(<HistoryPage />)} />
         <Route path={APP_PATHS.historyDetail} element={protectedElement(<HistoryDetailPage />)} />
+        <Route path={APP_PATHS.historyScaleDetail} element={protectedElement(<HistoryScaleDetailPage />)} />
 
         <Route path="*" element={<Navigate to={state.user ? state.resumePath : APP_PATHS.cover} replace />} />
       </Routes>
