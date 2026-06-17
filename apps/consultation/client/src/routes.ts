@@ -4,6 +4,7 @@ export const APP_PATHS = {
   cover: "/",
   login: "/login",
   home: "/home",
+  profile: "/profile",
   preparation: "/preparation",
   consultation: "/consultation",
   assessmentSelection: "/scale-selection",

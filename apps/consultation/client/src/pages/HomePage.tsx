@@ -2,9 +2,24 @@ import { useNavigate } from "react-router-dom";
 import { MessageCircle, ClipboardList, Leaf, User, MessageSquare } from "lucide-react";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { Header } from "../components/Header";
-import { showProfileModal } from "../components/ProfileModal";
 import { getUserDisplayName } from "../lib/account";
 import { APP_PATHS } from "../routes";
+import type { CreateConsultationSessionPayload } from "../services/api/contracts";
+
+type StoredMediaChannel = {
+  ready?: boolean;
+};
+
+type StoredSpeakerState = {
+  available?: boolean | null;
+};
+
+type StoredDeviceStatus = {
+  status?: string;
+  browser_ready?: boolean;
+  microphone?: StoredMediaChannel;
+  speaker?: StoredSpeakerState;
+};
 
 function getHomeSubtitle({
   profileStatus,
@@ -38,23 +53,37 @@ function getHomeSubtitle({
   return "先进入问诊准备，确认档案与设备后开始正式评估。";
 }
 
-function getFlowCardCopy(homeEntryPath: string, homeEntryLabel: string) {
-  switch (homeEntryPath) {
-    case APP_PATHS.preparation:
-      return { title: "问诊准备", description: "档案与设备确认" };
-    case APP_PATHS.consultation:
-      return { title: homeEntryLabel, description: "进入数字人问诊" };
-    case APP_PATHS.assessmentSelection:
-      return { title: homeEntryLabel, description: "先选择本次量表" };
-    case APP_PATHS.assessment:
-      return { title: homeEntryLabel, description: "继续量表评估" };
-    case APP_PATHS.result:
-      return { title: homeEntryLabel, description: "查看本轮评估结果" };
-    case APP_PATHS.intervention:
-      return { title: homeEntryLabel, description: "进入调节干预" };
-    default:
-      return { title: "开始问诊", description: "进入主流程" };
+function buildNewConsultationPayload(
+  profileStatus?: string,
+  preparationState?: {
+    device_status?: Record<string, unknown>;
+    consent_confirmed?: boolean;
+    assigned_doctor_persona?: string | null;
+  } | null,
+): CreateConsultationSessionPayload | null {
+  const deviceStatus = (preparationState?.device_status as StoredDeviceStatus | undefined) || null;
+  const isPreparationReady = Boolean(
+    profileStatus === "completed" &&
+      preparationState?.consent_confirmed &&
+      preparationState?.assigned_doctor_persona &&
+      deviceStatus?.status === "authorized",
+  );
+
+  if (!isPreparationReady || !deviceStatus) {
+    return null;
   }
+
+  return {
+    device_status: preparationState?.device_status,
+    audio_channel_ready: Boolean(
+      deviceStatus.browser_ready &&
+        deviceStatus.microphone?.ready &&
+        (deviceStatus.speaker?.available ?? true),
+    ),
+    consent_confirmed: Boolean(preparationState?.consent_confirmed),
+    consultation_ready_state: "ready",
+    assigned_doctor_persona: preparationState?.assigned_doctor_persona || null,
+  };
 }
 
 export default function HomePage() {
@@ -66,10 +95,29 @@ export default function HomePage() {
     consultationStatus: state.consultation?.status,
     assessmentStatus: state.assessment?.status,
   });
-  const flowCardCopy = getFlowCardCopy(state.homeEntryPath, state.homeEntryLabel);
 
   const handleStartConsultation = () => {
     navigate(state.homeEntryPath);
+  };
+
+  const handleCreateNewConsultation = async () => {
+    if (state.loading) {
+      return;
+    }
+
+    const payload = buildNewConsultationPayload(
+      state.user?.profile_status,
+      state.user?.preparation_state,
+    );
+    if (!payload) {
+      navigate(APP_PATHS.preparation);
+      return;
+    }
+
+    const started = await actions.handleStartConsultation(payload);
+    if (started) {
+      navigate(APP_PATHS.consultation, { state: { sessionId: started.session_id } });
+    }
   };
 
   const handleOpenHistory = () => {
@@ -78,6 +126,10 @@ export default function HomePage() {
 
   const handleOpenIntervention = () => {
     navigate(APP_PATHS.intervention);
+  };
+
+  const handleOpenProfile = () => {
+    navigate(APP_PATHS.profile);
   };
 
   return (
@@ -194,7 +246,7 @@ export default function HomePage() {
                   </button>
 
                   <button
-                    onClick={handleStartConsultation}
+                    onClick={() => void handleCreateNewConsultation()}
                     className="relative overflow-hidden flex justify-between items-center bg-white/10 hover:bg-white/20 backdrop-blur-lg border border-white/40 rounded-[clamp(16px,4cqw,24px)] p-[clamp(16px,3cqw,20px)] transition-all duration-300 hover:-translate-y-1 group"
                   >
                     <div className="absolute top-0 -left-[100%] w-[120%] h-full block transform skew-x-[-20deg] bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:left-[200%] transition-all duration-700 ease-in-out pointer-events-none delay-100" />
@@ -203,8 +255,8 @@ export default function HomePage() {
                         <MessageSquare className="w-[clamp(24px,4cqw,28px)] h-[clamp(24px,4cqw,28px)]" fill="currentColor" />
                       </div>
                       <div className="flex flex-col items-start min-w-0 pr-2">
-                        <span className="text-white text-[clamp(14px,3cqw,18px)] font-semibold tracking-wide truncate w-full text-left">{flowCardCopy.title}</span>
-                        <span className="text-white/60 text-[clamp(12px,2cqw,14px)] mt-0.5 truncate w-full text-left">{flowCardCopy.description}</span>
+                        <span className="text-white text-[clamp(14px,3cqw,18px)] font-semibold tracking-wide truncate w-full text-left">新建会话</span>
+                        <span className="text-white/60 text-[clamp(12px,2cqw,14px)] mt-0.5 truncate w-full text-left">开启新的就诊会话</span>
                       </div>
                     </div>
                     <div className="relative z-10 w-[clamp(24px,4cqw,32px)] h-[clamp(24px,4cqw,32px)] shrink-0 rounded-full border border-white/30 flex items-center justify-center text-white/70 group-hover:text-white group-hover:border-white/60 transition-colors">
@@ -215,7 +267,7 @@ export default function HomePage() {
                   </button>
 
                   <button
-                    onClick={(event) => showProfileModal(event.currentTarget)}
+                    onClick={handleOpenProfile}
                     className="relative overflow-hidden flex justify-between items-center bg-white/10 hover:bg-white/20 backdrop-blur-lg border border-white/40 rounded-[clamp(16px,4cqw,24px)] p-[clamp(16px,3cqw,20px)] transition-all duration-300 hover:-translate-y-1 group"
                   >
                     <div className="absolute top-0 -left-[100%] w-[120%] h-full block transform skew-x-[-20deg] bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:left-[200%] transition-all duration-700 ease-in-out pointer-events-none delay-150" />
