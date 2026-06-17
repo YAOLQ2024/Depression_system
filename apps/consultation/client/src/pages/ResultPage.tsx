@@ -249,7 +249,20 @@ export default function ResultPage() {
                       </button>
 
                       <button
-                        onClick={() => navigate(APP_PATHS.intervention)}
+                        onClick={() =>
+                          navigate(APP_PATHS.intervention, {
+                            state: {
+                              source: "workflow_result",
+                              bindConsultation: true,
+                              consultationSessionId: state.consultation?.session_id ?? null,
+                              encounterSessionId:
+                                state.assessment?.encounter_session_id ||
+                                state.consultation?.encounter_session_id ||
+                                null,
+                              assessmentSessionId: state.assessment?.session_id ?? null,
+                            },
+                          })
+                        }
                         className={gradientActionButtonClass}
                       >
                         <Pill className="h-5 w-5" />

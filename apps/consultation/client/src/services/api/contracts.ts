@@ -147,6 +147,66 @@ export type AssessmentSessionResponse = {
   accepted_answer?: AssessmentAcceptedAnswer | null;
 };
 
+export type InterventionSession = {
+  session_id: string;
+  user_id: string;
+  encounter_session_id?: string | null;
+  consultation_session_id?: string | null;
+  assessment_session_id?: string | null;
+  plan_id?: string | null;
+  risk_evaluation_id?: string | null;
+  source: string;
+  status: string;
+  current_program_id?: string | null;
+  current_program_title?: string | null;
+  current_delivery_mode?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
+  started_at?: string | null;
+  last_event_at?: string | null;
+  completed_at?: string | null;
+};
+
+export type InterventionEventRecord = {
+  event_id: string;
+  session_id: string;
+  user_id: string;
+  event_type: string;
+  program_id?: string | null;
+  program_title?: string | null;
+  delivery_mode?: string | null;
+  payload?: Record<string, unknown>;
+  created_at?: string | null;
+};
+
+export type InterventionSessionResponse = {
+  intervention_session: InterventionSession;
+};
+
+export type InterventionEventResponse = {
+  session: InterventionSession;
+  event: InterventionEventRecord;
+};
+
+export type CreateInterventionSessionPayload = {
+  encounter_session_id?: string | null;
+  consultation_session_id?: string | null;
+  assessment_session_id?: string | null;
+  plan_id?: string | null;
+  risk_evaluation_id?: string | null;
+  source?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type RecordInterventionEventPayload = {
+  event_type: string;
+  program_id?: string | null;
+  program_title?: string | null;
+  delivery_mode?: string | null;
+  payload?: Record<string, unknown>;
+};
+
 export type AssessmentScaleDetailResponse = {
   scale_detail: AssessmentScaleDetail;
 };

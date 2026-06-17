@@ -77,7 +77,12 @@ export default function HomePage() {
   };
 
   const handleOpenIntervention = () => {
-    navigate(APP_PATHS.intervention);
+    navigate(APP_PATHS.intervention, {
+      state: {
+        source: "home_direct",
+        bindConsultation: false,
+      },
+    });
   };
 
   return (
