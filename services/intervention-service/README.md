@@ -19,6 +19,19 @@
 - 干预执行记录
 - 用户反馈回传
 
+当前已补齐的最小执行记录链路：
+
+- `POST /api/v1/interventions/sessions`
+- `GET /api/v1/interventions/sessions/{session_id}`
+- `GET /api/v1/interventions/sessions/{session_id}/events`
+- `POST /api/v1/interventions/sessions/{session_id}/events`
+
+当前前端接入规则：
+
+- 从结果页进入调节干预时，执行会话会绑定 `consultation_session_id`
+- 从首页直接进入调节干预时，不绑定问诊会话 id
+- 视频 / 游戏 / 故事页面会继续复用同一个 `intervention_session`
+
 关键环境变量：
 
 - `DATABASE_URL`
