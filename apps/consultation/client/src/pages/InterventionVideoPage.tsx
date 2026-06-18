@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Maximize2, Minimize2, Pause, Play, Volume2, VolumeX } from "lucide-react";
 
@@ -100,6 +100,27 @@ export default function InterventionVideoPage() {
       videoRef.current?.pause();
     };
   }, []);
+
+  const handleReturnToLanding = useEffectEvent((reason: "return_button") => {
+    void trackEvent({
+      event_type: "experience_exited",
+      program_id: activeProgram?.id ?? "guided-video",
+      program_title: activeProgram?.title ?? "视频调节",
+      delivery_mode: "video",
+      payload: {
+        page: "intervention-video",
+        reason,
+        destination: "intervention-landing",
+        active_program_id: activeProgram?.id ?? null,
+        active_program_title: activeProgram?.title ?? null,
+        current_time_seconds: Number(currentTime.toFixed(1)),
+        duration_seconds: Number(duration.toFixed(1)),
+      },
+    });
+    navigate(APP_PATHS.intervention, {
+      state: buildRouteState(),
+    });
+  });
 
   const syncVideoWithAudio = (audioTime: number) => {
     const video = videoRef.current;
@@ -306,11 +327,7 @@ export default function InterventionVideoPage() {
               </div>
               <button
                 type="button"
-                onClick={() =>
-                  navigate(APP_PATHS.intervention, {
-                    state: buildRouteState(),
-                  })
-                }
+                onClick={() => handleReturnToLanding("return_button")}
                 className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm text-white/85 transition hover:bg-white/14"
               >
                 返回干预首页

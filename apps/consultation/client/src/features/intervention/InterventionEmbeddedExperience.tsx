@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { RecordInterventionEventPayload } from "../../services/api/contracts";
@@ -22,9 +22,26 @@ export function InterventionEmbeddedExperience({
   openEvent,
 }: InterventionEmbeddedExperienceProps) {
   const navigate = useNavigate();
-  const { buildRouteState, sessionError } = useInterventionExecution({
+  const { buildRouteState, sessionError, trackEvent } = useInterventionExecution({
     pageTag: iframeSrc,
     openEvent,
+  });
+
+  const handleReturnToLanding = useEffectEvent((reason: "iframe_message" | "return_button") => {
+    void trackEvent({
+      event_type: "experience_exited",
+      program_id: openEvent.program_id,
+      program_title: openEvent.program_title,
+      delivery_mode: openEvent.delivery_mode,
+      payload: {
+        ...(openEvent.payload || {}),
+        reason,
+        destination: "intervention-landing",
+      },
+    });
+    navigate(APP_PATHS.intervention, {
+      state: buildRouteState(),
+    });
   });
 
   useEffect(() => {
@@ -34,15 +51,13 @@ export function InterventionEmbeddedExperience({
       }
 
       if (event.data?.type === "intervention-exit") {
-        navigate(APP_PATHS.intervention, {
-          state: buildRouteState(),
-        });
+        handleReturnToLanding("iframe_message");
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [buildRouteState, navigate]);
+  }, []);
 
   return (
     <ConsultationLayout backgroundImage="/bg.webp" title={title}>
@@ -57,11 +72,7 @@ export function InterventionEmbeddedExperience({
 
             <button
               type="button"
-              onClick={() =>
-                navigate(APP_PATHS.intervention, {
-                  state: buildRouteState(),
-                })
-              }
+              onClick={() => handleReturnToLanding("return_button")}
               className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm text-white/88 transition hover:bg-white/14"
             >
               返回干预首页
