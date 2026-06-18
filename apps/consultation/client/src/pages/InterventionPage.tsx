@@ -5,6 +5,7 @@ import { motion, type Variants } from "motion/react";
 import { useInterventionExecution } from "../features/intervention/useInterventionExecution";
 import { ConsultationLayout } from "../layouts";
 import { APP_PATHS } from "../routes";
+import type { RecordInterventionEventPayload } from "../services/api/contracts";
 
 const INTERVENTION_ENTRY_VIDEO_URI = "/digital-human/intervention-v1/intervention-entry-001.webm";
 
@@ -80,7 +81,7 @@ function ActionButton({ text, delay, onClick, disabled = false }: ActionButtonPr
 export default function InterventionPage() {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const { buildRouteState, ensureSession, sessionError, trackEvent } = useInterventionExecution({
+  const { buildRouteState, sessionError, trackEvent } = useInterventionExecution({
     pageTag: "intervention-landing",
     openEvent: {
       event_type: "module_opened",
@@ -98,6 +99,22 @@ export default function InterventionPage() {
 
     void video.play().catch(() => undefined);
   }, []);
+
+  const handleSelectExperience = async (
+    route: string,
+    eventPayload: RecordInterventionEventPayload,
+  ) => {
+    const sessionId = await trackEvent(eventPayload);
+    if (!sessionId) {
+      return;
+    }
+
+    navigate(route, {
+      state: buildRouteState({
+        interventionSessionId: sessionId,
+      }),
+    });
+  };
 
   return (
     <ConsultationLayout backgroundImage="/TKbg.png" title="调节干预">
@@ -124,65 +141,41 @@ export default function InterventionPage() {
           <ActionButton
             text="看一段视频"
             delay={0}
-            onClick={() => {
-              void (async () => {
-                const sessionId = await ensureSession();
-                void trackEvent({
-                  event_type: "experience_selected",
-                  program_id: "guided-video",
-                  program_title: "视频调节",
-                  delivery_mode: "video",
-                  payload: { destination: "video" },
-                });
-                navigate(APP_PATHS.interventionVideo, {
-                  state: buildRouteState({
-                    interventionSessionId: sessionId,
-                  }),
-                });
-              })();
-            }}
+            onClick={() =>
+              void handleSelectExperience(APP_PATHS.interventionVideo, {
+                event_type: "experience_selected",
+                program_id: "guided-video",
+                program_title: "视频调节",
+                delivery_mode: "video",
+                payload: { destination: "video" },
+              })
+            }
           />
           <ActionButton
             text="玩一个小游戏"
             delay={0.2}
-            onClick={() => {
-              void (async () => {
-                const sessionId = await ensureSession();
-                void trackEvent({
-                  event_type: "experience_selected",
-                  program_id: "breathing-rhythm-game",
-                  program_title: "呼吸节奏小游戏",
-                  delivery_mode: "game",
-                  payload: { destination: "game" },
-                });
-                navigate(APP_PATHS.interventionGame, {
-                  state: buildRouteState({
-                    interventionSessionId: sessionId,
-                  }),
-                });
-              })();
-            }}
+            onClick={() =>
+              void handleSelectExperience(APP_PATHS.interventionGame, {
+                event_type: "experience_selected",
+                program_id: "breathing-rhythm-game",
+                program_title: "呼吸节奏小游戏",
+                delivery_mode: "game",
+                payload: { destination: "game" },
+              })
+            }
           />
           <ActionButton
             text="听一段故事"
             delay={0.4}
-            onClick={() => {
-              void (async () => {
-                const sessionId = await ensureSession();
-                void trackEvent({
-                  event_type: "experience_selected",
-                  program_id: "deer-forest-story",
-                  program_title: "小鹿和森林故事",
-                  delivery_mode: "story",
-                  payload: { destination: "story" },
-                });
-                navigate(APP_PATHS.interventionStory, {
-                  state: buildRouteState({
-                    interventionSessionId: sessionId,
-                  }),
-                });
-              })();
-            }}
+            onClick={() =>
+              void handleSelectExperience(APP_PATHS.interventionStory, {
+                event_type: "experience_selected",
+                program_id: "deer-forest-story",
+                program_title: "小鹿和森林故事",
+                delivery_mode: "story",
+                payload: { destination: "story" },
+              })
+            }
           />
         </div>
       </div>
