@@ -355,6 +355,24 @@ def get_encounter_detail(
     return upstream["payload"]
 
 
+@router.get("/encounters/scale-history/{scale_slug}")
+def get_scale_history(
+    scale_slug: str,
+    mcs_session: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+):
+    _, user = _require_current_user(mcs_session, authorization)
+    upstream = forward_consultation_request(
+        "GET",
+        f"/api/v1/encounters/scale-history/{scale_slug}",
+        None,
+        acting_user_id=user["id"],
+    )
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
 @router.get("/encounters/{encounter_id}/pdf")
 def download_encounter_pdf(
     encounter_id: str,

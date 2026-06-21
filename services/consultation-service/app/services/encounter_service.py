@@ -60,6 +60,15 @@ def _coalesce_text(*values: Any) -> str | None:
     return None
 
 
+def _coalesce_numeric(*values: Any) -> float | int | None:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            return value
+    return None
+
+
 def _load_latest_assessments_by_encounter(
     db_session: Any,
     encounter_ids: list[str],
@@ -173,6 +182,101 @@ def _load_assessment_results(
         {"session_id": assessment_session_id},
     ).mappings().all()
     return [dict(row) for row in rows]
+
+
+def get_scale_score_history(
+    user_id: str,
+    scale_slug: str,
+) -> dict[str, Any]:
+    normalized_scale_slug = str(scale_slug or "").strip()
+    if not normalized_scale_slug:
+        raise EncounterServiceError(
+            "scale slug is required",
+            status_code=400,
+            code="invalid_scale_slug",
+        )
+
+    with get_db_session() as db_session:
+        rows = db_session.execute(
+            text(
+                """
+                select
+                    ar.scale_slug,
+                    ar.raw_score,
+                    ar.derived_score,
+                    ar.completed_at as result_completed_at,
+                    ar.created_at as result_created_at,
+                    asess.id as assessment_session_id,
+                    asess.status as assessment_status,
+                    asess.encounter_session_id,
+                    asess.created_at as assessment_created_at,
+                    enc.status as encounter_status
+                from assessment_results ar
+                join assessment_sessions asess on asess.id = ar.session_id
+                left join encounter_sessions enc on enc.id = asess.encounter_session_id
+                where asess.user_id = :user_id
+                  and ar.scale_slug = :scale_slug
+                order by
+                    coalesce(ar.completed_at, ar.created_at, asess.created_at) desc,
+                    ar.created_at desc,
+                    asess.created_at desc,
+                    asess.id desc
+                """
+            ),
+            {
+                "user_id": user_id,
+                "scale_slug": normalized_scale_slug,
+            },
+        ).mappings().all()
+
+    latest_rows_by_visit: dict[str, dict[str, Any]] = {}
+    for raw_row in rows:
+        row = dict(raw_row)
+        visit_key = _coalesce_text(
+            row.get("encounter_session_id"),
+            row.get("assessment_session_id"),
+        )
+        if not visit_key or visit_key in latest_rows_by_visit:
+            continue
+        latest_rows_by_visit[visit_key] = row
+
+    ordered_rows = sorted(
+        latest_rows_by_visit.values(),
+        key=lambda item: _safe_datetime(
+            item.get("result_completed_at")
+            or item.get("result_created_at")
+            or item.get("assessment_created_at")
+        ),
+    )
+
+    history: list[dict[str, Any]] = []
+    for row in ordered_rows:
+        score = _coalesce_numeric(row.get("derived_score"), row.get("raw_score"))
+        completed_at = _coalesce_text(
+            _isoformat(row.get("result_completed_at")),
+            _isoformat(row.get("result_created_at")),
+            _isoformat(row.get("assessment_created_at")),
+        )
+        if score is None or not completed_at:
+            continue
+
+        history.append(
+            {
+                "encounter_id": row.get("encounter_session_id"),
+                "encounter_status": row.get("encounter_status"),
+                "assessment_session_id": row.get("assessment_session_id"),
+                "assessment_status": row.get("assessment_status"),
+                "completed_at": completed_at,
+                "raw_score": row.get("raw_score"),
+                "derived_score": row.get("derived_score"),
+                "score": score,
+            }
+        )
+
+    return {
+        "scale_slug": normalized_scale_slug,
+        "history": history,
+    }
 
 
 def _build_consultation_payload(
