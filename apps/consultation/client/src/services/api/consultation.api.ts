@@ -9,7 +9,11 @@ import type {
   ConsultationVisualCaptureResponse,
   SubmitConsultationTurnPayload,
 } from "./contracts";
-import type { EncounterListResponse, EncounterDetailResponse } from "./contracts";
+import type {
+  EncounterListResponse,
+  EncounterDetailResponse,
+  EncounterScaleHistoryResponse,
+} from "./contracts";
 
 export async function createConsultationSession(payload: CreateConsultationSessionPayload = {}) {
   const data = await apiRequest<ConsultationResponse>("/consultations", {
@@ -117,6 +121,10 @@ export async function listEncounters(
 
 export async function getEncounterDetail(encounterId: string): Promise<EncounterDetailResponse> {
   return apiRequest<EncounterDetailResponse>(`/encounters/${encounterId}`);
+}
+
+export async function getEncounterScaleHistory(scaleSlug: string): Promise<EncounterScaleHistoryResponse> {
+  return apiRequest<EncounterScaleHistoryResponse>(`/encounters/scale-history/${scaleSlug}`);
 }
 
 export async function downloadEncounterPdf(encounterId: string): Promise<void> {

@@ -15,6 +15,7 @@ import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { Header } from "../components/Header";
 import {
   AdviceCard,
+  buildTrendPointsFromHistory,
   buildResultPageViewModel,
   GlassCard,
   ResultThemeContext,
@@ -31,6 +32,8 @@ import { useHistoryDetail } from "../hooks/useHistoryDetail";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
 import { getAssessmentScaleDetail } from "../services/api/assessment.api";
+import { getEncounterScaleHistory } from "../services/api/consultation.api";
+import type { ResultTrendPoint } from "../features/result-page";
 import type { AssessmentScaleDetail } from "../types";
 
 function BackgroundDecor() {
@@ -71,6 +74,9 @@ export default function HistoryScaleDetailPage() {
   const { state: appState } = useConsultationAppContext();
   const { state, reload } = useHistoryDetail(id);
   const [scaleDetail, setScaleDetail] = useState<AssessmentScaleDetail | null>(null);
+  const [scaleHistory, setScaleHistory] = useState<ResultTrendPoint[]>([]);
+  const [scaleHistoryLoading, setScaleHistoryLoading] = useState(false);
+  const [scaleHistoryError, setScaleHistoryError] = useState<string | null>(null);
   const [scaleDetailLoading, setScaleDetailLoading] = useState(false);
   const [scaleDetailError, setScaleDetailError] = useState<string | null>(null);
 
@@ -116,6 +122,43 @@ export default function HistoryScaleDetailPage() {
       cancelled = true;
     };
   }, [assessmentSession?.session_id, scaleId]);
+
+  useEffect(() => {
+    if (!scaleId) {
+      setScaleHistory([]);
+      setScaleHistoryLoading(false);
+      setScaleHistoryError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setScaleHistory([]);
+    setScaleHistoryLoading(true);
+    setScaleHistoryError(null);
+
+    void (async () => {
+      try {
+        const historyPayload = await getEncounterScaleHistory(scaleId);
+        if (cancelled) {
+          return;
+        }
+        setScaleHistory(buildTrendPointsFromHistory(historyPayload.history));
+      } catch (error: any) {
+        if (cancelled) {
+          return;
+        }
+        setScaleHistoryError(error?.message || "历次趋势加载失败");
+      } finally {
+        if (!cancelled) {
+          setScaleHistoryLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scaleId]);
 
   const viewModel = useMemo(
     () =>
@@ -349,9 +392,13 @@ export default function HistoryScaleDetailPage() {
                         <h2 className="text-base font-semibold">历次趋势</h2>
                       </div>
                       <TrendLineChart
-                        data={detail?.history || []}
+                        data={scaleHistory}
                         className="p-0 shadow-none ring-0"
-                        emptyLabel="当前还没有历次趋势数据，后续接入后会在这里展示。"
+                        emptyLabel={
+                          scaleHistoryLoading
+                            ? "正在加载历次趋势..."
+                            : scaleHistoryError || "当前还没有历次趋势数据。"
+                        }
                       />
                     </GlassCard>
                   </div>

@@ -17,6 +17,8 @@ export type ResultTrendPoint = {
   score: number;
 };
 
+export type ResultScaleItemScoreTone = "positive" | "negative" | "neutral" | "excluded";
+
 export type ResultScaleItem = {
   no: number | string;
   label: string;
@@ -24,6 +26,10 @@ export type ResultScaleItem = {
   answerScore?: number | null;
   answerSource?: string | null;
   transcriptText?: string | null;
+  effectiveScore?: number | null;
+  effectiveScoreLabel?: string | null;
+  effectiveScoreTone?: ResultScaleItemScoreTone | null;
+  effectiveScoreHint?: string | null;
 };
 
 export type ResultRiskFlag = {
