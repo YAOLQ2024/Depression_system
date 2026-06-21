@@ -47,6 +47,8 @@ EEG_TRANSPORT_READY_STATUSES = {
     "streaming",
     "waiting_for_stream",
 }
+EEG_SUPPORTED_NORM_MODES = {"none", "session_zscore"}
+EEG_DEFAULT_TRIAL_FEATURE_COMPONENTS = ("med", "std", "slope")
 
 
 def _utcnow() -> datetime:
@@ -153,6 +155,50 @@ def _predict_probabilities(clf: Any, scaled_vector: np.ndarray) -> np.ndarray:
     return probabilities
 
 
+def _normalize_feature_rows(rows: np.ndarray, norm_mode: str) -> np.ndarray:
+    normalized_mode = str(norm_mode or "none").strip().lower() or "none"
+    if normalized_mode == "none":
+        return rows
+    if normalized_mode != "session_zscore":
+        raise ValueError(f"unsupported_eeg_norm_mode:{normalized_mode}")
+    if rows.ndim != 2 or rows.shape[0] == 0:
+        return rows
+    mean = np.mean(rows, axis=0, keepdims=True)
+    std = np.std(rows, axis=0, keepdims=True)
+    std[std < 1e-12] = 1.0
+    return (rows - mean) / std
+
+
+def _compute_trial_slope(rows: np.ndarray) -> np.ndarray:
+    if rows.ndim != 2 or rows.shape[0] <= 1:
+        return np.zeros(rows.shape[1] if rows.ndim == 2 else 0, dtype=np.float32)
+    time_axis = np.arange(rows.shape[0], dtype=np.float32)
+    time_axis = time_axis - np.mean(time_axis)
+    time_std = float(np.std(time_axis))
+    if time_std < 1e-12:
+        return np.zeros(rows.shape[1], dtype=np.float32)
+    time_axis = time_axis / time_std
+    return np.mean(rows * time_axis[:, None], axis=0, dtype=np.float32)
+
+
+def _aggregate_trial_vectors(rows: np.ndarray, *, components: Sequence[str]) -> np.ndarray:
+    if rows.ndim != 2 or rows.shape[0] == 0:
+        return np.zeros(0, dtype=np.float32)
+
+    parts: list[np.ndarray] = []
+    for component in components:
+        normalized_component = str(component or "").strip().lower()
+        if normalized_component == "med":
+            parts.append(np.median(rows, axis=0).astype(np.float32))
+        elif normalized_component == "std":
+            parts.append(np.std(rows, axis=0).astype(np.float32))
+        elif normalized_component == "slope":
+            parts.append(_compute_trial_slope(rows))
+        else:
+            raise ValueError(f"unsupported_eeg_trial_component:{normalized_component}")
+    return np.concatenate(parts, axis=0).astype(np.float32)
+
+
 @dataclass(slots=True)
 class EegWaveSample:
     seq: int
@@ -191,6 +237,7 @@ class EegTurnBinding:
     last_live_flush_at: datetime | None = None
     last_sample_at: datetime | None = None
     current_window: EegWindowBuffer = field(default_factory=EegWindowBuffer)
+    preview_last_bucket: int | None = None
 
 
 class EEGTransportProvider(ABC):
@@ -660,12 +707,16 @@ class EEGRuntimeService:
         self._require_transport_for_ready = bool(settings["eeg_require_transport_for_ready"])
         self._channel_names = list(settings["eeg_channel_names"])
         self._sampling_rate = int(settings["eeg_sampling_rate"])
+        self._preview_sampling_rate = max(
+            1,
+            min(self._sampling_rate, int(settings["eeg_preview_sampling_rate"])),
+        )
         self._preview_seconds = max(1, int(settings["eeg_preview_seconds"]))
         self._window_seconds = max(1, int(settings["eeg_window_seconds"]))
         self._window_feature_frames = self._window_seconds
         self._min_feature_frames = max(1, int(settings["eeg_min_feature_frames"]))
         self._latest_results_limit = max(1, int(settings["eeg_latest_results_limit"]))
-        self._preview_sample_limit = max(1, self._sampling_rate * self._preview_seconds)
+        self._preview_sample_limit = max(1, self._preview_sampling_rate * self._preview_seconds)
         self._decoder = EEGPacketDecoder()
         self._lock = threading.RLock()
         self._last_error: str | None = None
@@ -687,12 +738,48 @@ class EEGRuntimeService:
         self._clf = None
         self._scaler = None
         self._selected_features: np.ndarray | None = None
+        self._packet_feature_names: list[str] = []
+        self._window_feature_names: list[str] = []
+        self._trial_feature_names: list[str] = []
+        self._trial_feature_components: tuple[str, ...] = ("med",)
+        self._input_kind = "vector"
+        self._norm_mode = "none"
+        self._runtime_feature_source = "packet"
         self._all_feature_names: list[str] = []
         self._model_name = "eeg_3class"
         self._model_version: str | None = None
         self._model_loaded = False
         self._live_update_callback: Callable[[str, dict[str, Any], dict[str, Any] | None], None] | None = None
         self._sync_transport_state_locked()
+
+    def _is_model_ready_locked(self) -> bool:
+        model_feature_names = self._all_feature_names or self._trial_feature_names or self._window_feature_names
+        return bool(
+            self._clf is not None
+            and self._scaler is not None
+            and self._selected_features is not None
+            and self._selected_features.size > 0
+            and model_feature_names
+        )
+
+    def _reset_model_artifacts_locked(self) -> None:
+        self._clf = None
+        self._scaler = None
+        self._selected_features = None
+        self._packet_feature_names = []
+        self._window_feature_names = []
+        self._trial_feature_names = []
+        self._trial_feature_components = ("med",)
+        self._input_kind = "vector"
+        self._norm_mode = "none"
+        self._runtime_feature_source = "packet"
+        self._all_feature_names = []
+
+    @staticmethod
+    def _coerce_feature_name_list(values: Any) -> list[str]:
+        if not isinstance(values, (list, tuple)):
+            return []
+        return [str(value) for value in values]
 
     def _create_transport_provider(self) -> EEGTransportProvider | None:
         if self._provider_mode == "ble":
@@ -780,13 +867,7 @@ class EEGRuntimeService:
 
     def _build_status_snapshot_locked(self) -> dict[str, Any]:
         self._sync_transport_state_locked()
-        model_loaded = bool(
-            self._clf is not None
-            and self._scaler is not None
-            and self._selected_features is not None
-            and self._selected_features.size > 0
-            and bool(self._all_feature_names)
-        )
+        model_loaded = self._is_model_ready_locked()
         transport_ready = self._transport_ready_locked()
         not_ready_reason = self._not_ready_reason_locked(
             model_loaded=model_loaded,
@@ -860,6 +941,7 @@ class EEGRuntimeService:
                 preview_buffer=deque(carryover_preview, maxlen=self._preview_sample_limit),
                 latest_results=deque(carryover_results, maxlen=self._latest_results_limit),
                 live_stream_reset_pending=not bool(carryover_preview),
+                preview_last_bucket=self._resolve_preview_bucket_from_payloads(carryover_preview),
             )
             self._active_binding = binding
             self._write_binding_live_locked(binding)
@@ -902,15 +984,15 @@ class EEGRuntimeService:
 
     def get_session_live_payload(self, session_id: str) -> dict[str, Any]:
         with self._lock:
+            active = self._active_binding
+            if active and active.session_id == session_id:
+                return self._build_live_payload_locked(active)
             payload = read_eeg_live_payload(session_id)
             if payload is not None:
                 return payload
             cached = self._memory_live_payloads.get(session_id)
             if cached is not None:
                 return cached
-            active = self._active_binding
-            if active and active.session_id == session_id:
-                return self._build_live_payload_locked(active)
             return self._build_pending_live_payload()
 
     def ingest_transport_bytes(self, chunk: bytes) -> None:
@@ -946,12 +1028,7 @@ class EEGRuntimeService:
 
     def _load_model_locked(self) -> bool:
         if self._model_loaded:
-            return (
-                self._clf is not None
-                and self._scaler is not None
-                and self._selected_features is not None
-                and bool(self._all_feature_names)
-            )
+            return self._is_model_ready_locked()
 
         self._model_loaded = True
         model_path = Path(get_settings()["eeg_model_path"])
@@ -969,10 +1046,42 @@ class EEGRuntimeService:
             if selected is None:
                 selected = []
             self._selected_features = np.array(selected, dtype=int)
-            all_feature_names = model_obj.get("all_feature_names") or []
-            self._all_feature_names = [str(name) for name in all_feature_names]
-            if not self._all_feature_names:
-                self._all_feature_names = [f"feat_{index}" for index in range(MODEL_FEATURE_COUNT)]
+            self._input_kind = str(model_obj.get("input_kind") or "vector").strip() or "vector"
+            self._norm_mode = str(model_obj.get("norm_mode") or "none").strip().lower() or "none"
+            self._runtime_feature_source = (
+                str(model_obj.get("runtime_feature_source") or "packet").strip().lower() or "packet"
+            )
+            packet_feature_names = self._coerce_feature_name_list(model_obj.get("packet_feature_names"))
+            window_feature_names = self._coerce_feature_name_list(model_obj.get("window_feature_names"))
+            trial_feature_names = self._coerce_feature_name_list(model_obj.get("trial_feature_names"))
+            all_feature_names = self._coerce_feature_name_list(model_obj.get("all_feature_names"))
+            if not packet_feature_names:
+                packet_feature_names = list(window_feature_names) or list(all_feature_names)
+            if not packet_feature_names:
+                packet_feature_names = [f"feat_{index}" for index in range(MODEL_FEATURE_COUNT)]
+            if not window_feature_names:
+                window_feature_names = list(packet_feature_names)
+            if not trial_feature_names:
+                trial_feature_names = list(all_feature_names) or list(window_feature_names)
+
+            raw_components = model_obj.get("trial_feature_components") or []
+            trial_feature_components = tuple(
+                str(component).strip().lower()
+                for component in raw_components
+                if str(component).strip()
+            )
+            if not trial_feature_components:
+                trial_feature_components = (
+                    ("med",)
+                    if len(trial_feature_names) == len(window_feature_names)
+                    else EEG_DEFAULT_TRIAL_FEATURE_COMPONENTS
+                )
+
+            self._packet_feature_names = list(packet_feature_names)
+            self._window_feature_names = list(window_feature_names)
+            self._trial_feature_names = list(trial_feature_names)
+            self._trial_feature_components = tuple(trial_feature_components)
+            self._all_feature_names = list(trial_feature_names)
             self._model_name = str(model_obj.get("classifier_name") or self._model_name)
             self._model_version = str(
                 model_obj.get("version")
@@ -980,20 +1089,41 @@ class EEGRuntimeService:
                 or model_obj.get("feature_set_desc")
                 or "unknown"
             )
-            self._last_error = None
-            return (
-                self._clf is not None
-                and self._scaler is not None
-                and self._selected_features.size > 0
-                and bool(self._all_feature_names)
+
+            if self._input_kind != "vector":
+                raise ValueError(f"unsupported_eeg_input_kind:{self._input_kind}")
+            if self._runtime_feature_source not in {"packet", ""}:
+                raise ValueError(
+                    f"unsupported_eeg_runtime_feature_source:{self._runtime_feature_source}"
+                )
+            if self._norm_mode not in EEG_SUPPORTED_NORM_MODES:
+                raise ValueError(f"unsupported_eeg_norm_mode:{self._norm_mode}")
+
+            expected_trial_feature_count = len(self._window_feature_names) * len(
+                self._trial_feature_components
             )
+            if len(self._trial_feature_names) != expected_trial_feature_count:
+                raise ValueError(
+                    "eeg_trial_feature_count_mismatch:"
+                    f"trial={len(self._trial_feature_names)}"
+                    f":expected={expected_trial_feature_count}"
+                )
+            if (
+                self._selected_features.size > 0
+                and np.max(self._selected_features) >= len(self._trial_feature_names)
+            ):
+                raise ValueError(
+                    "eeg_selected_feature_index_out_of_range:"
+                    f"selected_max={int(np.max(self._selected_features))}"
+                    f":trial={len(self._trial_feature_names)}"
+                )
+
+            self._last_error = None
+            return self._is_model_ready_locked()
         except Exception as exc:
             self._last_error = str(exc)
             logger.exception("Failed to load EEG model asset")
-            self._clf = None
-            self._scaler = None
-            self._selected_features = None
-            self._all_feature_names = []
+            self._reset_model_artifacts_locked()
             return False
 
     def _update_device_status(self, status: str, device_id: str | None, error: str | None) -> None:
@@ -1031,8 +1161,9 @@ class EEGRuntimeService:
             "captured_at": _isoformat(sample.captured_at),
             "values": [float(value) for value in sample.values],
         }
-        binding.preview_buffer.append(sample_payload)
-        binding.pending_live_samples.append(sample_payload)
+        if self._should_capture_preview_sample(binding, sample.seq):
+            binding.preview_buffer.append(sample_payload)
+            binding.pending_live_samples.append(sample_payload)
         if (
             binding.last_live_flush_at is None
             or (captured_at - binding.last_live_flush_at).total_seconds() >= EEG_LIVE_FLUSH_INTERVAL_SECONDS
@@ -1046,7 +1177,7 @@ class EEGRuntimeService:
             return
         captured_at = _utcnow()
         vector = np.asarray(packet.to_model_vector(), dtype=np.float32)
-        expected_count = self._expected_feature_count()
+        expected_count = self._packet_feature_count()
         if vector.size != expected_count:
             logger.warning(
                 "EEG feature dimension mismatch after filtering: received=%s expected=%s",
@@ -1066,10 +1197,19 @@ class EEGRuntimeService:
         if len(current_window.feature_samples) >= self._window_feature_frames:
             self._finalize_window_locked(binding, reason="window_complete")
 
-    def _expected_feature_count(self) -> int:
+    def _packet_feature_count(self) -> int:
+        if self._window_feature_names:
+            return len(self._window_feature_names)
+        if self._packet_feature_names:
+            return len(self._packet_feature_names)
+        return MODEL_FEATURE_COUNT
+
+    def _model_feature_count(self) -> int:
+        if self._trial_feature_names:
+            return len(self._trial_feature_names)
         if self._all_feature_names:
             return len(self._all_feature_names)
-        return MODEL_FEATURE_COUNT
+        return self._packet_feature_count()
 
     def _load_preview_carryover_locked(self, session_id: str) -> list[dict[str, Any]]:
         payload = self._memory_live_payloads.get(session_id) or read_eeg_live_payload(session_id)
@@ -1127,7 +1267,7 @@ class EEGRuntimeService:
         feature_values = (
             np.array([sample.values for sample in feature_samples], dtype=np.float32)
             if feature_samples
-            else np.zeros((0, self._expected_feature_count()), dtype=np.float32)
+            else np.zeros((0, self._packet_feature_count()), dtype=np.float32)
         )
         feature_timestamps_ms = np.array(
             [int(sample.captured_at.timestamp() * 1000) for sample in feature_samples],
@@ -1184,18 +1324,39 @@ class EEGRuntimeService:
             [sample.values for sample in current_window.feature_samples],
             dtype=np.float32,
         )
-        median_vector = np.median(features_matrix, axis=0)
-        if median_vector.size != self._expected_feature_count():
+        if features_matrix.ndim != 2 or features_matrix.shape[1] != self._packet_feature_count():
             logger.warning(
-                "EEG median feature dimension mismatch: received=%s expected=%s",
-                median_vector.size,
-                self._expected_feature_count(),
+                "EEG packet feature dimension mismatch: received=%s expected=%s",
+                features_matrix.shape[1] if features_matrix.ndim == 2 else 0,
+                self._packet_feature_count(),
             )
             return None
-        if np.any(self._selected_features < 0) or np.any(self._selected_features >= median_vector.size):
-            logger.warning("EEG selected feature indices exceed median vector size=%s", median_vector.size)
+        try:
+            normalized_matrix = _normalize_feature_rows(features_matrix, self._norm_mode).astype(
+                np.float32
+            )
+            model_input_vector = _aggregate_trial_vectors(
+                normalized_matrix,
+                components=self._trial_feature_components,
+            )
+        except ValueError as exc:
+            logger.warning("EEG feature aggregation failed: %s", exc)
             return None
-        selected = median_vector[self._selected_features].reshape(1, -1)
+
+        if model_input_vector.size != self._model_feature_count():
+            logger.warning(
+                "EEG aggregated feature dimension mismatch: received=%s expected=%s",
+                model_input_vector.size,
+                self._model_feature_count(),
+            )
+            return None
+        if np.any(self._selected_features < 0) or np.any(self._selected_features >= model_input_vector.size):
+            logger.warning(
+                "EEG selected feature indices exceed aggregated vector size=%s",
+                model_input_vector.size,
+            )
+            return None
+        selected = model_input_vector[self._selected_features].reshape(1, -1)
         scaled = self._scaler.transform(selected)
         prediction = int(self._clf.predict(scaled)[0])
 
@@ -1377,7 +1538,7 @@ class EEGRuntimeService:
             "eeg_waves": {
                 "status": "ready" if binding.preview_buffer else "pending",
                 "channel_names": list(self._channel_names),
-                "sampling_rate": self._sampling_rate,
+                "sampling_rate": self._preview_sampling_rate,
                 "samples": list(binding.preview_buffer),
             },
         }
@@ -1401,7 +1562,7 @@ class EEGRuntimeService:
             "eeg_waves": {
                 "status": "pending" if self._enabled else "disabled",
                 "channel_names": list(self._channel_names),
-                "sampling_rate": self._sampling_rate,
+                "sampling_rate": self._preview_sampling_rate,
                 "samples": [],
             },
         }
@@ -1412,10 +1573,34 @@ class EEGRuntimeService:
         return {
             "status": "ready" if binding.preview_buffer else "pending",
             "channel_names": list(self._channel_names),
-            "sampling_rate": self._sampling_rate,
+            "sampling_rate": self._preview_sampling_rate,
             "append_samples": list(binding.pending_live_samples),
             "reset": bool(binding.live_stream_reset_pending),
         }
+
+    def _resolve_preview_bucket_from_payloads(self, payloads: list[dict[str, Any]]) -> int | None:
+        if not payloads:
+            return None
+        last_seq = payloads[-1].get("seq")
+        if not isinstance(last_seq, int):
+            try:
+                last_seq = int(last_seq)
+            except (TypeError, ValueError):
+                return None
+        return self._preview_bucket_for_seq(last_seq)
+
+    def _preview_bucket_for_seq(self, seq: int) -> int:
+        if self._preview_sampling_rate >= self._sampling_rate:
+            return int(seq)
+        return (int(seq) * self._preview_sampling_rate) // max(1, self._sampling_rate)
+
+    def _should_capture_preview_sample(self, binding: EegTurnBinding, seq: int) -> bool:
+        bucket = self._preview_bucket_for_seq(seq)
+        last_bucket = binding.preview_last_bucket
+        if last_bucket is not None and bucket <= last_bucket:
+            return False
+        binding.preview_last_bucket = bucket
+        return True
 
     def _store_live_payload_locked(
         self,
@@ -1453,12 +1638,7 @@ class EEGRuntimeService:
             "provider": self._provider_mode,
             "transport_provider": self._transport_provider,
             "transport_status": self._transport_status,
-            "model_loaded": (
-                self._clf is not None
-                and self._scaler is not None
-                and self._selected_features is not None
-                and bool(self._all_feature_names)
-            ),
+            "model_loaded": self._is_model_ready_locked(),
             "channel_names": list(self._channel_names),
             "sampling_rate": self._sampling_rate,
         }

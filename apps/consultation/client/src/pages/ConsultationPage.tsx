@@ -38,21 +38,54 @@ import {
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
 import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
-import { mergeConsultationMultimodalLive } from "../lib/multimodalLiveMerge";
+import { mergeConsultationMultimodalLivePatch } from "../lib/multimodalLiveMerge";
 import type {
-  ConsultationMultimodalLive,
   ConsultationMultimodalLivePatch,
   ConsultationSubtitleHistoryEntry,
 } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
 const LIVE_REFRESH_INTERVAL_MS = 1000;
+const LIVE_PATCH_BUFFER_INTERVAL_MS = 180;
 const SYSTEM_VIDEO_AUTO_COMMIT_THRESHOLD_SECONDS = 0.9;
 
 declare global {
   interface Window {
     webkitAudioContext?: typeof AudioContext;
   }
+}
+
+function extractImmediateEegWavePatch(
+  live: ConsultationMultimodalLivePatch,
+): ConsultationMultimodalLivePatch | null {
+  if (!live.eeg_waves) {
+    return null;
+  }
+
+  return {
+    session_id: live.session_id,
+    updated_at: live.updated_at,
+    eeg_waves: live.eeg_waves,
+  };
+}
+
+function extractBufferedLivePatch(
+  live: ConsultationMultimodalLivePatch,
+): ConsultationMultimodalLivePatch | null {
+  const hasDeferredPayload = Boolean(live.speech || live.text || live.face || live.pose || live.eeg_live);
+  if (!hasDeferredPayload) {
+    return null;
+  }
+
+  return {
+    session_id: live.session_id,
+    updated_at: live.updated_at,
+    speech: live.speech,
+    text: live.text,
+    face: live.face,
+    pose: live.pose,
+    eeg_live: live.eeg_live,
+  };
 }
 
 function formatSubtitleHistoryLine(entry: ConsultationSubtitleHistoryEntry) {
@@ -92,7 +125,7 @@ export default function ConsultationPage() {
   const lastRecordingUrlRef = useRef<string | null>(null);
   const answerWindowPromptKeyRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
-  const livePatchBufferRef = useRef<ConsultationMultimodalLive | null>(null);
+  const livePatchBufferRef = useRef<ConsultationMultimodalLivePatch | null>(null);
   const livePatchFlushTimerRef = useRef<number | null>(null);
   const consultationStatusRef = useRef<string | null>(consultation?.status ?? null);
   const currentQuestionItemRef = useRef(consultation?.current_question_item ?? null);
@@ -404,9 +437,21 @@ export default function ConsultationPage() {
   });
 
   const applyLiveSnapshot = useEffectEvent((live: ConsultationMultimodalLivePatch) => {
-    livePatchBufferRef.current = mergeConsultationMultimodalLive(
+    const immediateEegWavePatch = extractImmediateEegWavePatch(live);
+    if (immediateEegWavePatch) {
+      startTransition(() => {
+        actions.applyConsultationMultimodalLive(immediateEegWavePatch);
+      });
+    }
+
+    const bufferedPatch = extractBufferedLivePatch(live);
+    if (!bufferedPatch) {
+      return;
+    }
+
+    livePatchBufferRef.current = mergeConsultationMultimodalLivePatch(
       livePatchBufferRef.current,
-      live,
+      bufferedPatch,
     );
     if (livePatchFlushTimerRef.current !== null) {
       return;
@@ -414,7 +459,7 @@ export default function ConsultationPage() {
     livePatchFlushTimerRef.current = window.setTimeout(() => {
       livePatchFlushTimerRef.current = null;
       flushBufferedLiveSnapshot();
-    }, 180);
+    }, LIVE_PATCH_BUFFER_INTERVAL_MS);
   });
 
   const {
@@ -947,7 +992,7 @@ export default function ConsultationPage() {
             <div className="w-full h-full bg-slate-900/10 transition-all duration-500 backdrop-blur-md rounded-3xl border border-indigo-400/60 shadow-[0_0_40px_rgba(99,102,241,0.6),inset_0_0_20px_rgba(165,180,252,0.4)] overflow-hidden flex flex-col relative z-30 ring-1 ring-indigo-400/30">
               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-500/5 to-transparent pointer-events-none"></div>
               <div className="w-full h-full flex flex-col overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent relative z-10">
-                <div className="w-full h-full min-h-0">
+                <div className="w-full min-h-full">
                   {isOpen ? (
                     <ConsultationStatusPanel
                       consultation={consultation}
@@ -962,7 +1007,7 @@ export default function ConsultationPage() {
                       cameraStatusTone={cameraFeedback.tone}
                       microphoneStatusText={microphoneFeedback.title}
                       transcriptPending={isRecording || isSubmittingResponse}
-                      className="h-full"
+                      className="min-h-full"
                     />
                   ) : null}
                 </div>
