@@ -8,7 +8,6 @@ function CoverPage() {
   return (
     <main className="relative h-[100svh] overflow-hidden bg-[#0d1631]" style={entryBackgroundStyle}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_34%_38%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02)_18%,rgba(255,255,255,0.08)_100%)]" />
-      <div className="absolute inset-[20px] border border-white/12" />
 
       <EntryBrand />
 

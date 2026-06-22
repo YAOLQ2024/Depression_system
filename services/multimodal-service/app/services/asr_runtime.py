@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import re
 import threading
 from pathlib import Path
@@ -12,6 +13,9 @@ _DOLPHIN_CONTROL_TOKEN_PATTERN = re.compile(
     r"(?:<(?:zh|cn|asr|notimestamp)>\s*)+",
     flags=re.IGNORECASE,
 )
+_PRIMARY_DECODING_METHOD = "attention_rescoring"
+_FALLBACK_DECODING_METHODS = ("attention",)
+logger = logging.getLogger(__name__)
 
 
 class DolphinAsrError(Exception):
@@ -26,6 +30,7 @@ class DolphinTranscriptionResult:
     transcript_text: str
     transcript_confidence: float | None
     resolved_device: str
+    resolved_decoding_method: str
 
 
 class DolphinAsrRuntime:
@@ -167,7 +172,12 @@ class DolphinAsrRuntime:
             return float(value)
         return None
 
-    def _transcribe_once(self, wav_path: Path, device: str) -> DolphinTranscriptionResult:
+    def _transcribe_once(
+        self,
+        wav_path: Path,
+        device: str,
+        decoding_method: str = _PRIMARY_DECODING_METHOD,
+    ) -> DolphinTranscriptionResult:
         self._ensure_loaded(device)
         lang_sym = get_settings()["asr_lang_sym"]
         region_sym = get_settings()["asr_region_sym"]
@@ -179,6 +189,7 @@ class DolphinAsrRuntime:
                     str(wav_path),
                     lang_sym=lang_sym,
                     region_sym=region_sym,
+                    decoding_method=decoding_method,
                 )
             else:
                 load_audio = getattr(self._dolphin_module, "load_audio", None)
@@ -192,6 +203,7 @@ class DolphinAsrRuntime:
                     waveform,
                     lang_sym=lang_sym,
                     region_sym=region_sym,
+                    decoding_method=decoding_method,
                 )
         except DolphinAsrError:
             raise
@@ -205,19 +217,92 @@ class DolphinAsrRuntime:
             transcript_text=self._extract_transcript_text(result),
             transcript_confidence=self._extract_confidence(result),
             resolved_device=device,
+            resolved_decoding_method=decoding_method,
+        )
+
+    def _transcribe_with_fallback_methods(
+        self,
+        wav_path: Path,
+        device: str,
+    ) -> DolphinTranscriptionResult:
+        methods = (_PRIMARY_DECODING_METHOD, *_FALLBACK_DECODING_METHODS)
+        last_result: DolphinTranscriptionResult | None = None
+        last_error: DolphinAsrError | None = None
+
+        for index, decoding_method in enumerate(methods):
+            try:
+                result = self._transcribe_once(
+                    wav_path,
+                    device,
+                    decoding_method=decoding_method,
+                )
+            except DolphinAsrError as exc:
+                if exc.error_code == "MODEL_NOT_READY":
+                    raise
+                last_error = exc
+                if index < len(methods) - 1:
+                    logger.warning(
+                        "Dolphin ASR failed with decoding method '%s' for %s on %s: %s. Retrying with fallback method.",
+                        decoding_method,
+                        wav_path,
+                        device,
+                        exc.message,
+                    )
+                continue
+
+            if result.transcript_text:
+                if decoding_method != _PRIMARY_DECODING_METHOD:
+                    logger.info(
+                        "Dolphin ASR recovered transcript with fallback decoding method '%s' for %s on %s.",
+                        decoding_method,
+                        wav_path,
+                        device,
+                    )
+                return result
+
+            last_result = result
+            if index < len(methods) - 1:
+                logger.info(
+                    "Dolphin ASR returned an empty transcript with decoding method '%s' for %s on %s. Retrying with fallback method.",
+                    decoding_method,
+                    wav_path,
+                    device,
+                )
+
+        if last_result is not None:
+            return last_result
+
+        if last_error is not None:
+            raise last_error
+
+        raise DolphinAsrError(
+            "dolphin did not return transcript text",
+            error_code="TRANSCRIPTION_FAILED",
         )
 
     def transcribe(self, wav_path: Path) -> DolphinTranscriptionResult:
         primary_device = self._resolve_device()
-        if primary_device != "cuda" or get_settings()["asr_device"] != "auto":
-            return self._transcribe_once(wav_path, primary_device)
+        auto_device_enabled = get_settings()["asr_device"] == "auto"
+        if primary_device != "cuda" or not auto_device_enabled:
+            return self._transcribe_with_fallback_methods(wav_path, primary_device)
 
         try:
-            return self._transcribe_once(wav_path, "cuda")
+            primary_result = self._transcribe_with_fallback_methods(wav_path, "cuda")
+            if primary_result.transcript_text:
+                return primary_result
+            logger.info(
+                "Dolphin ASR returned an empty transcript on cuda for %s. Retrying on cpu.",
+                wav_path,
+            )
         except DolphinAsrError as exc:
             if exc.error_code == "MODEL_NOT_READY":
                 raise
-        return self._transcribe_once(wav_path, "cpu")
+            logger.warning(
+                "Dolphin ASR failed on cuda for %s: %s. Retrying on cpu.",
+                wav_path,
+                exc.message,
+            )
+        return self._transcribe_with_fallback_methods(wav_path, "cpu")
 
 
 _ASR_RUNTIME = DolphinAsrRuntime()

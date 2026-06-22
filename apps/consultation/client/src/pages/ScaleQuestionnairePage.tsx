@@ -414,8 +414,7 @@ export default function ScaleQuestionnairePage() {
       ? pendingAcceptedAnswer.selected_option_label ?? null
       : null;
 
-  const handleAudioRecordingComplete = useEffectEvent(
-    async (payload: RecordingCompletedPayload) => {
+  const handleAudioRecordingComplete = async (payload: RecordingCompletedPayload) => {
     const { blob } = payload;
 
     const objectUrl = URL.createObjectURL(blob);
@@ -500,8 +499,7 @@ export default function ScaleQuestionnairePage() {
     } finally {
       setIsSubmittingAnswer(false);
     }
-  },
-);
+  };
 
   const {
     isRecording,
@@ -557,6 +555,7 @@ export default function ScaleQuestionnairePage() {
   });
 
   useEffect(() => {
+    isUnmountingRef.current = false;
     return () => {
       isUnmountingRef.current = true;
       clearVideoCompletionFallback();

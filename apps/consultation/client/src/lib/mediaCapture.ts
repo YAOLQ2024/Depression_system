@@ -16,6 +16,17 @@ export function pickSupportedRecordingMimeType() {
 	);
 }
 
+export function buildPreferredAudioConstraints(): MediaTrackConstraints {
+	return {
+		echoCancellation: { ideal: true },
+		noiseSuppression: { ideal: true },
+		autoGainControl: { ideal: true },
+		channelCount: { ideal: 1 },
+		sampleRate: { ideal: 48000 },
+		sampleSize: { ideal: 16 },
+	};
+}
+
 export async function captureVideoFrame(
 	videoElement: HTMLVideoElement,
 	mimeType = "image/jpeg",

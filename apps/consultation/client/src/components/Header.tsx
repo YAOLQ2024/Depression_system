@@ -27,22 +27,24 @@ export function Header({ theme = 'light', title }: HeaderProps) {
   };
 
   return (
-    <header className="h-[48px] w-full flex items-center justify-between px-6 z-10 relative">
-      <div className="flex items-center gap-3 cursor-pointer" onClick={handleLogoClick}>
-        <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold shadow-soft text-base">
-          AI
-        </div>
-        <div className="flex items-center gap-3">
-          <h1 className={cn("text-base font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
+    <header className="relative z-10 flex h-[60px] w-full items-center justify-between px-4 md:px-5">
+      <div className="flex min-w-0 items-center gap-2.5 cursor-pointer" onClick={handleLogoClick}>
+        <img
+          src="/aim-brand-lockup.svg"
+          alt="医学人工智能实验室"
+          className="h-[34px] w-auto shrink-0 object-contain drop-shadow-[0_1px_4px_rgba(255,255,255,0.2)] md:h-[38px]"
+        />
+        <div className="flex min-w-0 items-center gap-2.5">
+          <h1 className={cn("shrink-0 text-base font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
             抑郁症数字人辅助评估系统
           </h1>
           {title !== false ? (
-            <>
+            <div className="flex min-w-0 items-center gap-2.5">
               <span className={cn("h-4 w-px rounded-full", isDark ? "bg-white/20" : "bg-slate-300")} />
-              <span className={cn("text-[13px] font-normal", isDark ? "text-white/70" : "text-slate-500")}>
+              <span className={cn("truncate text-[13px] font-normal", isDark ? "text-white/70" : "text-slate-500")}>
                 {title || "量表问诊"}
               </span>
-            </>
+            </div>
           ) : null}
         </div>
       </div>

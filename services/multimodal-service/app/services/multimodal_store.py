@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 import threading
 import uuid
@@ -28,6 +29,7 @@ from app.services.audio_processing import (
     get_wav_duration_ms,
     resolve_audio_suffix,
     resolve_mime_type,
+    trim_leading_silence,
     write_source_audio_file,
 )
 from app.services.multimodal_session_registry import (
@@ -53,6 +55,7 @@ _TRANSCRIPTION_EXECUTOR = ThreadPoolExecutor(
 )
 _ACTIVE_TRANSCRIPTION_FUTURES: dict[str, Future] = {}
 _ACTIVE_TRANSCRIPTION_LOCK = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -376,6 +379,36 @@ def _run_transcription_job(
             )
         asr_result = get_asr_runtime().transcribe(wav_path)
         transcript_text = str(asr_result.transcript_text or "").strip()
+        if not transcript_text:
+            trimmed_wav_path = source_path.parent / "transcription.trimmed.wav"
+            try:
+                trim_leading_silence(wav_path, trimmed_wav_path)
+                trimmed_duration_ms = get_wav_duration_ms(trimmed_wav_path)
+                if 0 < trimmed_duration_ms < actual_duration_ms:
+                    logger.info(
+                        "Retrying Dolphin ASR with leading-silence-trimmed wav for audio turn %s (%sms -> %sms).",
+                        audio_turn_id,
+                        actual_duration_ms,
+                        trimmed_duration_ms,
+                    )
+                    trimmed_result = get_asr_runtime().transcribe(trimmed_wav_path)
+                    trimmed_text = str(trimmed_result.transcript_text or "").strip()
+                    if trimmed_text:
+                        asr_result = trimmed_result
+                        transcript_text = trimmed_text
+                else:
+                    logger.info(
+                        "Skipping trimmed-wav ASR retry for audio turn %s because trimming did not shorten the clip (%sms -> %sms).",
+                        audio_turn_id,
+                        actual_duration_ms,
+                        trimmed_duration_ms,
+                    )
+            except AudioProcessingError as exc:
+                logger.warning(
+                    "Failed to prepare leading-silence-trimmed wav for audio turn %s: %s",
+                    audio_turn_id,
+                    exc.message,
+                )
         if not transcript_text:
             raise DolphinAsrError(
                 "dolphin did not return transcript text",
