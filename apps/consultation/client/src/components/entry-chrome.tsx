@@ -2,7 +2,7 @@ import { Shield } from "lucide-react";
 
 export const entryBackgroundStyle = {
   backgroundImage:
-    "linear-gradient(90deg, rgba(14,24,56,0.52) 0%, rgba(18,32,72,0.30) 34%, rgba(18,32,72,0.10) 60%, rgba(18,32,72,0.22) 100%), url('/cover-background-v2.png')",
+    "linear-gradient(90deg, rgba(14,24,56,0.52) 0%, rgba(18,32,72,0.30) 34%, rgba(18,32,72,0.10) 60%, rgba(18,32,72,0.22) 100%), url('/yun.jpg')",
   backgroundPosition: "center",
   backgroundSize: "cover",
 };

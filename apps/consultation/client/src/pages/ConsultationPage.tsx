@@ -25,6 +25,7 @@ import {
   useVideoNodeTransitionController,
 } from "../features/video-node";
 import { buildRecordingFilename, formatDuration, sleep } from "../lib/mediaCapture";
+import { logAudioDebug } from "../lib/audioDebug";
 import { useMultimodalAudioSubmission } from "../lib/useMultimodalAudioSubmission";
 import { useAudioRecording, type RecordingCompletedPayload } from "../lib/useAudioRecording";
 import { useCamera } from "../lib/useCamera";
@@ -110,9 +111,15 @@ export default function ConsultationPage() {
     missingSessionMessage: "当前问诊会话缺少多模态会话绑定，请刷新页面后重试。",
   });
 
-  const handleAudioRecordingComplete = useEffectEvent(
-    async (payload: RecordingCompletedPayload) => {
+  const handleAudioRecordingComplete = async (payload: RecordingCompletedPayload) => {
       const { blob, mimeType, startedAt, completedAt } = payload;
+      logAudioDebug("consultation.callback.enter", {
+        blobSize: blob.size,
+        blobType: blob.type || "",
+        mimeType,
+        currentQuestionKey,
+        consultationStatus: consultation?.status ?? null,
+      });
 
       const objectUrl = URL.createObjectURL(blob);
       if (lastRecordingUrlRef.current) {
@@ -131,8 +138,16 @@ export default function ConsultationPage() {
 
       // Upload + transcribe + submit
       setIsSubmittingResponse(true);
+      logAudioDebug("consultation.callback.submitting", {
+        currentQuestionKey,
+        consultationTurnId: consultation?.current_turn_id ?? null,
+      });
       try {
         if (!consultation || !currentQuestionKey) {
+          logAudioDebug("consultation.callback.missing_context", {
+            hasConsultation: Boolean(consultation),
+            currentQuestionKey,
+          });
           pushToast("当前题目缺少转写所需上下文，请刷新后重试。", "error");
           return;
         }
@@ -179,6 +194,11 @@ export default function ConsultationPage() {
               filename: buildRecordingFilename(context.currentQuestionKey, resolvedMimeType),
             }),
         });
+        logAudioDebug("consultation.callback.uploaded", {
+          sessionId: submittedAudio.sessionId,
+          audioTurnId: submittedAudio.uploadedAudioTurn.audio_turn_id,
+          transcriptLength: submittedAudio.transcriptText.length,
+        });
         setSubtitleUserTranscript(submittedAudio.transcriptText);
 
         await actions.submitConsultationTurn({
@@ -200,15 +220,20 @@ export default function ConsultationPage() {
         }
         pushToast("转写成功", "success", { durationMs: 1800 });
       } catch (caught) {
+        logAudioDebug("consultation.callback.failed", {
+          error: caught instanceof Error ? caught.message : String(caught),
+        });
         pushToast(
           caught instanceof Error ? caught.message : "语音提交失败，请重新录音。",
           "error",
         );
       } finally {
+        logAudioDebug("consultation.callback.finally", {
+          currentQuestionKey,
+        });
         setIsSubmittingResponse(false);
       }
-    },
-  );
+  };
 
   const {
     isRecording,
@@ -426,7 +451,6 @@ export default function ConsultationPage() {
         ? getConsultationMultimodalLiveStreamUrl(consultation.session_id)
         : null,
     onMessage: applyLiveSnapshot,
-    enabled: isOpen,
   });
 
   const refreshLiveSnapshot = useEffectEvent(async () => {
@@ -558,6 +582,7 @@ export default function ConsultationPage() {
   }, [consultation?.session_id, isLiveStreamActive, isOpen]);
 
   useEffect(() => {
+    isUnmountingRef.current = false;
     return () => {
       isUnmountingRef.current = true;
       if (livePatchFlushTimerRef.current !== null) {

@@ -30,6 +30,7 @@ docs/superpowers/
 refer/
 
 tmp/
+.codex-tmp/
 tools/eeg-tools/.env
 tools/eeg-tools/data/
 tools/eeg-tools/tmp/
