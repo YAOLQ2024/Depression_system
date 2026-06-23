@@ -1377,7 +1377,7 @@ export default function ScaleQuestionnairePage() {
             <div className="w-full h-full bg-slate-900/10 transition-all duration-500 backdrop-blur-md rounded-3xl border border-indigo-400/60 shadow-[0_0_40px_rgba(99,102,241,0.6),inset_0_0_20px_rgba(165,180,252,0.4)] overflow-hidden flex flex-col relative z-30 ring-1 ring-indigo-400/30">
               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-500/5 to-transparent pointer-events-none"></div>
               <div className="w-full h-full flex flex-col overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent relative z-10">
-                <div className="w-full h-full min-h-0">
+                <div className="w-full min-h-full">
                   {isOpen && synthesizedConsultation ? (
                     <ConsultationStatusPanel
                       consultation={synthesizedConsultation}
@@ -1392,7 +1392,7 @@ export default function ScaleQuestionnairePage() {
                       cameraStatusTone={cameraFeedback.tone}
                       microphoneStatusText={microphoneStatusTitle}
                       transcriptPending={isRecording || isSubmittingAnswer}
-                      className="h-full"
+                      className="min-h-full"
                     />
                   ) : null}
                 </div>
