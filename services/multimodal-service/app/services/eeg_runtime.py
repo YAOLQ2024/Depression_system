@@ -49,6 +49,9 @@ EEG_TRANSPORT_READY_STATUSES = {
 }
 EEG_SUPPORTED_NORM_MODES = {"none", "session_zscore"}
 EEG_DEFAULT_TRIAL_FEATURE_COMPONENTS = ("med", "std", "slope")
+EEG_WAVE_SEQ_MODULO = 1 << 16
+EEG_PREVIEW_SEQ_REORDER_TOLERANCE = 8
+EEG_PREVIEW_SEQ_RESET_LOW_WATERMARK = 32
 
 
 def _utcnow() -> datetime:
@@ -238,6 +241,9 @@ class EegTurnBinding:
     last_sample_at: datetime | None = None
     current_window: EegWindowBuffer = field(default_factory=EegWindowBuffer)
     preview_last_bucket: int | None = None
+    preview_last_raw_seq: int | None = None
+    preview_last_unwrapped_seq: int | None = None
+    preview_seq_offset: int = 0
 
 
 class EEGTransportProvider(ABC):
@@ -942,6 +948,8 @@ class EEGRuntimeService:
                 latest_results=deque(carryover_results, maxlen=self._latest_results_limit),
                 live_stream_reset_pending=not bool(carryover_preview),
                 preview_last_bucket=self._resolve_preview_bucket_from_payloads(carryover_preview),
+                preview_last_raw_seq=self._resolve_last_preview_seq_from_payloads(carryover_preview),
+                preview_last_unwrapped_seq=self._resolve_last_preview_seq_from_payloads(carryover_preview),
             )
             self._active_binding = binding
             self._write_binding_live_locked(binding)
@@ -1578,15 +1586,26 @@ class EEGRuntimeService:
             "reset": bool(binding.live_stream_reset_pending),
         }
 
-    def _resolve_preview_bucket_from_payloads(self, payloads: list[dict[str, Any]]) -> int | None:
-        if not payloads:
+    @staticmethod
+    def _coerce_wave_seq(value: Any) -> int | None:
+        if isinstance(value, bool):
             return None
-        last_seq = payloads[-1].get("seq")
-        if not isinstance(last_seq, int):
+        if not isinstance(value, int):
             try:
-                last_seq = int(last_seq)
+                value = int(value)
             except (TypeError, ValueError):
                 return None
+        return int(value) % EEG_WAVE_SEQ_MODULO
+
+    def _resolve_last_preview_seq_from_payloads(self, payloads: list[dict[str, Any]]) -> int | None:
+        if not payloads:
+            return None
+        return self._coerce_wave_seq(payloads[-1].get("seq"))
+
+    def _resolve_preview_bucket_from_payloads(self, payloads: list[dict[str, Any]]) -> int | None:
+        last_seq = self._resolve_last_preview_seq_from_payloads(payloads)
+        if last_seq is None:
+            return None
         return self._preview_bucket_for_seq(last_seq)
 
     def _preview_bucket_for_seq(self, seq: int) -> int:
@@ -1594,8 +1613,45 @@ class EEGRuntimeService:
             return int(seq)
         return (int(seq) * self._preview_sampling_rate) // max(1, self._sampling_rate)
 
+    def _advance_preview_seq_locked(self, binding: EegTurnBinding, seq: int) -> int | None:
+        raw_seq = self._coerce_wave_seq(seq)
+        if raw_seq is None:
+            return None
+
+        last_raw_seq = binding.preview_last_raw_seq
+        last_unwrapped_seq = binding.preview_last_unwrapped_seq
+        if last_raw_seq is None or last_unwrapped_seq is None:
+            binding.preview_last_raw_seq = raw_seq
+            binding.preview_last_unwrapped_seq = raw_seq
+            return raw_seq
+
+        seq_offset = binding.preview_seq_offset
+        if raw_seq < last_raw_seq:
+            backward_gap = last_raw_seq - raw_seq
+            should_continue_from_new_cycle = (
+                raw_seq <= EEG_PREVIEW_SEQ_RESET_LOW_WATERMARK
+                or backward_gap > EEG_PREVIEW_SEQ_REORDER_TOLERANCE
+            )
+            if not should_continue_from_new_cycle:
+                return None
+            # Preserve monotonic preview bucketing across 16-bit wrap-around
+            # and device reconnects that reset the transport sequence counter.
+            seq_offset = last_unwrapped_seq + 1 - raw_seq
+            binding.preview_seq_offset = seq_offset
+
+        unwrapped_seq = raw_seq + seq_offset
+        if unwrapped_seq <= last_unwrapped_seq:
+            return None
+
+        binding.preview_last_raw_seq = raw_seq
+        binding.preview_last_unwrapped_seq = unwrapped_seq
+        return unwrapped_seq
+
     def _should_capture_preview_sample(self, binding: EegTurnBinding, seq: int) -> bool:
-        bucket = self._preview_bucket_for_seq(seq)
+        unwrapped_seq = self._advance_preview_seq_locked(binding, seq)
+        if unwrapped_seq is None:
+            return False
+        bucket = self._preview_bucket_for_seq(unwrapped_seq)
         last_bucket = binding.preview_last_bucket
         if last_bucket is not None and bucket <= last_bucket:
             return False

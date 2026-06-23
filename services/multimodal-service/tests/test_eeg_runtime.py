@@ -368,6 +368,69 @@ def test_runtime_downsamples_live_wave_preview_to_256hz(monkeypatch) -> None:
     assert preview_samples == sorted(preview_samples, key=lambda sample: sample["seq"])
 
 
+def test_runtime_continues_live_wave_preview_after_seq_wraparound(monkeypatch) -> None:
+    settings = get_settings()
+    monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_sampling_rate", 500)
+    monkeypatch.setitem(settings, "eeg_preview_sampling_rate", 256)
+    monkeypatch.setitem(settings, "eeg_preview_seconds", 4)
+
+    runtime = EEGRuntimeService()
+
+    monkeypatch.setattr(runtime, "_load_model_locked", lambda: True)
+    monkeypatch.setattr(runtime, "_ensure_provider_started_locked", lambda: None)
+    monkeypatch.setattr(runtime, "_upload_raw_window", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "_record_window_result_locked", lambda *args, **kwargs: None)
+
+    runtime.begin_turn(
+        session_id="session-1",
+        turn_id="turn-1",
+        flow_run_id="flow-1",
+        stage_id="stage-1",
+        question_key="question-1",
+    )
+
+    for seq in [65530, 65531, 65532, 65533, 65534, 65535, 0, 1, 2, 3, 4, 5, 6]:
+        runtime.ingest_transport_bytes(build_wave_frame(seq, [0.1, 0.2, 0.3]))
+
+    payload = runtime.get_session_live_payload("session-1")
+    preview_sequences = [sample["seq"] for sample in payload["eeg_waves"]["samples"]]
+
+    assert preview_sequences[:3] == [65530, 65532, 65534]
+    assert preview_sequences[3:] == [0, 2, 4, 6]
+
+
+def test_runtime_continues_live_wave_preview_after_low_seq_restart(monkeypatch) -> None:
+    settings = get_settings()
+    monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_sampling_rate", 500)
+    monkeypatch.setitem(settings, "eeg_preview_sampling_rate", 256)
+    monkeypatch.setitem(settings, "eeg_preview_seconds", 4)
+
+    runtime = EEGRuntimeService()
+
+    monkeypatch.setattr(runtime, "_load_model_locked", lambda: True)
+    monkeypatch.setattr(runtime, "_ensure_provider_started_locked", lambda: None)
+    monkeypatch.setattr(runtime, "_upload_raw_window", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "_record_window_result_locked", lambda *args, **kwargs: None)
+
+    runtime.begin_turn(
+        session_id="session-1",
+        turn_id="turn-1",
+        flow_run_id="flow-1",
+        stage_id="stage-1",
+        question_key="question-1",
+    )
+
+    for seq in [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6]:
+        runtime.ingest_transport_bytes(build_wave_frame(seq, [0.1, 0.2, 0.3]))
+
+    payload = runtime.get_session_live_payload("session-1")
+    preview_sequences = [sample["seq"] for sample in payload["eeg_waves"]["samples"]]
+
+    assert preview_sequences == [0, 2, 4, 0, 2, 4, 6]
+
+
 def test_ble_provider_matches_hint_against_ble_address(monkeypatch) -> None:
     settings = get_settings()
     monkeypatch.setitem(settings, "eeg_device_name_hint", "77:E3:66")
