@@ -21,6 +21,7 @@ const EEG_VIEWBOX_PADDING_Y = 10;
 const EEG_RENDER_POINT_LIMIT = 2048;
 const EEG_CANVAS_BOUNDS_EPSILON = 0.001;
 const EEG_CANVAS_BOUNDS_FRAME_ALPHA = 0.05;
+const EEG_BOUNDS_UPDATE_INTERVAL_MS = 480;
 const EEG_MIN_VISIBLE_UPPER_UV = 20;
 const EEG_MAX_VISIBLE_LOWER_UV = -20;
 const EEG_PROBABILITY_LABELS = ["\u6d88\u6781", "\u4e2d\u6027", "\u79ef\u6781"];
@@ -197,7 +198,8 @@ function drawEegWaveCanvas(
   values: number[],
   color: string,
   bounds: EegWaveBounds,
-  offsetSamples: number,
+  visibleSampleCount: number,
+  windowStartSample: number,
 ) {
   const context = canvas.getContext("2d");
   if (!context) {
@@ -212,10 +214,12 @@ function drawEegWaveCanvas(
   const bottomGuideY = height - EEG_VIEWBOX_PADDING_Y;
   const plotHeight = Math.max(1, height - EEG_VIEWBOX_PADDING_Y * 2);
   const span = Math.max(bounds.upperBound - bounds.lowerBound, EEG_CANVAS_BOUNDS_EPSILON);
-  const step = Math.max(1, Math.ceil(values.length / EEG_RENDER_POINT_LIMIT));
-  const renderedPointCount = Math.max(1, Math.ceil(values.length / step));
+  const effectiveVisibleSampleCount = Math.max(1, Math.min(visibleSampleCount, values.length));
+  const maxWindowStart = Math.max(0, values.length - effectiveVisibleSampleCount);
+  const clampedWindowStart = clampNumber(windowStartSample, 0, maxWindowStart);
+  const renderedPointCount = Math.max(2, Math.min(EEG_RENDER_POINT_LIMIT, Math.round(width)));
   const denominator = Math.max(1, renderedPointCount - 1);
-  const scrollOffset = clampNumber(offsetSamples / step, 0, denominator);
+  const sampleSpan = Math.max(0, effectiveVisibleSampleCount - 1);
 
   context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   context.clearRect(0, 0, width, height);
@@ -245,30 +249,22 @@ function drawEegWaveCanvas(
   context.lineJoin = "round";
   context.beginPath();
 
-  let hasStarted = false;
-  let renderIndex = 0;
-  for (let index = 0; index < values.length; index += step) {
-    const x = ((renderIndex + scrollOffset) / denominator) * width;
-    if (x < -12 || x > width + 12) {
-      renderIndex += 1;
-      continue;
-    }
-
-    const normalized = (values[index] - bounds.lowerBound) / span;
+  for (let pointIndex = 0; pointIndex < renderedPointCount; pointIndex += 1) {
+    const ratio = pointIndex / denominator;
+    const samplePosition =
+      sampleSpan > 0 ? clampedWindowStart + ratio * sampleSpan : clampedWindowStart;
+    const interpolatedValue = interpolateWaveValue(values, samplePosition);
+    const normalized = (interpolatedValue - bounds.lowerBound) / span;
     const y = EEG_VIEWBOX_PADDING_Y + (1 - clampNumber(normalized, 0, 1)) * plotHeight;
+    const x = ratio * width;
 
-    if (!hasStarted) {
-      context.moveTo(x, y);
-      hasStarted = true;
+    if (pointIndex === 0) {
+      context.moveTo(0, y);
     } else {
       context.lineTo(x, y);
     }
-    renderIndex += 1;
   }
-
-  if (hasStarted) {
-    context.stroke();
-  }
+  context.stroke();
 }
 
 function extractEegWaveSampleMeta(samples: EegWaveSample[]): EegWaveSampleMeta {
@@ -307,6 +303,25 @@ function buildEmptyWaveBounds(): EegWaveBounds {
   };
 }
 
+function interpolateWaveValue(values: number[], samplePosition: number) {
+  if (values.length === 0) {
+    return 0;
+  }
+  if (values.length === 1 || samplePosition <= 0) {
+    return values[0];
+  }
+
+  const lastIndex = values.length - 1;
+  if (samplePosition >= lastIndex) {
+    return values[lastIndex];
+  }
+
+  const leftIndex = Math.floor(samplePosition);
+  const rightIndex = Math.min(lastIndex, leftIndex + 1);
+  const ratio = samplePosition - leftIndex;
+  return values[leftIndex] + (values[rightIndex] - values[leftIndex]) * ratio;
+}
+
 function extractChannelValues(samples: EegWaveSample[], channelIndex: number) {
   return samples.map((sample) => {
     const value = sample.values?.[channelIndex];
@@ -314,19 +329,21 @@ function extractChannelValues(samples: EegWaveSample[], channelIndex: number) {
   });
 }
 
-function appendValuesToFixedBuffer(buffer: number[], values: number[], maxLength: number) {
+function appendValuesToWaveBuffer(buffer: number[], values: number[], maxVisibleLength: number) {
   if (values.length === 0) {
     return;
   }
-  if (values.length >= maxLength) {
-    buffer.splice(0, buffer.length, ...values.slice(values.length - maxLength));
-    return;
-  }
-  const overflow = Math.max(0, buffer.length + values.length - maxLength);
+
+  buffer.push(...values);
+  const maxBufferLength = Math.max(maxVisibleLength * 2, maxVisibleLength + values.length * 4);
+  const overflow = Math.max(0, buffer.length - maxBufferLength);
   if (overflow > 0) {
     buffer.splice(0, overflow);
   }
-  buffer.push(...values);
+}
+
+function shouldUpdateWaveBounds(lastUpdatedAt: number, now: number) {
+  return now - lastUpdatedAt >= EEG_BOUNDS_UPDATE_INTERVAL_MS;
 }
 
 type EegWaveChannelPlotProps = {
@@ -370,6 +387,7 @@ function EegWaveChannelPlot({
   const targetBoundsRef = useRef<EegWaveBounds>(buildEmptyWaveBounds());
   const displayBoundsRef = useRef<EegWaveBounds>(buildEmptyWaveBounds());
   const valuesRef = useRef<number[]>([]);
+  const lastBoundsUpdateAtRef = useRef(0);
   const [axisBounds, setAxisBounds] = useState<EegWaveBounds>(buildEmptyWaveBounds());
 
   useEffect(() => {
@@ -380,6 +398,7 @@ function EegWaveChannelPlot({
     const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
     targetBoundsRef.current = nextBounds;
     setAxisBounds(nextBounds);
+    lastBoundsUpdateAtRef.current = performance.now();
   }, []);
 
   useEffect(() => {
@@ -395,6 +414,7 @@ function EegWaveChannelPlot({
       targetBoundsRef.current = nextBounds;
       displayBoundsRef.current = nextBounds;
       setAxisBounds(nextBounds);
+      lastBoundsUpdateAtRef.current = performance.now();
       lastAppliedFullMetaRef.current = fullMeta;
       lastAppliedAppendMetaRef.current = appendMeta;
       lastFrameAtRef.current = null;
@@ -405,11 +425,22 @@ function EegWaveChannelPlot({
       appendValues.length > 0 &&
       !areEegWaveSampleMetasEqual(lastAppliedAppendMetaRef.current, appendMeta)
     ) {
-      appendValuesToFixedBuffer(valuesRef.current, appendValues, maxSamples);
-      pendingShiftSamplesRef.current += appendValues.length;
-      const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
-      targetBoundsRef.current = nextBounds;
-      setAxisBounds(nextBounds);
+      appendValuesToWaveBuffer(valuesRef.current, appendValues, maxSamples);
+      const maxPendingShiftSamples = Math.max(
+        0,
+        valuesRef.current.length - Math.min(maxSamples, valuesRef.current.length),
+      );
+      pendingShiftSamplesRef.current = Math.min(
+        pendingShiftSamplesRef.current + appendValues.length,
+        maxPendingShiftSamples,
+      );
+      const now = performance.now();
+      if (shouldUpdateWaveBounds(lastBoundsUpdateAtRef.current, now)) {
+        const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
+        targetBoundsRef.current = nextBounds;
+        setAxisBounds(nextBounds);
+        lastBoundsUpdateAtRef.current = now;
+      }
       lastAppliedAppendMetaRef.current = appendMeta;
     }
   }, [appendMeta, appendValues, fullMeta, fullValues, maxSamples, reset]);
@@ -427,6 +458,11 @@ function EegWaveChannelPlot({
             (Math.max(1, samplingRateRef.current) * elapsedMs) / 1000,
         );
         pendingShiftSamplesRef.current = pendingShiftSamples;
+        const visibleSampleCount = Math.max(1, Math.min(maxSamples, valuesRef.current.length));
+        const windowStartSample = Math.max(
+          0,
+          valuesRef.current.length - visibleSampleCount - pendingShiftSamples,
+        );
 
         const displayBounds = displayBoundsRef.current;
         const targetBounds = targetBoundsRef.current;
@@ -444,7 +480,8 @@ function EegWaveChannelPlot({
           valuesRef.current,
           color,
           displayBoundsRef.current,
-          pendingShiftSamples,
+          visibleSampleCount,
+          windowStartSample,
         );
       }
 
@@ -458,12 +495,18 @@ function EegWaveChannelPlot({
       if (!canvas) {
         return;
       }
+      const visibleSampleCount = Math.max(1, Math.min(maxSamples, valuesRef.current.length));
+      const windowStartSample = Math.max(
+        0,
+        valuesRef.current.length - visibleSampleCount - pendingShiftSamplesRef.current,
+      );
       drawEegWaveCanvas(
         canvas,
         valuesRef.current,
         color,
         displayBoundsRef.current,
-        0,
+        visibleSampleCount,
+        windowStartSample,
       );
     };
 
@@ -474,7 +517,7 @@ function EegWaveChannelPlot({
         window.cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, []);
+  }, [color, maxSamples]);
 
   return (
     <div className="relative h-full overflow-hidden rounded-[10px] border border-white/8 bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.32))]">
@@ -519,7 +562,7 @@ const EegWavePreview = memo(function EegWavePreview({
     () => visibleChannelNames.map((_, channelIndex) => extractChannelValues(appendSamples, channelIndex)),
     [appendSamples, visibleChannelNames],
   );
-  const maxSamples = Math.max(samples.length, samplingRate * 4, EEG_RENDER_POINT_LIMIT);
+  const maxSamples = Math.max(1, samples.length, samplingRate * 4);
 
   return (
     <div
@@ -586,7 +629,7 @@ function getEegSummaryText(live: ConsultationMultimodalLive) {
 
 function getEegDeviceText(live: ConsultationMultimodalLive) {
   const channelNames = live.eeg_waves.channel_names || live.eeg_live.channel_names || [];
-  const samplingRate = live.eeg_waves.sampling_rate || live.eeg_live.sampling_rate;
+  const samplingRate = live.eeg_live.sampling_rate || live.eeg_waves.sampling_rate;
   const status = live.eeg_live.device_status || live.eeg_live.status || "pending";
   const statusMap: Record<string, string> = {
     disabled: "未启用",
@@ -796,11 +839,13 @@ function SectionCard({
   children,
   rightStatus = "实时",
   className,
+  contentClassName,
 }: {
   title: string;
   children: ReactNode;
   rightStatus?: string;
   className?: string;
+  contentClassName?: string;
 }) {
   return (
     <div
@@ -816,7 +861,7 @@ function SectionCard({
           {rightStatus}
         </div>
       </div>
-      <div className="flex-1 min-h-0 px-2 pb-2">{children}</div>
+      <div className={cn("flex-1 min-h-0 px-2 pb-2", contentClassName)}>{children}</div>
     </div>
   );
 }
@@ -910,7 +955,7 @@ export function ConsultationStatusPanel({
   const eegHasSamples = Boolean(eegSamples.length || eegAppendSamples.length);
 
   return (
-    <div className={cn("w-full h-full min-h-0 font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
+    <div className={cn("w-full min-h-full font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
       <div className="flex items-center justify-between py-2 px-4 top-0 sticky bg-slate-900/82 backdrop-blur-md z-10 border-b border-indigo-500/20 shadow-md">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-indigo-300" />
@@ -942,7 +987,7 @@ export function ConsultationStatusPanel({
         </div>
       ) : null}
 
-      <div className="flex-1 flex flex-col gap-[3px] p-[3px]">
+      <div className="flex flex-col gap-[3px] p-[3px]">
         <SectionCard title="表情检测" rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}>
           <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[132px]">
             <div className="h-full overflow-hidden rounded-[16px] border border-white/8">
@@ -988,7 +1033,8 @@ export function ConsultationStatusPanel({
 
         <SectionCard
           title="脑电情绪监测"
-          className="min-h-[202px]"
+          className="min-h-[286px]"
+          contentClassName="px-2 pb-2"
           rightStatus={
             snapshot.eeg_live.device_status === "streaming"
               ? "streaming"
@@ -997,7 +1043,7 @@ export function ConsultationStatusPanel({
                 : snapshot.eeg_live.device_status || snapshot.eeg_live.status || "pending"
           }
         >
-          <div className="grid h-[194px] grid-cols-[1.82fr_0.98fr] gap-[3px]">
+          <div className="grid h-[252px] grid-cols-[1.82fr_0.98fr] gap-[3px]">
             <div className="min-w-0 h-full overflow-hidden rounded-[16px] bg-white/[0.03] px-2 py-2">
               {eegHasSamples ? (
                 <EegWavePreview
