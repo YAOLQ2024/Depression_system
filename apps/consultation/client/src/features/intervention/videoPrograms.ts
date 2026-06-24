@@ -2,32 +2,23 @@ export type InterventionVideoProgram = {
   id: string;
   title: string;
   subtitle: string;
-  audioSrc: string;
   videoSrc: string;
+  posterSrc: string;
 };
-
-const SHARED_VIDEO_SRC = "/intervention/video/四景循环无声.mp4";
 
 export const INTERVENTION_VIDEO_PROGRAMS: InterventionVideoProgram[] = [
   {
-    id: "chopin-nocturne-eb-major",
-    title: "肖邦《降 E 大调夜曲》",
-    subtitle: "温和舒缓，适合先慢下来。",
-    audioSrc: "/intervention/audio/肖邦《降E大调夜曲》.mp3",
-    videoSrc: SHARED_VIDEO_SRC,
+    id: "town-001",
+    title: "\u5c0f\u9547",
+    subtitle: "\u8282\u594f\u8212\u7f13\uff0c\u9002\u5408\u5b89\u9759\u5730\u770b\u4e00\u4f1a\u513f\uff0c\u8ba9\u6ce8\u610f\u529b\u6162\u6162\u653e\u4e0b\u6765\u3002",
+    videoSrc: "/intervention/video/town-001.mp4",
+    posterSrc: "/intervention/video/posters/town-001-poster.jpg",
   },
   {
-    id: "bach-goldberg-variations",
-    title: "巴赫《哥德堡变奏曲》",
-    subtitle: "结构稳定，适合做一段安静陪伴。",
-    audioSrc: "/intervention/audio/巴赫《哥德堡变奏曲》.mp3",
-    videoSrc: SHARED_VIDEO_SRC,
-  },
-  {
-    id: "mozart-sonata-c-major-second-movement",
-    title: "莫扎特《C 大调钢琴奏鸣曲》第二乐章",
-    subtitle: "旋律轻盈，适合做一段松弛调节。",
-    audioSrc: "/intervention/audio/莫扎特《C大调钢琴奏鸣曲》第二乐章.mp3",
-    videoSrc: SHARED_VIDEO_SRC,
+    id: "starry-sky-001",
+    title: "\u661f\u7a7a",
+    subtitle: "\u753b\u9762\u66f4\u5f00\u9614\uff0c\u9002\u5408\u6c89\u6d78\u5f0f\u5730\u770b\u4e00\u6bb5\uff0c\u987a\u7740\u753b\u9762\u6162\u6162\u653e\u677e\u3002",
+    videoSrc: "/intervention/video/starry-sky-001.mp4",
+    posterSrc: "/intervention/video/posters/starry-sky-001-poster.jpg",
   },
 ];
