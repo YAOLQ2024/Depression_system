@@ -9,7 +9,7 @@ import { ConsultationProgress } from "../components/ConsultationProgress";
 import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
 import { FlowCompletionState } from "../components/FlowCompletionState";
-import { FloatingControlBar } from "../components/FloatingControlBar";
+import { VoiceOrbButton } from "../components/VoiceOrbButton";
 import {
   SeamlessVideoPlayer,
   type SeamlessVideoClip,
@@ -36,6 +36,7 @@ import { useVisualCapture } from "../lib/useVisualCapture";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
 import {
+  getMultimodalAudioTurn,
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
 import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
@@ -707,7 +708,6 @@ export default function ConsultationPage() {
     sessionId: string,
     audioTurnId: string,
   ) {
-    const { getMultimodalAudioTurn } = await import("../services/api/multimodal.api");
     for (let attempt = 0; attempt < 180; attempt += 1) {
       const audioTurn = await getMultimodalAudioTurn(sessionId, audioTurnId);
       if (audioTurn.processing_status === "completed" || audioTurn.processing_status === "failed") {
@@ -958,7 +958,7 @@ export default function ConsultationPage() {
           </div>
 
           <div
-            className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            className="absolute bottom-0 md:bottom-0 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
             style={{
               transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
             }}
@@ -968,14 +968,12 @@ export default function ConsultationPage() {
                 {responseWindowStatusText}
               </div>
             ) : null}
-            <FloatingControlBar
+            <VoiceOrbButton
               isRecording={isRecording}
               onToggleRecord={handleToggleRecord}
-              onEnd={handleEnd}
-              recordDisabled={(!isRecording && consultation.status !== "waiting_user_input") || isSubmittingResponse || state.loading}
-              endDisabled={isRecording || isSubmittingResponse || !canEnterAssessment}
-              recordLabel={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
-              endLabel={canEnterAssessment ? "进入量表评估" : "完成问诊后进入量表"}
+              disabled={(!isRecording && consultation.status !== "waiting_user_input") || isSubmittingResponse || state.loading}
+              label={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
+              className="-translate-y-[10px]"
             />
           </div>
 

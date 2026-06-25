@@ -16,7 +16,7 @@ import { ConsultationProgress } from "../components/ConsultationProgress";
 import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
 import { FlowCompletionState } from "../components/FlowCompletionState";
-import { FloatingControlBar } from "../components/FloatingControlBar";
+import { VoiceOrbButton } from "../components/VoiceOrbButton";
 import {
   SeamlessVideoPlayer,
   type SeamlessVideoErrorEvent,
@@ -974,7 +974,6 @@ export default function ScaleQuestionnairePage() {
     videoError,
     videoFinished,
   ]);
-
   const synthesizedConsultation = useMemo<ConsultationSession | null>(() => {
     if (!assessment || !currentStage || !currentQuestionKey || !currentVideoNode || isAssessmentCompleted) {
       return null;
@@ -1197,7 +1196,7 @@ export default function ScaleQuestionnairePage() {
           </div>
 
           <div
-            className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            className="absolute bottom-0 md:bottom-0 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
             style={{
               transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
             }}
@@ -1212,13 +1211,12 @@ export default function ScaleQuestionnairePage() {
                 {responseWindowStatusText}
               </div>
             ) : null}
-            <FloatingControlBar
+            <VoiceOrbButton
               isRecording={isRecording}
               onToggleRecord={handleToggleRecord}
-              onEnd={handleEnd}
-              recordDisabled={!videoFinished || isSubmittingAnswer || isAdvancingAfterConfirmation || state.loading}
-              endDisabled={isRecording || isSubmittingAnswer || isAdvancingAfterConfirmation}
-              recordLabel={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
+              disabled={!videoFinished || isSubmittingAnswer || isAdvancingAfterConfirmation || state.loading}
+              label={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
+              className="-translate-y-[10px]"
             />
           </div>
 
