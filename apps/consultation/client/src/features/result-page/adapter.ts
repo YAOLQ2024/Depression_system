@@ -281,7 +281,41 @@ function getScoreBreakdown(assessment: AssessmentSession | null) {
 function getAssessmentModuleValue(assessment: AssessmentSession | null) {
   const scoreBreakdown = getScoreBreakdown(assessment);
   const scaleScore = asRecord(scoreBreakdown?.scale_score);
-  return formatModuleScore(scaleScore?.value);
+  const explicitModuleScore = formatModuleScore(scaleScore?.value);
+  if (explicitModuleScore) {
+    return explicitModuleScore;
+  }
+
+  const results = assessment?.results || [];
+  if (results.length !== 1) {
+    return null;
+  }
+
+  const [singleResult] = results;
+  const directNormalizedScore = asNumber(singleResult?.normalized_score);
+  if (directNormalizedScore !== null) {
+    return formatModuleScore(directNormalizedScore);
+  }
+
+  const aggregate = asRecord(assessment?.aggregate_payload);
+  const normalizedScores = asRecord(aggregate?.normalized_scores);
+  const scaleResultMap = asRecord(aggregate?.scale_result_map);
+  const slug = asString(singleResult?.scale_slug);
+
+  if (slug) {
+    const normalizedScoreFromMap = asNumber(normalizedScores?.[slug]);
+    if (normalizedScoreFromMap !== null) {
+      return formatModuleScore(normalizedScoreFromMap);
+    }
+
+    const aggregateResult = asRecord(scaleResultMap?.[slug]);
+    const normalizedScoreFromAggregateResult = asNumber(aggregateResult?.normalized_score);
+    if (normalizedScoreFromAggregateResult !== null) {
+      return formatModuleScore(normalizedScoreFromAggregateResult);
+    }
+  }
+
+  return null;
 }
 
 function getMultimodalModuleValue(assessment: AssessmentSession | null) {
