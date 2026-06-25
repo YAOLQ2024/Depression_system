@@ -1,6 +1,15 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Maximize2, Minimize2, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import {
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 
 import { useInterventionExecution } from "../features/intervention/useInterventionExecution";
 import { INTERVENTION_VIDEO_PROGRAMS, type InterventionVideoProgram } from "../features/intervention/videoPrograms";
@@ -16,16 +25,50 @@ type FullscreenDocument = Document & {
   webkitFullscreenElement?: Element | null;
 };
 
+const COPY = {
+  pageTitle: "\u89c6\u9891\u8c03\u8282",
+  heroTitle: "\u770b\u4e00\u6bb5\u89c6\u9891",
+  backHome: "\u8fd4\u56de\u5e72\u9884\u9996\u9875",
+  playbackCardLabel: "\u5f53\u524d\u64ad\u653e",
+  emptyProgram: "\u8bf7\u9009\u62e9\u4e00\u4e2a\u89c6\u9891\u5f00\u59cb\u64ad\u653e",
+  emptyHint:
+    "\u9009\u62e9\u89c6\u9891\u540e\u5c06\u81ea\u52a8\u8fdb\u5165\u5168\u5c4f\u3002\u70b9\u51fb\u753b\u9762\u53ef\u6682\u505c\u6216\u7ee7\u7eed\u64ad\u653e\uff0c\u53f3\u4e0a\u89d2\u53ef\u5c55\u5f00\u66f4\u591a\u63a7\u5236\u3002",
+  panelTitle: "\u63a7\u5236\u9762\u677f",
+  progressLabel: "\u64ad\u653e\u8fdb\u5ea6",
+  volumeLabel: "\u97f3\u91cf",
+  replay: "\u4ece\u5934\u64ad\u653e",
+  moreControlsOpen: "\u5c55\u5f00\u66f4\u591a\u63a7\u5236",
+  moreControlsClose: "\u6536\u8d77\u66f4\u591a\u63a7\u5236",
+  enterFullscreen: "\u8fdb\u5165\u5168\u5c4f",
+  exitFullscreen: "\u9000\u51fa\u5168\u5c4f",
+  pause: "\u6682\u505c\u64ad\u653e",
+  resume: "\u7ee7\u7eed\u64ad\u653e",
+  restoreVolume: "\u6062\u590d\u97f3\u91cf",
+  mute: "\u9759\u97f3",
+  selectionTitle: "\u9009\u62e9\u4e00\u4e2a\u89c6\u9891",
+  selectionHint:
+    "\u9009\u62e9\u4efb\u610f\u4e00\u4e2a\u89c6\u9891\u540e\uff0c\u4f1a\u81ea\u52a8\u8fdb\u5165\u5168\u5c4f\u64ad\u653e\u3002\u89c6\u9891\u81ea\u5e26\u58f0\u97f3\uff0c\u4f60\u53ef\u4ee5\u6309\u9700\u6682\u505c\u3001\u62d6\u52a8\u8fdb\u5ea6\u3001\u8c03\u6574\u97f3\u91cf\u6216\u5207\u6362\u5168\u5c4f\u3002",
+  cannotFullscreen: "\u672a\u80fd\u8fdb\u5165\u5168\u5c4f\uff0c\u4f46\u89c6\u9891\u5df2\u7ecf\u5f00\u59cb\u64ad\u653e\u3002",
+  playbackBlocked: "\u6d4f\u89c8\u5668\u62e6\u622a\u4e86\u64ad\u653e\uff0c\u8bf7\u70b9\u51fb\u7ee7\u7eed\u64ad\u653e\u91cd\u8bd5\u3002",
+  cannotReenterFullscreen: "\u5f53\u524d\u6d4f\u89c8\u5668\u672a\u80fd\u518d\u6b21\u8fdb\u5165\u5168\u5c4f\u3002",
+  controlPanelOpen: "\u5c55\u5f00\u66f4\u591a\u63a7\u5236",
+  controlPanelClose: "\u6536\u8d77\u66f4\u591a\u63a7\u5236",
+} as const;
+
 function toAssetUri(path: string) {
   return encodeURI(path);
 }
 
-function getLoopedVideoTime(audioTime: number, videoDuration: number) {
-  if (!Number.isFinite(videoDuration) || videoDuration <= 0) {
-    return 0;
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "00:00";
   }
 
-  return audioTime % videoDuration;
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainSeconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
 }
 
 async function requestPlayerFullscreen(element: HTMLDivElement | null) {
@@ -64,23 +107,26 @@ export default function InterventionVideoPage() {
     pageTag: "intervention-video",
     openEvent: {
       event_type: "experience_opened",
-      program_id: "guided-video",
-      program_title: "视频调节",
+      program_id: "video-regulation",
+      program_title: COPY.pageTitle,
       delivery_mode: "video",
       payload: { page: "intervention-video" },
     },
   });
   const playerShellRef = useRef<HTMLDivElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const lastNonZeroVolumeRef = useRef(1);
 
   const [activeProgram, setActiveProgram] = useState<InterventionVideoProgram | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isControlPanelOpen, setIsControlPanelOpen] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+  const [isSeeking, setIsSeeking] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [seekValue, setSeekValue] = useState(0);
   const [volume, setVolume] = useState(1);
 
   useEffect(() => {
@@ -96,7 +142,6 @@ export default function InterventionVideoPage() {
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       document.removeEventListener("webkitfullscreenchange", handleFullscreenChange as EventListener);
-      audioRef.current?.pause();
       videoRef.current?.pause();
     };
   }, []);
@@ -104,8 +149,8 @@ export default function InterventionVideoPage() {
   const handleReturnToLanding = useEffectEvent((reason: "return_button") => {
     void trackEvent({
       event_type: "experience_exited",
-      program_id: activeProgram?.id ?? "guided-video",
-      program_title: activeProgram?.title ?? "视频调节",
+      program_id: activeProgram?.id ?? "video-regulation",
+      program_title: activeProgram?.title ?? COPY.pageTitle,
       delivery_mode: "video",
       payload: {
         page: "intervention-video",
@@ -117,103 +162,79 @@ export default function InterventionVideoPage() {
         duration_seconds: Number(duration.toFixed(1)),
       },
     });
+
     navigate(APP_PATHS.intervention, {
       state: buildRouteState(),
     });
   });
 
-  const syncVideoWithAudio = (audioTime: number) => {
-    const video = videoRef.current;
-    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
-      return;
-    }
-
-    const nextVideoTime = getLoopedVideoTime(audioTime, video.duration);
-
-    if (Math.abs(video.currentTime - nextVideoTime) > 0.35) {
-      video.currentTime = nextVideoTime;
-    }
-  };
-
   const syncAndPlay = async (
     program: InterventionVideoProgram,
     options: { restart: boolean; enterFullscreen?: boolean },
   ) => {
-    const audio = audioRef.current;
     const video = videoRef.current;
-
-    if (!audio || !video) {
+    if (!video) {
       return;
     }
 
-    const audioSrc = toAssetUri(program.audioSrc);
     const videoSrc = toAssetUri(program.videoSrc);
 
-    if (audio.getAttribute("src") !== audioSrc) {
-      audio.setAttribute("src", audioSrc);
-      audio.load();
-    }
-
     if (video.getAttribute("src") !== videoSrc) {
+      setIsVideoReady(false);
       video.setAttribute("src", videoSrc);
       video.load();
     }
 
     if (options.restart) {
-      audio.currentTime = 0;
+      setIsVideoReady(false);
       video.currentTime = 0;
       setCurrentTime(0);
+      setSeekValue(0);
     }
 
-    audio.volume = volume;
-    video.muted = true;
-    video.loop = true;
+    video.volume = volume;
+    video.muted = volume === 0;
+    video.loop = false;
 
     if (options.enterFullscreen) {
       void requestPlayerFullscreen(playerShellRef.current).catch(() => {
-        setPlaybackError("未能进入全屏，但视频和音乐已开始播放。");
+        setPlaybackError(COPY.cannotFullscreen);
       });
     }
 
     try {
-      await Promise.all([video.play(), audio.play()]);
+      await video.play();
       setIsPlaying(true);
       setPlaybackError("");
     } catch {
       setIsPlaying(false);
-      setPlaybackError("浏览器拦截了播放，请点击继续按钮重试。");
+      setPlaybackError(COPY.playbackBlocked);
     }
   };
 
   const handleSelectProgram = async (program: InterventionVideoProgram) => {
     setActiveProgram(program);
+    setIsControlPanelOpen(false);
     void trackEvent({
       event_type: "media_selected",
       program_id: program.id,
       program_title: program.title,
       delivery_mode: "video",
       payload: {
-        audio_src: program.audioSrc,
         video_src: program.videoSrc,
+        poster_src: program.posterSrc,
       },
     });
     await syncAndPlay(program, { restart: true, enterFullscreen: true });
   };
 
   const handleTogglePlayback = async () => {
-    if (!activeProgram) {
-      return;
-    }
-
-    const audio = audioRef.current;
     const video = videoRef.current;
-
-    if (!audio || !video) {
+    if (!activeProgram || !video) {
       return;
     }
 
     if (isPlaying) {
-      audio.pause();
       video.pause();
       setIsPlaying(false);
       return;
@@ -241,33 +262,43 @@ export default function InterventionVideoPage() {
     }
 
     await requestPlayerFullscreen(playerShellRef.current).catch(() => {
-      setPlaybackError("当前浏览器未能再次进入全屏。");
+      setPlaybackError(COPY.cannotReenterFullscreen);
     });
   };
 
   const handleSeek = (nextValue: number) => {
-    const audio = audioRef.current;
-    const video = videoRef.current;
+    setSeekValue(nextValue);
+  };
 
-    if (!audio || !video) {
+  const commitSeek = () => {
+    const video = videoRef.current;
+    if (!video) {
       return;
     }
 
-    audio.currentTime = nextValue;
+    const nextValue = Math.min(Math.max(seekValue, 0), duration || 0);
+    video.currentTime = nextValue;
     setCurrentTime(nextValue);
+    setSeekValue(nextValue);
+  };
 
-    if (Number.isFinite(video.duration) && video.duration > 0) {
-      video.currentTime = getLoopedVideoTime(nextValue, video.duration);
-    }
+  const handleSeekStart = () => {
+    setIsSeeking(true);
+  };
+
+  const handleSeekEnd = () => {
+    commitSeek();
+    setIsSeeking(false);
   };
 
   const handleVolumeChange = (nextVolume: number) => {
-    const audio = audioRef.current;
-    if (!audio) {
+    const video = videoRef.current;
+    if (!video) {
       return;
     }
 
-    audio.volume = nextVolume;
+    video.volume = nextVolume;
+    video.muted = nextVolume === 0;
     setVolume(nextVolume);
 
     if (nextVolume > 0) {
@@ -284,136 +315,206 @@ export default function InterventionVideoPage() {
     handleVolumeChange(0);
   };
 
-  const handleAudioLoadedMetadata = () => {
-    const audio = audioRef.current;
-    if (!audio) {
-      return;
-    }
-
-    setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
-  };
-
-  const handleAudioTimeUpdate = () => {
-    const audio = audioRef.current;
-    if (!audio) {
-      return;
-    }
-
-    setCurrentTime(audio.currentTime);
-    syncVideoWithAudio(audio.currentTime);
-  };
-
-  const handleAudioEnded = () => {
+  const handleVideoLoadedMetadata = () => {
     const video = videoRef.current;
-
-    if (video) {
-      video.pause();
-      video.currentTime = 0;
+    if (!video) {
+      return;
     }
 
+    setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+  };
+
+  const handleVideoTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (isSeeking) {
+      return;
+    }
+
+    setCurrentTime(video.currentTime);
+    setSeekValue(video.currentTime);
+  };
+
+  const handleVideoEnded = () => {
     setCurrentTime(duration);
+    setSeekValue(duration);
     setIsPlaying(false);
   };
 
   return (
-    <ConsultationLayout backgroundImage="/bg.webp" title="视频调节">
+    <ConsultationLayout backgroundImage="/bg.webp" title={COPY.pageTitle}>
       <div className="relative flex h-full w-full overflow-hidden bg-[radial-gradient(circle_at_top,rgba(130,181,255,0.18),transparent_42%),linear-gradient(180deg,rgba(10,16,31,0.18),rgba(10,16,31,0.78))]">
         <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-6 px-5 pb-6 pt-6 md:px-8 lg:flex-row">
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-white/14 bg-slate-950/38 p-4 shadow-[0_24px_60px_rgba(2,6,23,0.45)] backdrop-blur-xl md:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/70">Video Regulation</p>
-                <h1 className="mt-3 text-2xl font-semibold tracking-[0.08em] text-white md:text-3xl">看一段视频</h1>
+                <h1 className="mt-3 text-2xl font-semibold tracking-[0.08em] text-white md:text-3xl">{COPY.heroTitle}</h1>
               </div>
               <button
                 type="button"
                 onClick={() => handleReturnToLanding("return_button")}
                 className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm text-white/85 transition hover:bg-white/14"
               >
-                返回干预首页
+                {COPY.backHome}
               </button>
             </div>
             {sessionError ? <p className="mt-3 text-sm text-amber-200/90">{sessionError}</p> : null}
 
             <div
               ref={playerShellRef}
-              className="relative mt-5 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-black/30"
+              className="relative mt-5 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-black/60"
             >
               <video
                 ref={videoRef}
                 className="h-full w-full object-cover"
                 playsInline
                 controls={false}
-                poster="/cover-background-v2.png"
+                poster={activeProgram ? toAssetUri(activeProgram.posterSrc) : "/cover-background-v2.png"}
+                preload="metadata"
+                onLoadedMetadata={handleVideoLoadedMetadata}
+                onLoadedData={() => setIsVideoReady(true)}
+                onCanPlay={() => setIsVideoReady(true)}
+                onTimeUpdate={handleVideoTimeUpdate}
+                onEnded={handleVideoEnded}
+                onPause={() => setIsPlaying(false)}
+                onPlay={() => {
+                  setIsPlaying(true);
+                  setIsVideoReady(true);
+                }}
+                onDoubleClick={() => void handleFullscreenToggle()}
               />
 
               {activeProgram ? (
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-4 pb-4 pt-12 md:px-6">
-                  <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-full border border-white/10 bg-black/40 px-3 py-3 backdrop-blur-xl">
+                <>
+                  <img
+                    src={toAssetUri(activeProgram.posterSrc)}
+                    alt={activeProgram.title}
+                    className={`pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+                      isVideoReady ? "opacity-0" : "opacity-100"
+                    }`}
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/16" />
+
+                  <div className="absolute right-4 top-4 z-10 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
                     <button
                       type="button"
-                      aria-label={isPlaying ? "暂停播放" : "继续播放"}
+                      aria-label={isPlaying ? COPY.pause : COPY.resume}
                       onClick={() => void handleTogglePlayback()}
-                      className="flex h-11 w-11 items-center justify-center rounded-full bg-cyan-300 text-slate-950 transition hover:bg-cyan-200"
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
                     >
-                      {isPlaying ? <Pause size={20} /> : <Play size={20} className="translate-x-[1px]" />}
+                      {isPlaying ? <Pause size={18} /> : <Play size={18} className="translate-x-[1px]" />}
                     </button>
 
-                    <div className="flex-1">
-                      <input
-                        type="range"
-                        min={0}
-                        max={duration || 0}
-                        step={0.1}
-                        value={duration ? Math.min(currentTime, duration) : 0}
-                        onChange={(event) => handleSeek(Number(event.target.value))}
-                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      aria-label={COPY.replay}
+                      onClick={() => void handleReplay()}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      <RotateCcw size={18} />
+                    </button>
 
                     <button
                       type="button"
-                      aria-label={isFullscreen ? "退出全屏" : "进入全屏"}
+                      aria-label={volume === 0 ? COPY.restoreVolume : COPY.mute}
+                      onClick={handleToggleMute}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={isFullscreen ? COPY.exitFullscreen : COPY.enterFullscreen}
                       onClick={() => void handleFullscreenToggle()}
-                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white transition hover:bg-white/16"
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
                     >
                       {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                     </button>
 
                     <button
                       type="button"
-                      aria-label={volume === 0 ? "恢复音量" : "静音"}
-                      onClick={handleToggleMute}
-                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white transition hover:bg-white/16"
+                      aria-label={isControlPanelOpen ? COPY.controlPanelClose : COPY.controlPanelOpen}
+                      onClick={() => setIsControlPanelOpen((current) => !current)}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
                     >
-                      {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                      <SlidersHorizontal size={18} />
                     </button>
-
-                    <div className="w-20 sm:w-28">
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={volume}
-                        onChange={(event) => handleVolumeChange(Number(event.target.value))}
-                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
-                      />
-                    </div>
                   </div>
-                </div>
+
+                  {isControlPanelOpen ? (
+                    <div
+                      className="absolute right-4 top-[4.75rem] z-10 w-[min(320px,calc(100%-2rem))] rounded-[24px] border border-white/12 bg-black/62 p-4 text-white shadow-[0_20px_50px_rgba(2,6,23,0.42)] backdrop-blur-2xl"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-white/55">
+                        <span>{COPY.panelTitle}</span>
+                        <span>
+                          {formatDuration(currentTime)} / {formatDuration(duration)}
+                        </span>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-sm text-white/72">
+                          <span>{COPY.progressLabel}</span>
+                          <span>{Math.round(duration ? (currentTime / duration) * 100 : 0)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={duration || 0}
+                          step={0.1}
+                          value={duration ? Math.min(isSeeking ? seekValue : currentTime, duration) : 0}
+                          onInput={(event) => handleSeek(Number((event.target as HTMLInputElement).value))}
+                          onChange={(event) => handleSeek(Number(event.target.value))}
+                          onMouseDown={handleSeekStart}
+                          onMouseUp={handleSeekEnd}
+                          onTouchStart={handleSeekStart}
+                          onTouchEnd={handleSeekEnd}
+                          onKeyDown={(event) => {
+                            if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") {
+                              handleSeekStart();
+                            }
+                          }}
+                          onKeyUp={(event) => {
+                            if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") {
+                              handleSeekEnd();
+                            }
+                          }}
+                          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
+                        />
+                      </div>
+
+                      <div className="mt-5">
+                        <div className="flex items-center justify-between text-sm text-white/72">
+                          <span>{COPY.volumeLabel}</span>
+                          <span>{Math.round(volume * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={volume}
+                          onChange={(event) => handleVolumeChange(Number(event.target.value))}
+                          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </>
               ) : null}
             </div>
 
             <div className="mt-5 flex flex-col gap-4 rounded-[28px] border border-white/10 bg-black/18 px-4 py-4 text-white/90 md:flex-row md:items-center md:justify-between md:px-5">
               <div className="min-w-0">
-                <p className="text-xs uppercase tracking-[0.25em] text-white/45">当前播放</p>
-                <p className="mt-2 truncate text-lg font-medium text-white">
-                  {activeProgram?.title ?? "请选择一首曲目开始播放"}
-                </p>
-                <p className="mt-1 text-sm text-white/60">
-                  {activeProgram?.subtitle ?? "选择音乐后将直接进入全屏播放。"}
-                </p>
+                <p className="text-xs uppercase tracking-[0.25em] text-white/45">{COPY.playbackCardLabel}</p>
+                <p className="mt-2 truncate text-lg font-medium text-white">{activeProgram?.title ?? COPY.emptyProgram}</p>
+                <p className="mt-1 text-sm text-white/60">{activeProgram?.subtitle ?? COPY.emptyHint}</p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -423,7 +524,15 @@ export default function InterventionVideoPage() {
                   disabled={!activeProgram}
                   className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  从头播放
+                  {COPY.replay}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsControlPanelOpen((current) => !current)}
+                  disabled={!activeProgram}
+                  className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isControlPanelOpen ? COPY.moreControlsClose : COPY.moreControlsOpen}
                 </button>
                 <button
                   type="button"
@@ -431,7 +540,7 @@ export default function InterventionVideoPage() {
                   disabled={!activeProgram}
                   className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isFullscreen ? "退出全屏" : "进入全屏"}
+                  {isFullscreen ? COPY.exitFullscreen : COPY.enterFullscreen}
                 </button>
               </div>
             </div>
@@ -445,10 +554,8 @@ export default function InterventionVideoPage() {
 
           <aside className="w-full rounded-[32px] border border-white/14 bg-white/8 p-5 shadow-[0_20px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl lg:w-[380px]">
             <p className="text-xs uppercase tracking-[0.35em] text-cyan-100/65">Program Selection</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-[0.06em] text-white">选择一段音乐</h2>
-            <p className="mt-3 text-sm leading-6 text-white/68">
-              点击任一选项后，会直接进入全屏播放，你也可以随时调节音量、进度并重新进入全屏。
-            </p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[0.06em] text-white">{COPY.selectionTitle}</h2>
+            <p className="mt-3 text-sm leading-6 text-white/68">{COPY.selectionHint}</p>
 
             <div className="mt-6 flex flex-col gap-3">
               {INTERVENTION_VIDEO_PROGRAMS.map((program) => {
@@ -465,6 +572,11 @@ export default function InterventionVideoPage() {
                         : "border-white/12 bg-slate-950/26 text-white/88 hover:border-white/28 hover:bg-white/10"
                     }`}
                   >
+                    <img
+                      src={toAssetUri(program.posterSrc)}
+                      alt={program.title}
+                      className="h-28 w-full rounded-[18px] object-cover"
+                    />
                     <p className="text-base font-medium tracking-[0.02em]">{program.title}</p>
                     <p className="mt-2 text-sm leading-6 text-white/62">{program.subtitle}</p>
                   </button>
@@ -473,14 +585,6 @@ export default function InterventionVideoPage() {
             </div>
           </aside>
         </div>
-
-        <audio
-          ref={audioRef}
-          onLoadedMetadata={handleAudioLoadedMetadata}
-          onTimeUpdate={handleAudioTimeUpdate}
-          onEnded={handleAudioEnded}
-          preload="metadata"
-        />
       </div>
     </ConsultationLayout>
   );
