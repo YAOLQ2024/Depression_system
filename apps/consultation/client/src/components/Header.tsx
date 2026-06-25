@@ -29,11 +29,13 @@ export function Header({ theme = 'light', title }: HeaderProps) {
   return (
     <header className="relative z-10 flex h-[60px] w-full items-center justify-between px-4 md:px-5">
       <div className="flex min-w-0 items-center gap-2.5 cursor-pointer" onClick={handleLogoClick}>
-        <img
-          src="/aim-brand-lockup.svg"
-          alt="医学人工智能实验室"
-          className="h-[34px] w-auto shrink-0 object-contain drop-shadow-[0_1px_4px_rgba(255,255,255,0.2)] md:h-[38px]"
-        />
+        <div className="h-[28px] w-[66px] shrink-0 overflow-hidden md:h-[32px] md:w-[76px]">
+          <img
+            src="/aim-brand-lockup-transparent-clean.png"
+            alt="AIM"
+            className="h-full w-auto max-w-none object-contain object-left drop-shadow-[0_1px_4px_rgba(255,255,255,0.16)]"
+          />
+        </div>
         <div className="flex min-w-0 items-center gap-2.5">
           <h1 className={cn("shrink-0 text-base font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
             抑郁症数字人辅助评估系统

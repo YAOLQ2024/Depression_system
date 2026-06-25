@@ -138,11 +138,8 @@ export default function HomePage() {
   };
 
   return (
-    <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-[#9eaaf5] relative z-0">
-      <div className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-40 mix-blend-overlay" style={{ backgroundImage: "url('/4K.png')" }} />
-
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-300/30 blur-[120px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] bg-indigo-500/20 blur-[130px] rounded-full pointer-events-none" />
+    <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-slate-900 relative z-0">
+      <div className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/4K.png')" }} />
 
       <div className="relative z-20 w-full">
         <Header theme="dark" title="首页" />
