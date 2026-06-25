@@ -898,6 +898,7 @@ def _store_scale_result(db_session: Session, session_record: AssessmentSession, 
         result_record.risk_flags = scoring.risk_flags
         result_record.completed_at = now
         result_record.updated_at = now
+        db_session.flush()
         return result_record
 
     result_record = AssessmentResult(
@@ -914,6 +915,7 @@ def _store_scale_result(db_session: Session, session_record: AssessmentSession, 
         updated_at=now,
     )
     db_session.add(result_record)
+    db_session.flush()
     return result_record
 
 

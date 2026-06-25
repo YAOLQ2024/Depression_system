@@ -1,16 +1,13 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 
 import {
   ArrowLeft,
   Eye,
   EyeOff,
-  Lock,
-  User,
-  type LucideIcon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { EntryBrand, EntryFooter, entryBackgroundStyle } from "../../components/entry-chrome";
+import { EntryBrand, entryBackgroundStyle } from "../../components/entry-chrome";
 import { APP_PATHS } from "../../routes";
 
 export type AuthMode = "login" | "register";
@@ -57,17 +54,105 @@ type InputFieldProps = {
   type?: "text" | "password";
   placeholder: string;
   autoComplete?: string;
-  leadingIcon: LucideIcon;
   trailingAction?: ReactNode;
   error?: string;
   showError: boolean;
   onChange: (value: string) => void;
   onBlur: () => void;
-  onFocus: () => void;
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^1\d{10}$/;
+const AUTH_CUBE_SIZE = "clamp(8.8rem, 12vw, 12.2rem)";
+const AUTH_CUBE_DEPTH = "calc(var(--cube-size) / 2)";
+const AUTH_CUBE_FACE_TRANSFORMS = [
+  `rotateY(0deg) translateZ(${AUTH_CUBE_DEPTH})`,
+  `rotateY(180deg) translateZ(${AUTH_CUBE_DEPTH})`,
+  `rotateY(90deg) translateZ(${AUTH_CUBE_DEPTH})`,
+  `rotateY(-90deg) translateZ(${AUTH_CUBE_DEPTH})`,
+  `rotateX(90deg) translateZ(${AUTH_CUBE_DEPTH})`,
+  `rotateX(-90deg) translateZ(${AUTH_CUBE_DEPTH})`,
+];
+
+type OrbitLayer = {
+  id: string;
+  reverse?: boolean;
+  style: CSSProperties;
+  satellites: Array<{
+    id: string;
+    className: string;
+    style?: CSSProperties;
+  }>;
+};
+
+const AUTH_ORBIT_LAYERS: OrbitLayer[] = [
+  {
+    id: "equatorial",
+    style: {
+      "--orbit-size": "58%",
+      "--orbit-duration": "14s",
+      "--orbit-tilt-x": "72deg",
+      "--orbit-tilt-y": "0deg",
+      "--orbit-rotate-z": "8deg",
+      "--orbit-ring-color": "rgba(216, 206, 255, 0.52)",
+      "--orbit-ring-glow": "rgba(125, 105, 255, 0.24)",
+    } as CSSProperties,
+    satellites: [
+      { id: "north", className: "auth-orbit-satellite auth-orbit-satellite-top", style: { "--satellite-size": "2rem" } as CSSProperties },
+      { id: "south", className: "auth-orbit-satellite auth-orbit-satellite-bottom", style: { "--satellite-size": "1.8rem" } as CSSProperties },
+    ],
+  },
+  {
+    id: "polar",
+    reverse: true,
+    style: {
+      "--orbit-size": "72%",
+      "--orbit-duration": "19s",
+      "--orbit-tilt-x": "32deg",
+      "--orbit-tilt-y": "68deg",
+      "--orbit-rotate-z": "22deg",
+      "--orbit-ring-color": "rgba(205, 223, 255, 0.4)",
+      "--orbit-ring-glow": "rgba(124, 168, 255, 0.2)",
+    } as CSSProperties,
+    satellites: [
+      { id: "left", className: "auth-orbit-satellite auth-orbit-satellite-left", style: { "--satellite-size": "1.7rem" } as CSSProperties },
+      { id: "right", className: "auth-orbit-satellite auth-orbit-satellite-right", style: { "--satellite-size": "1.82rem" } as CSSProperties },
+    ],
+  },
+  {
+    id: "oblique",
+    style: {
+      "--orbit-size": "86%",
+      "--orbit-duration": "24s",
+      "--orbit-tilt-x": "82deg",
+      "--orbit-tilt-y": "44deg",
+      "--orbit-rotate-z": "-18deg",
+      "--orbit-ring-color": "rgba(241, 222, 255, 0.34)",
+      "--orbit-ring-glow": "rgba(166, 118, 255, 0.2)",
+    } as CSSProperties,
+    satellites: [
+      { id: "top", className: "auth-orbit-satellite auth-orbit-satellite-top", style: { "--satellite-size": "1.55rem" } as CSSProperties },
+      { id: "right", className: "auth-orbit-satellite auth-orbit-satellite-right", style: { "--satellite-size": "1.42rem" } as CSSProperties },
+    ],
+  },
+  {
+    id: "outer",
+    reverse: true,
+    style: {
+      "--orbit-size": "98%",
+      "--orbit-duration": "31s",
+      "--orbit-tilt-x": "38deg",
+      "--orbit-tilt-y": "-62deg",
+      "--orbit-rotate-z": "36deg",
+      "--orbit-ring-color": "rgba(233, 237, 255, 0.3)",
+      "--orbit-ring-glow": "rgba(147, 129, 255, 0.18)",
+    } as CSSProperties,
+    satellites: [
+      { id: "left", className: "auth-orbit-satellite auth-orbit-satellite-left", style: { "--satellite-size": "1.3rem" } as CSSProperties },
+      { id: "bottom", className: "auth-orbit-satellite auth-orbit-satellite-bottom", style: { "--satellite-size": "1.45rem" } as CSSProperties },
+    ],
+  },
+];
 
 function normalizeAccount(account: string) {
   const trimmed = account.trim();
@@ -117,24 +202,18 @@ function AuthInputField({
   type = "text",
   placeholder,
   autoComplete,
-  leadingIcon: LeadingIcon,
   trailingAction,
   error,
   showError,
   onChange,
   onBlur,
-  onFocus,
 }: InputFieldProps) {
   return (
-    <div className="space-y-1.5">
-      <label className="ml-1 text-sm font-semibold tracking-[0.01em] text-slate-900" htmlFor={id}>
+    <div className="mb-5">
+      <label className="mb-2.5 block text-base font-semibold tracking-[0.03em] text-[#2c3e50]" htmlFor={id}>
         {label}
       </label>
       <div className="relative">
-        <LeadingIcon
-          size={18}
-          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-        />
         <input
           id={id}
           value={value}
@@ -144,18 +223,17 @@ function AuthInputField({
           aria-invalid={showError}
           aria-describedby={showError ? `${id}-error` : undefined}
           onBlur={onBlur}
-          onFocus={onFocus}
           onChange={(event) => onChange(event.target.value)}
-          className={`h-13 w-full rounded-2xl border bg-white pl-12 pr-12 text-slate-900 shadow-none outline-none transition placeholder:text-slate-400 sm:h-14 ${
+          className={`h-[52px] w-full rounded-[10px] border bg-[#f8f9fc] px-4 pr-12 text-base font-normal text-[#2c3e50] outline-none transition placeholder:text-[15px] placeholder:text-[#a0a0a0] ${
             showError
-              ? "border-red-300 ring-4 ring-red-100"
-              : "border-slate-200 focus:border-[#315CFF] focus:ring-4 focus:ring-blue-100"
+              ? "border-red-300 bg-red-50/70 shadow-[0_0_0_3px_rgba(248,113,113,0.08)]"
+              : "border-[#e1e5e9] hover:border-[#4f81ff] focus:border-[#4f81ff] focus:shadow-[0_0_0_3px_rgba(79,129,255,0.10)]"
           }`}
         />
         {trailingAction}
       </div>
       {showError ? (
-        <p id={`${id}-error`} className="ml-1 text-xs font-medium text-red-600" role="alert">
+        <p id={`${id}-error`} className="mt-1.5 text-xs font-medium text-red-600" role="alert">
           {error}
         </p>
       ) : null}
@@ -175,7 +253,6 @@ function AuthPage({
   onLogin,
   onRegister,
 }: AuthPageProps) {
-  const [focusedField, setFocusedField] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState<LoginFormState>({
     account: "participant@mcs.local",
     password: "Participant123!",
@@ -189,10 +266,6 @@ function AuthPage({
   const [registerTouched, setRegisterTouched] = useState<Partial<Record<keyof RegisterFormState, boolean>>>({});
   const [loginSubmitAttempted, setLoginSubmitAttempted] = useState(false);
   const [registerSubmitAttempted, setRegisterSubmitAttempted] = useState(false);
-
-  useEffect(() => {
-    setFocusedField(null);
-  }, [authMode]);
 
   const loginErrors = {
     account: validateAccount(loginForm.account),
@@ -237,44 +310,84 @@ function AuthPage({
   }
 
   return (
-    <main className="relative min-h-[100svh] overflow-hidden bg-[#0d1631]" style={entryBackgroundStyle}>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_34%_38%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02)_18%,rgba(255,255,255,0.08)_100%)]" />
+    <main className="relative min-h-[100svh] overflow-hidden bg-[#f5f7fa]" style={entryBackgroundStyle}>
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(10,18,40,0.44)_0%,rgba(10,18,40,0.22)_42%,rgba(10,18,40,0.12)_100%)] lg:hidden" />
 
-      <EntryBrand />
+      <EntryBrand className="left-[clamp(1rem,2vw,2.2rem)] top-[clamp(1rem,2vw,2rem)]" />
 
-      <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-[1380px] items-center justify-center px-8 py-8 lg:px-10 lg:py-10">
-        <section className="relative w-full max-w-[470px]">
-          <div className="absolute inset-[-58px] -z-10 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.20)_0%,rgba(255,255,255,0.09)_24%,transparent_72%)] blur-[10px]" />
-          <div className="rounded-[32px] border border-white/22 bg-[linear-gradient(180deg,rgba(248,250,255,0.88),rgba(236,242,255,0.76))] p-6 pt-10 shadow-[0_28px_80px_rgba(10,18,40,0.20)] backdrop-blur-xl sm:p-8 sm:pt-12">
-            <div className="mb-9">
-              <h2 className="text-[2rem] font-semibold tracking-[-0.05em] text-slate-950 sm:text-[2.2rem]">
-                {authMode === "login" ? "欢迎回来" : "创建新账号"}
-              </h2>
-              <p className="mt-2 text-sm leading-7 text-slate-500">
-                {authMode === "login" ? "请输入账号与密码。" : "填写基础信息即可开始。"}
+      <div className="relative z-10 flex min-h-[100svh]">
+        <section className="relative hidden flex-1 overflow-hidden lg:flex">
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,18,44,0.62)_0%,rgba(10,22,52,0.34)_40%,rgba(10,22,52,0.18)_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_24%,rgba(255,255,255,0.22),transparent_18%),radial-gradient(circle_at_78%_26%,rgba(124,92,255,0.28),transparent_20%),radial-gradient(circle_at_56%_78%,rgba(170,148,255,0.18),transparent_22%)]" />
+
+          <div className="relative z-10 mx-auto flex w-full max-w-[1600px] items-center justify-center px-[clamp(2rem,4vw,6rem)]">
+            <div className="relative aspect-square w-[min(72vw,860px)] min-w-[480px] max-w-[860px] animate-auth-stage-drift [perspective:1800px]">
+              <div className="absolute left-1/2 top-1/2 h-[46%] w-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(167,145,255,0.42)_0%,rgba(119,103,255,0.18)_44%,transparent_74%)] blur-[42px] animate-auth-core-pulse" />
+              <div className="absolute left-1/2 top-1/2 h-[24%] w-[24%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.92)_0%,rgba(215,202,255,0.52)_44%,transparent_76%)] blur-[22px] opacity-85" />
+
+              {AUTH_ORBIT_LAYERS.map((layer) => (
+                <div key={layer.id} className="auth-orbit-plane" style={layer.style}>
+                  <div className={layer.reverse ? "auth-orbit-track auth-orbit-track-reverse" : "auth-orbit-track"}>
+                    {layer.satellites.map((satellite) => (
+                      <span
+                        key={satellite.id}
+                        className={satellite.className}
+                        style={satellite.style}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div className="absolute left-1/2 top-1/2 h-[var(--cube-size)] w-[var(--cube-size)] -translate-x-1/2 -translate-y-1/2 [transform-style:preserve-3d]" style={{ "--cube-size": AUTH_CUBE_SIZE } as CSSProperties}>
+                <div className="absolute inset-[8%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0%,rgba(116,99,255,0.08)_45%,transparent_72%)] blur-xl" />
+                <div
+                  className="absolute inset-0 animate-auth-cube-spin"
+                  style={{ transformStyle: "preserve-3d", "--cube-size": AUTH_CUBE_SIZE } as CSSProperties}
+                >
+                  {AUTH_CUBE_FACE_TRANSFORMS.map((transform) => (
+                    <span
+                      key={transform}
+                      className="absolute inset-0 border border-white/24 bg-[linear-gradient(145deg,rgba(183,197,255,0.95)_0%,rgba(109,120,255,0.9)_34%,rgba(113,87,255,0.96)_68%,rgba(61,43,209,0.98)_100%)] shadow-[0_24px_54px_rgba(106,92,255,0.28)]"
+                      style={{ transform }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="relative flex w-full items-center justify-center bg-white/94 px-8 py-24 backdrop-blur-sm lg:w-[450px] lg:min-w-[450px] lg:bg-white lg:px-0 lg:py-0 lg:shadow-[-2px_0_20px_rgba(0,0,0,0.10)]">
+          <div className="w-full max-w-[320px] py-4 lg:py-10">
+            <div className="mb-10 text-center">
+              <div className="mb-4">
+                <span className="inline-flex items-center rounded-[8px] bg-[linear-gradient(45deg,#4f81ff,#3b66db)] px-6 py-3 text-[20px] font-bold tracking-[0.12em] text-white shadow-[0_4px_12px_rgba(79,129,255,0.30)]">
+                  {authMode === "login" ? "智能评估" : "创建账号"}
+                </span>
+              </div>
+              <p className="m-0 text-base leading-7 text-[#555]">
+                {authMode === "login" ? "请输入账号与密码，开始本次评估。" : "填写基础信息后即可创建受试者账号。"}
               </p>
             </div>
 
             {error ? (
-              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700" role="alert">
+              <div className="mb-5 rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700" role="alert">
                 {error}
               </div>
             ) : null}
 
             {authMode === "login" ? (
-              <form className="space-y-4" onSubmit={handleLoginSubmit} noValidate>
+              <form onSubmit={handleLoginSubmit} noValidate>
                 <AuthInputField
                   id="login-account"
                   label="账号"
                   value={loginForm.account}
                   placeholder="请输入 11 位手机号或邮箱"
                   autoComplete="username"
-                  leadingIcon={User}
                   error={loginErrors.account}
                   showError={Boolean(loginErrors.account) && (loginTouched.account || loginSubmitAttempted)}
-                  onFocus={() => setFocusedField("login-account")}
                   onBlur={() => {
-                    setFocusedField((current) => (current === "login-account" ? null : current));
                     setLoginTouched((current) => ({ ...current, account: true }));
                   }}
                   onChange={(value) => setLoginForm((current) => ({ ...current, account: value }))}
@@ -287,12 +400,9 @@ function AuthPage({
                   type={passwordVisible ? "text" : "password"}
                   placeholder="请输入密码"
                   autoComplete="current-password"
-                  leadingIcon={Lock}
                   error={loginErrors.password}
                   showError={Boolean(loginErrors.password) && (loginTouched.password || loginSubmitAttempted)}
-                  onFocus={() => setFocusedField("login-password")}
                   onBlur={() => {
-                    setFocusedField((current) => (current === "login-password" ? null : current));
                     setLoginTouched((current) => ({ ...current, password: true }));
                   }}
                   onChange={(value) => setLoginForm((current) => ({ ...current, password: value }))}
@@ -301,75 +411,66 @@ function AuthPage({
                       type="button"
                       aria-label={passwordVisible ? "隐藏密码" : "显示密码"}
                       onClick={onTogglePassword}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-[#315CFF]"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-[#98a2b3] transition hover:text-[#4f81ff]"
                     >
                       {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   }
                 />
 
-                <label
-                  htmlFor="remember-login"
-                  className="inline-flex items-center gap-3 pt-1 text-sm font-medium text-slate-400"
-                >
-                  <input
-                    id="remember-login"
-                    checked={keepLoggedIn}
-                    onChange={(event) => onKeepLoggedInChange(event.target.checked)}
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-[#315CFF] focus:ring-[#315CFF]"
-                  />
-                  <span>30 天内自动登录</span>
-                </label>
+                <div className="mb-6 flex items-center justify-between gap-4 text-[15px]">
+                  <label htmlFor="remember-login" className="inline-flex items-center gap-2.5 text-[#666]">
+                    <input
+                      id="remember-login"
+                      checked={keepLoggedIn}
+                      onChange={(event) => onKeepLoggedInChange(event.target.checked)}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-[#4f81ff] focus:ring-[#4f81ff]"
+                    />
+                    <span>30 天内自动登录</span>
+                  </label>
 
-                <div className="mt-2 space-y-3">
-                  <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-                    <Link
-                      className="inline-flex h-13 items-center justify-center gap-2 rounded-2xl border border-[#c8d6ff] bg-[#f4f7ff] px-5 text-sm font-semibold shadow-[0_8px_20px_rgba(37,73,214,0.08)] transition hover:border-[#9fb8ff] hover:bg-[#edf3ff] sm:h-14"
-                      style={{ color: "#2448E6" }}
-                      to={APP_PATHS.cover}
-                    >
-                      <ArrowLeft size={16} className="text-current" />
-                      返回封面
-                    </Link>
-
+                  <p className="text-right text-[#666]">
+                    没有账号？
                     <button
-                      type="submit"
-                      disabled={loading}
-                      className="flex h-13 min-w-0 items-center justify-center gap-2 rounded-2xl bg-[#315CFF] px-6 text-base font-semibold text-white shadow-[0_18px_40px_rgba(49,92,255,0.28)] transition hover:bg-[#2549d6] disabled:cursor-not-allowed disabled:opacity-60 sm:h-14"
+                      type="button"
+                      onClick={() => onSwitchMode("register")}
+                      className="ml-1 font-medium text-[#4f81ff] transition hover:text-[#3b66db] hover:underline"
                     >
-                      {loading ? "登录中..." : "登 录"}
+                      注册
                     </button>
-                  </div>
+                  </p>
+                </div>
 
-                  <div className="flex justify-end pt-1 text-sm">
-                    <p className="text-slate-400">
-                      还没有账号？
-                      <button
-                        type="button"
-                        onClick={() => onSwitchMode("register")}
-                        className="ml-1 font-semibold text-[#315CFF] transition hover:text-[#2549d6]"
-                      >
-                        立即注册
-                      </button>
-                    </p>
-                  </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-[linear-gradient(45deg,#4f81ff,#3b66db)] text-lg font-semibold tracking-[0.06em] text-white transition hover:-translate-y-[1px] hover:shadow-[0_8px_25px_rgba(79,129,255,0.30)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? "登录中..." : "登录"}
+                </button>
+
+                <div className="mt-4 flex justify-end">
+                  <Link
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-[#4f81ff] transition hover:text-[#3b66db] hover:underline"
+                    to={APP_PATHS.cover}
+                  >
+                    <ArrowLeft size={15} />
+                    返回封面
+                  </Link>
                 </div>
               </form>
             ) : (
-              <form className="space-y-4" onSubmit={handleRegisterSubmit} noValidate>
+              <form onSubmit={handleRegisterSubmit} noValidate>
                 <AuthInputField
                   id="register-name"
                   label="姓名"
                   value={registerForm.full_name}
                   placeholder="请输入您的姓名"
                   autoComplete="name"
-                  leadingIcon={User}
                   error={registerErrors.full_name}
                   showError={Boolean(registerErrors.full_name) && (registerTouched.full_name || registerSubmitAttempted)}
-                  onFocus={() => setFocusedField("register-name")}
                   onBlur={() => {
-                    setFocusedField((current) => (current === "register-name" ? null : current));
                     setRegisterTouched((current) => ({ ...current, full_name: true }));
                   }}
                   onChange={(value) => setRegisterForm((current) => ({ ...current, full_name: value }))}
@@ -381,12 +482,9 @@ function AuthPage({
                   value={registerForm.account}
                   placeholder="请输入 11 位手机号或邮箱"
                   autoComplete="username"
-                  leadingIcon={User}
                   error={registerErrors.account}
                   showError={Boolean(registerErrors.account) && (registerTouched.account || registerSubmitAttempted)}
-                  onFocus={() => setFocusedField("register-account")}
                   onBlur={() => {
-                    setFocusedField((current) => (current === "register-account" ? null : current));
                     setRegisterTouched((current) => ({ ...current, account: true }));
                   }}
                   onChange={(value) => setRegisterForm((current) => ({ ...current, account: value }))}
@@ -399,12 +497,9 @@ function AuthPage({
                   type={passwordVisible ? "text" : "password"}
                   placeholder="请输入至少 6 位密码"
                   autoComplete="new-password"
-                  leadingIcon={Lock}
                   error={registerErrors.password}
                   showError={Boolean(registerErrors.password) && (registerTouched.password || registerSubmitAttempted)}
-                  onFocus={() => setFocusedField("register-password")}
                   onBlur={() => {
-                    setFocusedField((current) => (current === "register-password" ? null : current));
                     setRegisterTouched((current) => ({ ...current, password: true }));
                   }}
                   onChange={(value) => setRegisterForm((current) => ({ ...current, password: value }))}
@@ -413,54 +508,62 @@ function AuthPage({
                       type="button"
                       aria-label={passwordVisible ? "隐藏密码" : "显示密码"}
                       onClick={onTogglePassword}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-[#315CFF]"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-[#98a2b3] transition hover:text-[#4f81ff]"
                     >
                       {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   }
                 />
 
-                <div className="mt-2 space-y-3">
-                  <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+                <div className="mb-6 flex justify-end text-[15px] text-[#666]">
+                  <p>
+                    已有账号？
                     <button
                       type="button"
                       onClick={() => onSwitchMode("login")}
-                      className="inline-flex h-13 items-center justify-center gap-2 rounded-2xl border border-[#c8d6ff] bg-[#f4f7ff] px-5 text-sm font-semibold shadow-[0_8px_20px_rgba(37,73,214,0.08)] transition hover:border-[#9fb8ff] hover:bg-[#edf3ff] sm:h-14"
-                      style={{ color: "#2448E6" }}
+                      className="ml-1 font-medium text-[#4f81ff] transition hover:text-[#3b66db] hover:underline"
                     >
-                      <ArrowLeft size={16} className="text-current" />
-                      取消
+                      返回登录
                     </button>
+                  </p>
+                </div>
 
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="flex h-13 min-w-0 items-center justify-center gap-2 rounded-2xl bg-[#315CFF] px-6 text-base font-semibold text-white shadow-[0_18px_40px_rgba(49,92,255,0.28)] transition hover:bg-[#2549d6] disabled:cursor-not-allowed disabled:opacity-60 sm:h-14"
-                    >
-                      {loading ? "提交中..." : "立即注册"}
-                    </button>
-                  </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-[linear-gradient(45deg,#4f81ff,#3b66db)] text-lg font-semibold tracking-[0.06em] text-white transition hover:-translate-y-[1px] hover:shadow-[0_8px_25px_rgba(79,129,255,0.30)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? "提交中..." : "立即注册"}
+                </button>
 
-                  <div className="flex justify-end pt-1 text-sm">
-                    <p className="text-slate-400">
-                      已有账号？
-                      <button
-                        type="button"
-                        onClick={() => onSwitchMode("login")}
-                        className="ml-1 font-semibold text-[#315CFF] transition hover:text-[#2549d6]"
-                      >
-                        返回登录
-                      </button>
-                    </p>
-                  </div>
+                <div className="mt-4 flex justify-end">
+                  <Link
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-[#4f81ff] transition hover:text-[#3b66db] hover:underline"
+                    to={APP_PATHS.cover}
+                  >
+                    <ArrowLeft size={15} />
+                    返回封面
+                  </Link>
                 </div>
               </form>
             )}
+
+            <div className="mt-9 flex items-center justify-between border-t border-[#eef2f7] pt-4 text-[13px] text-[#667084]">
+              <div className="inline-flex items-center rounded-full border border-[rgba(59,130,246,0.25)] bg-[#f2f8ff] px-3 py-1 font-semibold tracking-[0.02em] text-[#3b82f6]">
+                受试者端
+              </div>
+              <div className="flex gap-2">
+                <span className="inline-flex items-center rounded-[8px] border border-[#e5e7eb] bg-[#f8fafc] px-2.5 py-1">
+                  智能评估
+                </span>
+                <span className="inline-flex items-center rounded-[8px] border border-[#e5e7eb] bg-[#f8fafc] px-2.5 py-1">
+                  安全连接
+                </span>
+              </div>
+            </div>
           </div>
         </section>
       </div>
-
-      <EntryFooter />
     </main>
   );
 }

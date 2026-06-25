@@ -921,16 +921,6 @@ export default function ScaleQuestionnairePage() {
     videoFinished,
   ]);
 
-  const stageSummaryText = useMemo(() => {
-    if (!currentStage || !currentItem || isAssessmentCompleted) {
-      return isAssessmentCompleted ? "量表流程已完成" : "";
-    }
-    if (isCurrentVideoStageIntro) {
-      return `${currentStage.stageLabel} · 阶段引导`;
-    }
-    return `${currentStage.stageLabel} · ${formatStageQuestionCounter(currentItem.index, currentStageQuestionCount)}`;
-  }, [currentItem, currentStage, currentStageQuestionCount, isAssessmentCompleted, isCurrentVideoStageIntro]);
-
   const responseWindowStatusText = useMemo(() => {
     if (isAssessmentCompleted) {
       return "量表流程已完成，可以查看结果页。";
@@ -1201,11 +1191,6 @@ export default function ScaleQuestionnairePage() {
               transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
             }}
           >
-            {stageSummaryText ? (
-              <div className="pointer-events-none rounded-full border border-white/18 bg-slate-950/28 px-4 py-2 text-xs text-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.24)] backdrop-blur-md">
-                {stageSummaryText}
-              </div>
-            ) : null}
             {responseWindowStatusText ? (
               <div className="pointer-events-none rounded-full border border-white/18 bg-slate-950/28 px-4 py-2 text-xs text-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.24)] backdrop-blur-md">
                 {responseWindowStatusText}
