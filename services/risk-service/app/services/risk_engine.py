@@ -56,6 +56,7 @@ DEFAULT_MULTIMODAL_WEIGHTS: dict[str, float] = {
     "face": 0.30,
     "pose": 0.10,
 }
+DEFAULT_MODALITY_CONFIDENCE_FLOOR = 0.10
 DEFAULT_DEPRESSION_SEVERITY_BANDS: list[dict[str, Any]] = [
     {"min": 0.0, "max": 24.99, "level": "minimal", "label": "无或极轻度抑郁倾向"},
     {"min": 25.0, "max": 49.99, "level": "mild", "label": "轻度抑郁倾向"},
@@ -1011,11 +1012,6 @@ def _compute_modality_confidence(
     return None, {}
 
 
-def _adjust_score_with_confidence(score: float, confidence: float) -> float:
-    adjusted = 50.0 + (score - 50.0) * confidence
-    return round(_clamp_100(adjusted), 2)
-
-
 def _compute_weighted_score(
     weights: dict[str, float],
     score_lookup: dict[str, float],
@@ -1039,6 +1035,45 @@ def _compute_weighted_score(
                 "weighted_contribution": round(score * weight, 2),
             }
         )
+    if total_weight <= 0:
+        return None, used_components, missing_components
+    return round(weighted_sum / total_weight, 2), used_components, missing_components
+
+
+def _compute_confidence_weighted_score(
+    base_weights: dict[str, float],
+    score_lookup: dict[str, float],
+    confidence_lookup: dict[str, float],
+    *,
+    confidence_floor: float,
+) -> tuple[float | None, list[dict[str, Any]], list[str]]:
+    weighted_sum = 0.0
+    total_weight = 0.0
+    used_components: list[dict[str, Any]] = []
+    missing_components: list[str] = []
+    resolved_floor = _clamp_01(confidence_floor)
+
+    for key, base_weight in base_weights.items():
+        score = score_lookup.get(key)
+        if score is None:
+            missing_components.append(key)
+            continue
+
+        confidence = _clamp_01(confidence_lookup.get(key, 0.5))
+        effective_weight = base_weight * (resolved_floor + ((1.0 - resolved_floor) * confidence))
+        weighted_sum += score * effective_weight
+        total_weight += effective_weight
+        used_components.append(
+            {
+                "key": key,
+                "score": round(score, 2),
+                "base_weight": round(base_weight, 4),
+                "confidence": round(confidence, 4),
+                "effective_weight": round(effective_weight, 4),
+                "weighted_contribution": round(score * effective_weight, 2),
+            }
+        )
+
     if total_weight <= 0:
         return None, used_components, missing_components
     return round(weighted_sum / total_weight, 2), used_components, missing_components
@@ -1300,6 +1335,12 @@ def _evaluate_depression_axis(
             _canonical_modality_name(key) or str(key): float(value)
             for key, value in multimodal_weights.items()
         }
+    modality_confidence_floor = _safe_float(
+        aggregation.get("modality_confidence_floor", DEFAULT_MODALITY_CONFIDENCE_FLOOR)
+    )
+    if modality_confidence_floor is None:
+        modality_confidence_floor = DEFAULT_MODALITY_CONFIDENCE_FLOOR
+    modality_confidence_floor = _clamp_01(modality_confidence_floor)
 
     negative_label_sets = _normalize_negative_label_sets(rule_set)
     modality_score_lookup: dict[str, float] = {}
@@ -1325,23 +1366,28 @@ def _evaluate_depression_axis(
                 "confidence_components": {},
                 "confidence_formula": "default_fallback",
             }
-        adjusted_score = _adjust_score_with_confidence(raw_score, confidence)
-        modality_score_lookup[modality] = adjusted_score
+        effective_weight = multimodal_weights[modality] * (
+            modality_confidence_floor + ((1.0 - modality_confidence_floor) * confidence)
+        )
+        modality_score_lookup[modality] = raw_score
         modality_confidence_lookup[modality] = confidence
         modality_components.append(
             {
                 "key": modality,
-                "raw_score": raw_score,
+                "score": raw_score,
                 "confidence": round(confidence, 4),
-                "adjusted_score": adjusted_score,
+                "base_weight": round(multimodal_weights[modality], 4),
+                "effective_weight": round(effective_weight, 4),
                 "score_metadata": raw_score_metadata,
                 "confidence_metadata": confidence_metadata,
             }
         )
 
-    multimodal_score, used_modalities, computed_missing_modalities = _compute_weighted_score(
+    multimodal_score, used_modalities, computed_missing_modalities = _compute_confidence_weighted_score(
         multimodal_weights,
         modality_score_lookup,
+        modality_confidence_lookup,
+        confidence_floor=modality_confidence_floor,
     )
     if not missing_modalities:
         missing_modalities = computed_missing_modalities
@@ -1445,11 +1491,12 @@ def _evaluate_depression_axis(
                 "value": multimodal_score,
                 "overall_confidence": multimodal_confidence,
                 "overall_confidence_grade": multimodal_confidence_grade,
+                "confidence_floor": round(modality_confidence_floor, 4),
                 "used_modalities": used_modalities,
                 "detected_modality_scores": modality_components,
                 "missing_modalities": missing_modalities,
                 "source_type": multimodal_source,
-                "formula": "weighted average over confidence-adjusted modality scores",
+                "formula": "weighted average over raw modality scores with confidence-adjusted effective weights",
             },
             "depression_score": {
                 "value": depression_score,
