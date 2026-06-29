@@ -140,7 +140,7 @@ export default function ResultPage() {
   const canRenderResult = state.assessment?.status === "completed" && viewModel.hasAssessment;
   const isDrawerOpen = activeDrawer !== null;
   const selectedScaleId = activeDrawer?.kind === "scale" ? activeDrawer.scaleId : null;
-  const counselorPaneWidth = "clamp(360px, 25vw, 500px)";
+  const counselorPaneWidth = "clamp(420px, 28vw, 580px)";
   const selectedScaleDetail = useMemo(() => {
     if (!selectedScaleId) {
       return null;
@@ -256,7 +256,7 @@ export default function ResultPage() {
                 }}
               >
                 <div className="h-full w-full">
-                  <DigitalCounselor className="px-0" />
+                  <DigitalCounselor className="px-0" overallSeverity={viewModel.overallSeverity} />
                 </div>
               </div>
 

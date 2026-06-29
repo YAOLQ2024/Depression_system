@@ -1,10 +1,10 @@
 workflow_id: consultation-v1
 manifest_contract: digital-human-playlist/v1
-playlist_version: v2-chief-complaint-branch-and-risk-routing
+playlist_version: v3-risk-review-branch-and-result-video-ready
 manifest_status: draft
 delivery_mode: fixed-video-playlist
 notes:
-  - "11 response videos plus greeting, high-risk alert, and handoff videos for consultation-v1"
+  - "13 response videos plus greeting, high-risk alert, and handoff videos for consultation-v1"
   - "Each question item maps to one fixed video file."
   - "question_text is the authoritative text stored with each consultation turn."
   - "subtitle_text is an optional UI/display override; if omitted, UI can fall back to question_text."
@@ -102,32 +102,48 @@ stages:
         question_text: 最近有没有伤害自己或轻生的想法？
         subtitle_text: null
         response_required: true
-      - question_key: risk-screening-002
+      - question_key: risk-screening-review-001
         order: 2
+        node_id: ask-suicide-means-preparation
+        video_asset_id: risk-screening-review-001
+        video_uri: /digital-human/consultation-v1/risk-screening-review-001.webm
+        question_text: 最近有没有囤积安眠药、刀具、绳索，主动查找自杀相关信息、教程的想法？
+        subtitle_text: null
+        response_required: true
+      - question_key: risk-screening-review-002
+        order: 3
+        node_id: ask-suicide-farewell-behavior
+        video_asset_id: risk-screening-review-002
+        video_uri: /digital-human/consultation-v1/risk-screening-review-002.webm
+        question_text: 最近有没有道别，整理物品，写遗书，交代后事的想法？
+        subtitle_text: null
+        response_required: true
+      - question_key: risk-screening-002
+        order: 4
         node_id: ask-plan-or-action
         video_asset_id: risk-screening-002
         video_uri: /digital-human/consultation-v1/risk-screening-002.webm
         question_text: 有没有具体计划、差点实施，或者已经做过？
         subtitle_text: null
         response_required: true
-      - question_key: risk-screening-003
-        order: 3
-        node_id: ask-support-state
-        video_asset_id: risk-screening-003
-        video_uri: /digital-human/consultation-v1/risk-screening-003.webm
-        question_text: 现在身边有没有家人、朋友、老师或同事可以及时联系和陪伴？
-        subtitle_text: null
-        response_required: true
       - question_key: risk-screening-004
-        order: 4
+        order: 5
         node_id: ask-primary-concern
         video_asset_id: risk-screening-004
         video_uri: /digital-human/consultation-v1/risk-screening-004.webm
         question_text: 这次就诊您最希望医生帮您解决什么问题？
         subtitle_text: null
         response_required: true
+      - question_key: risk-screening-004-review
+        order: 6
+        node_id: ask-primary-concern-after-review
+        video_asset_id: risk-screening-004
+        video_uri: /digital-human/consultation-v1/risk-screening-004.webm
+        question_text: 这次就诊您最希望医生帮您解决什么问题？
+        subtitle_text: null
+        response_required: true
       - question_key: risk-screening-005
-        order: 5
+        order: 7
         node_id: risk-screening-005
         video_asset_id: risk-screening-005
         video_uri: /digital-human/consultation-v1/risk-screening-005.webm
