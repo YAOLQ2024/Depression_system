@@ -149,6 +149,48 @@ CHIEF_COMPLAINT_CLEAR_SYMPTOM_HINTS = (
     "最近状态不对",
 )
 
+HIGH_RISK_POSITIVE_OVERRIDE_HINTS = (
+    "不是没有",
+    "并非没有",
+    "不能说没有",
+    "也不是没有",
+    "不完全没有",
+)
+
+HIGH_RISK_NEGATIVE_HINTS = (
+    "没有",
+    "没",
+    "无",
+    "不会",
+    "不是",
+    "从未",
+    "并没有",
+    "完全没有",
+    "一点都没有",
+    "没想过",
+    "不想",
+)
+
+HIGH_RISK_POSITIVE_HINTS = (
+    "有",
+    "有过",
+    "想过",
+    "想法",
+    "是",
+    "会",
+    "差点",
+    "做过",
+    "实施过",
+    "试过",
+    "准备过",
+    "查过",
+    "查找过",
+    "写过",
+    "道别过",
+    "交代过",
+    "囤过",
+)
+
 
 def _serialize_question_item(question_item: QuestionItem) -> dict[str, Any]:
     return {
@@ -465,6 +507,7 @@ def _describe_risk_value(value: Any) -> str:
         "positive": "有",
         "negative": "无",
         "unclear": "未明确",
+        "not_asked": "未采集",
         "available": "有稳定支持",
         "limited": "支持有限",
         "none": "暂无支持",
@@ -476,14 +519,14 @@ def _describe_risk_value(value: Any) -> str:
 
 
 def _parse_positive_negative(text: str) -> str:
-    if any(
-        token in text for token in ["没有", "没", "不会", "不是", "无", "从未"]
-    ):
+    normalized = _normalize_chief_complaint_text(text)
+    if not normalized:
+        return "unclear"
+    if any(token in normalized for token in HIGH_RISK_POSITIVE_OVERRIDE_HINTS):
+        return "positive"
+    if any(token in normalized for token in HIGH_RISK_NEGATIVE_HINTS):
         return "negative"
-    if any(
-        token in text
-        for token in ["有", "想过", "出现过", "是", "会", "差点", "真的"]
-    ):
+    if any(token in normalized for token in HIGH_RISK_POSITIVE_HINTS):
         return "positive"
     return "unclear"
 
@@ -519,6 +562,52 @@ def _extract_risk_value(slot_name: str, text: str) -> str:
     if slot_name == "acute_support_state":
         return _parse_support_state(text)
     return _parse_positive_negative(text)
+
+
+def _normalize_risk_slot_value(value: Any) -> str:
+    normalized = _normalize_slot_text(value)
+    return normalized or "unclear"
+
+
+def _compute_high_risk_confirmation_state(
+    slot_values: dict[str, Any],
+) -> tuple[int, str]:
+    suicidal_ideation = _normalize_risk_slot_value(
+        slot_values.get("suicidal_ideation")
+    )
+    tracked_values = [
+        suicidal_ideation,
+        _normalize_risk_slot_value(
+            slot_values.get("suicide_means_preparation")
+        ),
+        _normalize_risk_slot_value(
+            slot_values.get("suicide_farewell_behavior")
+        ),
+        _normalize_risk_slot_value(slot_values.get("suicide_plan")),
+    ]
+    positive_count = sum(
+        1 for value in tracked_values if value == "positive"
+    )
+
+    if suicidal_ideation != "positive":
+        if suicidal_ideation == "negative":
+            return positive_count, "negative"
+        return positive_count, "unclear"
+    if positive_count >= 2:
+        return positive_count, "confirmed"
+    return positive_count, "not_confirmed"
+
+
+def _update_high_risk_confirmation_slots(
+    session_record: ConsultationSession,
+) -> None:
+    slot_values = _ensure_json_dict(session_record.slot_values)
+    positive_count, outcome = _compute_high_risk_confirmation_state(
+        slot_values
+    )
+    slot_values["high_risk_positive_count"] = positive_count
+    slot_values["high_risk_confirmation_outcome"] = outcome
+    session_record.slot_values = slot_values
 
 
 def _normalize_chief_complaint_text(text: str) -> str:
@@ -611,6 +700,7 @@ def _apply_extraction(
             value = _extract_risk_value(slot_name, text)
             extracted[slot_name] = value
             _set_slot(session_record, slot_name, value)
+        _update_high_risk_confirmation_slots(session_record)
 
     return extracted
 
@@ -763,20 +853,42 @@ def _build_high_risk_result(
     session_record: ConsultationSession, branch_name: str
 ) -> None:
     slot_values = _ensure_json_dict(session_record.slot_values)
-    suicidal_ideation = slot_values.get("suicidal_ideation", "unclear")
-    self_harm_behavior = slot_values.get("self_harm_behavior", "unclear")
-    suicide_plan = slot_values.get("suicide_plan", "unclear")
-    acute_support_state = slot_values.get("acute_support_state", "unclear")
+    suicidal_ideation_initial = _normalize_risk_slot_value(
+        slot_values.get("suicidal_ideation")
+    )
+    suicide_means_preparation = _normalize_risk_slot_value(
+        slot_values.get("suicide_means_preparation")
+    )
+    suicide_farewell_behavior = _normalize_risk_slot_value(
+        slot_values.get("suicide_farewell_behavior")
+    )
+    self_harm_behavior = _normalize_risk_slot_value(
+        slot_values.get("self_harm_behavior")
+    )
+    suicide_plan = _normalize_risk_slot_value(slot_values.get("suicide_plan"))
+    positive_count, confirmation_outcome = _compute_high_risk_confirmation_state(
+        slot_values
+    )
+    suicidal_ideation = (
+        "negative"
+        if confirmation_outcome == "not_confirmed"
+        else suicidal_ideation_initial
+    )
     primary_concern = _normalize_slot_text(slot_values.get("primary_concern"))
     alert_level = (
         "high" if branch_name == "human_intervention_required" else "low"
     )
     session_record.high_risk_screening_result = {
         "suicidal_ideation": suicidal_ideation,
+        "suicidal_ideation_initial": suicidal_ideation_initial,
+        "suicide_means_preparation": suicide_means_preparation,
+        "suicide_farewell_behavior": suicide_farewell_behavior,
         "self_harm_behavior": self_harm_behavior,
         "suicide_plan": suicide_plan,
-        "acute_support_state": acute_support_state,
+        "acute_support_state": "not_asked",
         "primary_concern": primary_concern,
+        "positive_count": positive_count,
+        "confirmation_outcome": confirmation_outcome,
         "alert_level": alert_level,
         "outcome": branch_name,
     }
@@ -785,17 +897,29 @@ def _build_high_risk_result(
         "high_risk_screening_stage_summary",
         _join_summary_lines(
             [
-                f"自伤或轻生想法：{_describe_risk_value(suicidal_ideation)}",
+                f"首问自伤或轻生想法：{_describe_risk_value(suicidal_ideation_initial)}",
+                (
+                    "危险物品准备或查找信息："
+                    f"{_describe_risk_value(suicide_means_preparation)}"
+                ),
+                (
+                    "道别、整理物品或交代后事："
+                    f"{_describe_risk_value(suicide_farewell_behavior)}"
+                ),
                 (
                     f"具体计划或实际行为："
                     f"{_describe_risk_value(suicide_plan)}/"
                     f"{_describe_risk_value(self_harm_behavior)}"
                 ),
-                (
-                    f"当前支持系统："
-                    f"{_describe_risk_value(acute_support_state)}"
-                ),
                 f"本次主要诉求：{primary_concern}" if primary_concern else "",
+                f"复核阳性次数：{positive_count}",
+                (
+                    "复核结论：已确认高风险"
+                    if confirmation_outcome == "confirmed"
+                    else "复核结论：未确认高风险"
+                    if confirmation_outcome == "not_confirmed"
+                    else "复核结论：未见明确高风险"
+                ),
                 f"风险判定：{alert_level}",
             ]
         ),

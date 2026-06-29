@@ -102,6 +102,12 @@ def _advance_stage(
     if completed_stage_id == "stage-03-symptom-screening":
         _build_current_history_result(session_record)
     if completed_stage_id == "stage-04-high-risk-screening":
+        high_risk_branch = (
+            "human_intervention_required"
+            if session_record.requires_human_review
+            else "safe_to_continue"
+        )
+        _build_high_risk_result(session_record, high_risk_branch)
         _build_digital_human_consultation_summary(session_record)
 
     encounter_session = session_record.encounter_session
@@ -113,7 +119,8 @@ def _advance_stage(
         session_record.status = "paused_for_human_review"
         if encounter_session is not None:
             encounter_session.current_flow_type = "consultation"
-            encounter_session.status = "paused"
+            encounter_session.status = "completed"
+            encounter_session.completed_at = _now()
             encounter_session.updated_at = _now()
         session_record.current_stage_id = None
         session_record.current_node_id = None
@@ -134,7 +141,8 @@ def _advance_stage(
         session_record.status = "paused_for_human_review"
         if encounter_session is not None:
             encounter_session.current_flow_type = "consultation"
-            encounter_session.status = "paused"
+            encounter_session.status = "completed"
+            encounter_session.completed_at = _now()
             encounter_session.updated_at = _now()
     else:
         session_record.workflow_stage_id = bundle.scale_stage_id

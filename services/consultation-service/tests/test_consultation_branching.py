@@ -5,10 +5,13 @@ from types import SimpleNamespace
 
 from app.services.consultation._session_state import (
     _apply_extraction,
+    _build_high_risk_result,
     _count_remaining_prompt_items,
+    _evaluate_decision,
     _record_completed_question_key,
     _resolve_prompt_progress,
 )
+from app.services.consultation._workflow_runtime import _advance_stage
 from app.services.workflow_loader import WorkflowLoader
 
 
@@ -46,9 +49,16 @@ def _build_session(**overrides):
         "total_prompt_count": 0,
         "completed_prompt_count": 0,
         "status": "running",
+        "workflow_stage_id": None,
+        "scale_handoff_payload": None,
         "completed_at": None,
         "requires_human_review": False,
         "chief_complaint_raw_text": None,
+        "chief_complaint_summary": None,
+        "current_history_structured_result": {},
+        "high_risk_screening_result": {},
+        "encounter_session": None,
+        "id": "test-consultation-session",
     }
     payload.update(overrides)
     return SimpleNamespace(**payload)
@@ -101,11 +111,14 @@ def test_remaining_prompt_count_stops_after_high_risk_alert() -> None:
     bundle = _load_bundle()
     session_record = _build_session(
         slot_values={
+            "suicidal_ideation": "positive",
+            "suicide_means_preparation": "positive",
             "suicide_plan": "positive",
             "self_harm_behavior": "negative",
+            "high_risk_confirmation_outcome": "confirmed",
         },
         current_stage_id="stage-04-high-risk-screening",
-        current_node_id="evaluate-after-plan-or-action",
+        current_node_id="evaluate-high-risk",
     )
 
     remaining_prompt_count = _count_remaining_prompt_items(session_record, bundle)
@@ -128,4 +141,83 @@ def test_prompt_progress_uses_actual_path_with_branch_video() -> None:
     )
 
     assert completed_prompt_count == 2
-    assert total_prompt_count == 12
+    assert total_prompt_count == 10
+
+
+def test_high_risk_review_requires_two_positive_answers() -> None:
+    bundle = _load_bundle()
+    node = bundle.stage_scripts["stage-04-high-risk-screening"].nodes[
+        "evaluate-high-risk"
+    ]
+    session_record = _build_session(
+        slot_values={
+            "suicidal_ideation": "positive",
+            "suicide_means_preparation": "negative",
+            "suicide_farewell_behavior": "positive",
+            "suicide_plan": "negative",
+            "high_risk_confirmation_outcome": "confirmed",
+        },
+        current_stage_id="stage-04-high-risk-screening",
+        current_node_id="evaluate-high-risk",
+    )
+
+    branch_name = _evaluate_decision(session_record, node)
+
+    assert branch_name == "human_intervention_required"
+
+
+def test_high_risk_false_positive_is_downgraded_after_review() -> None:
+    session_record = _build_session(
+        slot_values={
+            "suicidal_ideation": "positive",
+            "suicide_means_preparation": "negative",
+            "suicide_farewell_behavior": "negative",
+            "suicide_plan": "negative",
+        }
+    )
+
+    _build_high_risk_result(session_record, "safe_to_continue")
+
+    assert session_record.high_risk_screening_result["positive_count"] == 1
+    assert (
+        session_record.high_risk_screening_result["confirmation_outcome"]
+        == "not_confirmed"
+    )
+    assert (
+        session_record.high_risk_screening_result["suicidal_ideation"]
+        == "negative"
+    )
+
+
+def test_high_risk_human_review_marks_encounter_completed() -> None:
+    bundle = _load_bundle()
+    encounter_session = SimpleNamespace(
+        current_flow_type="consultation",
+        status="in_progress",
+        completed_at=None,
+        updated_at=None,
+    )
+    session_record = _build_session(
+        slot_values={
+            "suicidal_ideation": "positive",
+            "suicide_means_preparation": "positive",
+            "suicide_farewell_behavior": "negative",
+            "suicide_plan": "negative",
+        },
+        current_stage_id="stage-04-high-risk-screening",
+        current_node_id="high-risk-alert",
+        workflow_stage_id="high-risk-screening",
+        requires_human_review=True,
+        encounter_session=encounter_session,
+    )
+
+    _advance_stage(session_record, bundle)
+
+    assert session_record.status == "paused_for_human_review"
+    assert session_record.workflow_stage_id == "clinical-decision"
+    assert session_record.completed_at is not None
+    assert session_record.current_stage_id is None
+    assert session_record.current_node_id is None
+    assert encounter_session.current_flow_type == "consultation"
+    assert encounter_session.status == "completed"
+    assert encounter_session.completed_at is not None

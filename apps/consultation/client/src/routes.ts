@@ -26,6 +26,14 @@ type ResolveAppPathArgs = {
   assessment: AssessmentSession | null;
 };
 
+function hasResumableConsultationSession(consultation: ConsultationSession | null) {
+  if (!consultation) {
+    return false;
+  }
+
+  return consultation.status !== "paused_for_human_review";
+}
+
 export function resolveResumePath({ user, consultation, assessment }: ResolveAppPathArgs) {
   if (!user) {
     return APP_PATHS.login;
@@ -43,7 +51,7 @@ export function resolveResumePath({ user, consultation, assessment }: ResolveApp
     return APP_PATHS.assessmentSelection;
   }
 
-  if (consultation) {
+  if (hasResumableConsultationSession(consultation)) {
     return APP_PATHS.consultation;
   }
 
@@ -79,7 +87,7 @@ export function resolveHomeEntryPath({ user, consultation, assessment }: Resolve
     return APP_PATHS.assessmentSelection;
   }
 
-  if (consultation) {
+  if (hasResumableConsultationSession(consultation)) {
     return APP_PATHS.consultation;
   }
 
@@ -103,7 +111,7 @@ export function resolveHomeEntryLabel({ user, consultation, assessment }: Resolv
     return "进入量表评估";
   }
 
-  if (consultation) {
+  if (hasResumableConsultationSession(consultation)) {
     return "继续问诊";
   }
 
