@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Activity, AlertTriangle, AudioLines, BrainCircuit, RefreshCw, ScanFace, Sparkles } from "lucide-react";
+import { Activity, AlertTriangle, AudioLines, RefreshCw, ScanFace, Sparkles } from "lucide-react";
 
 import type { MediaDeviceStatusTone } from "../lib/mediaDeviceFeedback";
 import { cn } from "../lib/utils";
@@ -7,7 +7,6 @@ import type {
   ConsultationMultimodalLive,
   ConsultationSession,
   ConsultationTurnMultimodalBundle,
-  EegLiveResult,
   EegWaveSample,
   FacePoseMultimodalLive,
   MultimodalRankedLabel,
@@ -15,6 +14,9 @@ import type {
   TextMultimodalLive,
 } from "../types";
 import { CameraPreview } from "./CameraPreview";
+import { EegEmotionImagePanel } from "./eeg/EegEmotionImagePanel";
+import { EegHeaderSummary } from "./eeg/EegHeaderSummary";
+import { normalizeEegEmotionDistribution } from "./eeg/eegEmotionPresentation";
 
 const EEG_CHANNEL_COLORS = ["#60a5fa", "#34d399", "#f59e0b"];
 const EEG_VIEWBOX_PADDING_Y = 10;
@@ -24,7 +26,6 @@ const EEG_CANVAS_BOUNDS_FRAME_ALPHA = 0.05;
 const EEG_BOUNDS_UPDATE_INTERVAL_MS = 480;
 const EEG_MIN_VISIBLE_UPPER_UV = 20;
 const EEG_MAX_VISIBLE_LOWER_UV = -20;
-const EEG_PROBABILITY_LABELS = ["\u6d88\u6781", "\u4e2d\u6027", "\u79ef\u6781"];
 
 type EegWaveSampleMeta = {
   length: number;
@@ -613,43 +614,6 @@ const EegWavePreview = memo(function EegWavePreview({
   );
 });
 
-function getEegSummaryText(live: ConsultationMultimodalLive) {
-  const latestResult = live.eeg_live.latest_result;
-  if (latestResult?.primary_label) {
-    return `${latestResult.primary_label} · ${formatPercent(latestResult.primary_score)}`;
-  }
-  if (live.eeg_live.device_status === "streaming") {
-    return "设备已连接，等待形成窗口结果";
-  }
-  if (live.eeg_live.error_message) {
-    return live.eeg_live.error_message;
-  }
-  return "等待脑电设备实时信号";
-}
-
-function getEegDeviceText(live: ConsultationMultimodalLive) {
-  const channelNames = live.eeg_waves.channel_names || live.eeg_live.channel_names || [];
-  const samplingRate = live.eeg_live.sampling_rate || live.eeg_waves.sampling_rate;
-  const status = live.eeg_live.device_status || live.eeg_live.status || "pending";
-  const statusMap: Record<string, string> = {
-    disabled: "未启用",
-    idle: "待绑定",
-    scanning: "扫描中",
-    connecting: "连接中",
-    connected: "已连接",
-    streaming: "采集中",
-    disconnected: "未连接",
-    dependency_missing: "依赖缺失",
-    pending: "等待中",
-  };
-  const parts = [
-    `状态 ${statusMap[status] || status}`,
-    channelNames.length > 0 ? `${channelNames.join(" / ")}` : null,
-    typeof samplingRate === "number" ? `${samplingRate}Hz` : null,
-  ].filter(Boolean);
-  return parts.join(" · ");
-}
-
 function formatPercent(score?: number | null) {
   if (typeof score !== "number" || Number.isNaN(score)) {
     return "0%";
@@ -670,28 +634,6 @@ function getPrimaryLabel(label?: string | null, status?: string) {
 
 function getTopLabels(labels?: MultimodalRankedLabel[]) {
   return (labels || []).slice(0, 4);
-}
-
-function getEegDistribution(result?: EegLiveResult | null) {
-  const labels = result?.top_3_labels || [];
-  if (labels.length === 0) {
-    return [];
-  }
-
-  const scoreByLabel = new Map<string, number>();
-  for (const item of labels) {
-    if (!item?.label) {
-      continue;
-    }
-    scoreByLabel.set(item.label, typeof item.score === "number" ? item.score : 0);
-  }
-
-  const ordered = EEG_PROBABILITY_LABELS.map((label) => ({
-    label,
-    score: scoreByLabel.get(label) ?? 0,
-  }));
-  const hasKnownLabels = ordered.some((item) => item.score > 0);
-  return hasKnownLabels ? ordered : labels.slice(0, 3);
 }
 
 function readBundleFaceSummary(bundle?: ConsultationTurnMultimodalBundle | null) {
@@ -838,12 +780,14 @@ function SectionCard({
   title,
   children,
   rightStatus = "实时",
+  headerRight,
   className,
   contentClassName,
 }: {
   title: string;
   children: ReactNode;
   rightStatus?: string;
+  headerRight?: ReactNode;
   className?: string;
   contentClassName?: string;
 }) {
@@ -854,12 +798,16 @@ function SectionCard({
         className,
       )}
     >
-      <div className="flex items-center justify-between px-2 py-1">
-        <h3 className="text-[13px] font-semibold text-slate-100 tracking-wide">{title}</h3>
-        <div className="flex items-center gap-1 text-[10px] text-slate-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-          {rightStatus}
-        </div>
+      <div className={cn("flex justify-between gap-2 px-2 py-1", headerRight ? "items-start" : "items-center")}>
+        <h3 className="min-w-0 text-[13px] font-semibold tracking-wide text-slate-100">{title}</h3>
+        {headerRight ? (
+          <div className="min-w-0 flex-1">{headerRight}</div>
+        ) : (
+          <div className="flex items-center gap-1 text-[10px] text-slate-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+            {rightStatus}
+          </div>
+        )}
       </div>
       <div className={cn("flex-1 min-h-0 px-2 pb-2", contentClassName)}>{children}</div>
     </div>
@@ -946,7 +894,7 @@ export function ConsultationStatusPanel({
       : getTopLabels(snapshot.face.top_3_labels);
   const textWords = snapshot.text.negative_terms || [];
   const eegLatestResult = snapshot.eeg_live.latest_result;
-  const eegDistribution = getEegDistribution(eegLatestResult);
+  const eegDistribution = normalizeEegEmotionDistribution(eegLatestResult?.top_3_labels);
   const eegChannelNames = snapshot.eeg_waves.channel_names || snapshot.eeg_live.channel_names || ["T7", "T8", "Fpz"];
   const eegSamplingRate = snapshot.eeg_waves.sampling_rate || snapshot.eeg_live.sampling_rate || 500;
   const eegSamples = snapshot.eeg_waves.samples || [];
@@ -1033,17 +981,19 @@ export function ConsultationStatusPanel({
 
         <SectionCard
           title="脑电情绪监测"
-          className="min-h-[286px]"
+          className="min-h-[298px]"
           contentClassName="px-2 pb-2"
-          rightStatus={
-            snapshot.eeg_live.device_status === "streaming"
-              ? "streaming"
-              : eegHasSamples
-                ? "ready"
-                : snapshot.eeg_live.device_status || snapshot.eeg_live.status || "pending"
+          headerRight={
+            <EegHeaderSummary
+              distribution={eegDistribution}
+              primaryLabel={eegLatestResult?.primary_label}
+              primaryScore={eegLatestResult?.primary_score}
+              deviceStatus={snapshot.eeg_live.device_status}
+              errorMessage={snapshot.eeg_live.error_message}
+            />
           }
         >
-          <div className="grid h-[252px] grid-cols-[1.82fr_0.98fr] gap-[3px]">
+          <div className="grid h-[264px] grid-cols-[1.62fr_1.18fr] gap-[3px]">
             <div className="min-w-0 h-full overflow-hidden rounded-[16px] bg-white/[0.03] px-2 py-2">
               {eegHasSamples ? (
                 <EegWavePreview
@@ -1059,45 +1009,13 @@ export function ConsultationStatusPanel({
                 </div>
               )}
             </div>
-            <div className="rounded-[16px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(96,165,250,0.16),transparent_58%)] px-2 py-1.5">
-              <div className="flex h-full flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <BrainCircuit className="h-5 w-5 text-indigo-200/80" />
-                    <div className="text-[13px] font-semibold text-slate-100">实时脑电</div>
-                  </div>
-                  <div className="mt-1.5 text-[16px] font-bold leading-none text-sky-300">
-                    {eegLatestResult?.primary_label || "等待中"}
-                  </div>
-                  <div className="mt-1 text-[10px] text-slate-300">{getEegSummaryText(snapshot)}</div>
-                </div>
-                <div className="mt-2 min-h-0 space-y-1 overflow-y-auto pr-1">
-                  {eegDistribution.length > 0 ? (
-                    eegDistribution.map((item) => (
-                      <DistributionBar key={item.label} label={item.label} value={item.score} />
-                    ))
-                  ) : (
-                    <div className="rounded-[12px] border border-dashed border-white/10 px-2 py-2 text-center text-[10px] text-slate-400">
-                      绛夊緟 10s EEG 绐楀彛缁撴灉
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Device</div>
-                    <div className="mt-0.5 text-[10px] leading-4 text-slate-200">{getEegDeviceText(snapshot)}</div>
-                  </div>
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Window</div>
-                    <div className="mt-0.5 text-[10px] leading-4 text-slate-200">
-                      {typeof eegLatestResult?.window_index === "number"
-                        ? `window-${eegLatestResult.window_index}`
-                        : "尚未形成推理窗口"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <EegEmotionImagePanel
+              distribution={eegDistribution}
+              primaryLabel={eegLatestResult?.primary_label}
+              primaryScore={eegLatestResult?.primary_score}
+              deviceStatus={snapshot.eeg_live.device_status}
+              errorMessage={snapshot.eeg_live.error_message}
+            />
           </div>
         </SectionCard>
 
@@ -1179,3 +1097,4 @@ export function ConsultationStatusPanel({
     </div>
   );
 }
+
