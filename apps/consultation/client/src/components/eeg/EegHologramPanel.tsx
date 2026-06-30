@@ -217,6 +217,7 @@ export function EegHologramPanel({
   const labelText = presentation?.label ?? "等待中";
   const percentageText = presentation ? `${presentation.percentage}%` : null;
   const statusText = resolveEegEmotionStatusLabel(deviceStatus, errorMessage);
+  const modelImageSrc = presentation?.imageSrc ?? EEG_MODEL_BASE_IMAGE_SRC;
 
   return (
     <div
@@ -257,7 +258,7 @@ export function EegHologramPanel({
           style={{ aspectRatio: `${EEG_MODEL_STAGE_ASPECT_RATIO}` }}
         >
           <img
-            src={EEG_MODEL_BASE_IMAGE_SRC}
+            src={modelImageSrc}
             alt={`${labelText}脑电全息头模`}
             className="pointer-events-none absolute inset-0 h-full w-full object-cover"
             style={{

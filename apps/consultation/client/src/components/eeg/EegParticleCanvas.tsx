@@ -244,7 +244,7 @@ export function EegParticleCanvas({ accentColor, highlightColor, tokens }: EegPa
         drawGlowCircle(
           context,
           point.x,
-          point.y + tokens.bodyOffsetY,
+          point.y,
           spark.radius * (0.9 + pulse * 0.7),
           highlightColor,
           tokens.ambientSparkAlpha * spark.alpha * (0.28 + pulse * 0.72),
@@ -266,14 +266,14 @@ export function EegParticleCanvas({ accentColor, highlightColor, tokens }: EegPa
         context.strokeStyle = withAlpha(accentColor, alpha * 0.45);
         context.lineWidth = particle.radius * 0.92;
         context.beginPath();
-        context.moveTo(previousPoint.x, previousPoint.y + yOffset + tokens.bodyOffsetY);
-        context.lineTo(point.x, point.y + yOffset + tokens.bodyOffsetY);
+        context.moveTo(previousPoint.x, previousPoint.y + yOffset);
+        context.lineTo(point.x, point.y + yOffset);
         context.stroke();
 
         drawGlowCircle(
           context,
           point.x,
-          point.y + yOffset + tokens.bodyOffsetY,
+          point.y + yOffset,
           particle.radius * (tokens.energyDirection === "up" ? 7.2 : 6.1),
           highlightColor,
           alpha * 0.34,
@@ -281,7 +281,7 @@ export function EegParticleCanvas({ accentColor, highlightColor, tokens }: EegPa
 
         context.fillStyle = withAlpha(highlightColor, alpha * 0.95);
         context.beginPath();
-        context.arc(point.x, point.y + yOffset + tokens.bodyOffsetY, particle.radius, 0, Math.PI * 2);
+        context.arc(point.x, point.y + yOffset, particle.radius, 0, Math.PI * 2);
         context.fill();
       }
 
@@ -295,7 +295,7 @@ export function EegParticleCanvas({ accentColor, highlightColor, tokens }: EegPa
         const progress = particle.reverse ? 1 - cycle : cycle;
         const y = lerp(startY, endY, progress);
         const canvasX = (particle.x / EEG_HOLOGRAM_VIEWBOX.width) * width;
-        const canvasY = (y / EEG_HOLOGRAM_VIEWBOX.height) * height + tokens.bodyOffsetY;
+        const canvasY = (y / EEG_HOLOGRAM_VIEWBOX.height) * height;
         const trailLength = particle.section === "crown" ? 24 : 32;
         const directionMultiplier = particle.reverse ? -1 : 1;
 
