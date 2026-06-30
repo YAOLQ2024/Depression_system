@@ -888,6 +888,8 @@ export function ConsultationStatusPanel({
   const currentTurnFaceBundle = readBundleFaceSummary(consultation.current_turn_bundle);
   const currentTurnPoseBundle = readBundlePoseSummary(consultation.current_turn_bundle);
   const visualPipeline = consultation.visual_pipeline || null;
+  const liveFacePrimaryLabel = snapshot.face.primary_label || currentTurnFaceBundle.primary_label;
+  const liveFacePrimaryScore = snapshot.face.primary_score ?? currentTurnFaceBundle.primary_score;
   const faceLabels =
     currentTurnFaceBundle.label_distribution.length > 0
       ? currentTurnFaceBundle.label_distribution
@@ -936,8 +938,12 @@ export function ConsultationStatusPanel({
       ) : null}
 
       <div className="flex flex-col gap-[3px] p-[3px]">
-        <SectionCard title="表情检测" rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}>
-          <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[132px]">
+        <SectionCard
+          title="表情检测"
+          className="min-h-[220px]"
+          rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}
+        >
+          <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[176px]">
             <div className="h-full overflow-hidden rounded-[16px] border border-white/8">
               <CameraPreview
                 className="h-full w-full !rounded-none !border-none !shadow-none"
@@ -959,10 +965,10 @@ export function ConsultationStatusPanel({
                 </div>
                 <div>
                   <div className="text-[17px] font-bold leading-none text-emerald-400">
-                    {getPrimaryLabel(currentTurnFaceBundle.primary_label || snapshot.face.primary_label, snapshot.face.status)}
+                    {getPrimaryLabel(liveFacePrimaryLabel, snapshot.face.status)}
                   </div>
                   <div className="mt-0.5 text-[11px] text-slate-300">
-                    {formatPercent(currentTurnFaceBundle.primary_score ?? snapshot.face.primary_score)} 置信度
+                    {formatPercent(liveFacePrimaryScore)} 置信度
                   </div>
                 </div>
               </div>
@@ -1019,30 +1025,34 @@ export function ConsultationStatusPanel({
           </div>
         </SectionCard>
 
-        <div className="grid grid-cols-2 gap-[3px]">
-          <SectionCard title="姿态情绪检测" rightStatus={snapshot.pose.status === "failed" ? "failed" : snapshot.pose.status === "ready" ? "ready" : "pending"}>
-            <div className="flex h-full gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
+        <div className="grid grid-cols-2 items-start gap-[3px]">
+          <SectionCard
+            title="姿态情绪检测"
+            className="h-[196px]"
+            rightStatus={snapshot.pose.status === "failed" ? "failed" : snapshot.pose.status === "ready" ? "ready" : "pending"}
+          >
+            <div className="grid h-full grid-cols-[40px_1fr] gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
                 <Activity className="h-5 w-5" />
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[18px] font-semibold text-slate-100">
+              <div className="min-w-0 overflow-hidden">
+                <div className="text-[16px] font-semibold text-slate-100">
                   {getPrimaryLabel(currentTurnPoseBundle.primary_label || snapshot.pose.primary_label, snapshot.pose.status)}
                 </div>
-                <div className="mt-1 text-[12px] text-emerald-300">
+                <div className="mt-0.5 text-[11px] text-emerald-300">
                   {formatPercent(currentTurnPoseBundle.primary_score ?? snapshot.pose.primary_score)} 置信度
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">{getPoseDetail(snapshot.pose, currentTurnPoseBundle)}</div>
-                <div className="mt-2 space-y-1.5">
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                <div className="mt-0.5 line-clamp-1 text-[10px] text-slate-400">{getPoseDetail(snapshot.pose, currentTurnPoseBundle)}</div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Live Result</div>
-                    <div className="mt-1 text-[12px] font-medium text-slate-200">
+                    <div className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-slate-200">
                       {getPoseSourceSummary(snapshot.pose.primary_label, snapshot.pose.primary_score, snapshot.pose.status)}
                     </div>
                   </div>
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Current Turn Bundle Result</div>
-                    <div className="mt-1 text-[12px] font-medium text-slate-200">
+                    <div className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-slate-200">
                       {currentTurnPoseBundle.primary_label || typeof currentTurnPoseBundle.primary_score === "number"
                         ? getPoseSourceSummary(currentTurnPoseBundle.primary_label, currentTurnPoseBundle.primary_score, snapshot.pose.status)
                         : "当前轮尚未形成 pose bundle 聚合结果"}
@@ -1053,7 +1063,11 @@ export function ConsultationStatusPanel({
             </div>
           </SectionCard>
 
-          <SectionCard title="语音情绪检测" rightStatus={snapshot.speech.status === "ready" ? "ready" : "pending"}>
+          <SectionCard
+            title="语音情绪检测"
+            className="h-[196px]"
+            rightStatus={snapshot.speech.status === "ready" ? "ready" : "pending"}
+          >
             <div className="flex h-full items-center gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex-1">
                 <WaveBars active={isRecording} />
@@ -1097,4 +1111,3 @@ export function ConsultationStatusPanel({
     </div>
   );
 }
-
