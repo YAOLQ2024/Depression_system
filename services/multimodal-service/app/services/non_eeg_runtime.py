@@ -1,14 +1,104 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import onnxruntime as ort
+
+try:
+    import tensorrt as trt
+    import torch
+except ImportError:
+    trt = None
+    torch = None
 from app.config import get_settings
+
+class _TensorMetadata:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def _torch_dtype(dtype):
+    return torch.from_numpy(np.empty((), dtype=np.dtype(trt.nptype(dtype)))).dtype
+
+
+class _TensorRTSession:
+    def __init__(self, plan_path: Path) -> None:
+        self._logger = trt.Logger(trt.Logger.ERROR)
+        self._runtime = trt.Runtime(self._logger)
+        self._engine = self._runtime.deserialize_cuda_engine(plan_path.read_bytes())
+        if self._engine is None:
+            raise RuntimeError(f"Cannot deserialize TensorRT engine: {plan_path}")
+        self._context = self._engine.create_execution_context()
+        self._input_names = [
+            self._engine.get_tensor_name(index)
+            for index in range(self._engine.num_io_tensors)
+            if self._engine.get_tensor_mode(self._engine.get_tensor_name(index)) == trt.TensorIOMode.INPUT
+        ]
+        self._output_names = [
+            self._engine.get_tensor_name(index)
+            for index in range(self._engine.num_io_tensors)
+            if self._engine.get_tensor_mode(self._engine.get_tensor_name(index)) == trt.TensorIOMode.OUTPUT
+        ]
+
+    def get_inputs(self):
+        return [_TensorMetadata(name) for name in self._input_names]
+
+    def get_outputs(self):
+        return [_TensorMetadata(name) for name in self._output_names]
+
+    def run(self, output_names, input_feed):
+        tensors = {}
+        for name in self._input_names:
+            if name not in input_feed:
+                raise ValueError(f"TensorRT input missing: {name}")
+            expected_dtype = np.dtype(trt.nptype(self._engine.get_tensor_dtype(name)))
+            value = np.ascontiguousarray(input_feed[name], dtype=expected_dtype)
+            if not self._context.set_input_shape(name, tuple(value.shape)):
+                raise ValueError(f"TensorRT shape is outside the optimization profile: {name}={value.shape}")
+            tensors[name] = torch.as_tensor(value, device="cuda")
+        for name in self._output_names:
+            shape = tuple(self._context.get_tensor_shape(name))
+            if any(dim < 0 for dim in shape):
+                raise RuntimeError(f"TensorRT unresolved output shape: {name}={shape}")
+            tensors[name] = torch.empty(shape, dtype=_torch_dtype(self._engine.get_tensor_dtype(name)), device="cuda")
+        for name, tensor in tensors.items():
+            if not self._context.set_tensor_address(name, tensor.data_ptr()):
+                raise RuntimeError(f"TensorRT cannot bind tensor: {name}")
+        stream = torch.cuda.current_stream()
+        if not self._context.execute_async_v3(stream.cuda_stream):
+            raise RuntimeError("TensorRT execution failed")
+        stream.synchronize()
+        selected = self._output_names if output_names is None else output_names
+        return [tensors[name].detach().cpu().numpy() for name in selected]
+
+
+_ORIGINAL_INFERENCE_SESSION = ort.InferenceSession
+_TENSORRT_ENABLED = (
+    os.getenv("MCS_TENSORRT_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    and trt is not None
+    and torch is not None
+    and torch.cuda.is_available()
+)
+
+
+def _inference_session(model_path, *args, **kwargs):
+    plan_path = Path(model_path).with_suffix(".plan")
+    if _TENSORRT_ENABLED and plan_path.is_file():
+        logger.info("Using TensorRT GPU engine: %s", plan_path)
+        return _TensorRTSession(plan_path)
+    return _ORIGINAL_INFERENCE_SESSION(model_path, *args, **kwargs)
+
+
+if _TENSORRT_ENABLED:
+    ort.InferenceSession = _inference_session
+
 
 settings = get_settings()
 TEXT_DIR = Path(settings["text_model_dir"])

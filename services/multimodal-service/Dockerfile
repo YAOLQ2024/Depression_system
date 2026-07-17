@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.11-slim@sha256:67e6a6053f28db54c173ad84a4bf88fdd4e338793dc09672e87ee38e3b1b378c
+# The default remains portable. The Jetson GPU Compose override supplies
+# NVIDIA's ARM64 PyTorch image, which includes CUDA and cuDNN for Orin.
+ARG BASE_IMAGE=python:3.11-slim
+FROM ${BASE_IMAGE}
+ARG TARGETARCH
+ARG JETSON_GPU_ENABLED=false
 
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
@@ -34,7 +39,14 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 COPY requirements-heavy.txt ./
 RUN --mount=type=cache,id=multimodal-pip-heavy,target=/root/.cache/pip \
-    pip install -r requirements-heavy.txt
+    if [ "$JETSON_GPU_ENABLED" = "true" ]; then \
+        sed -e "/^torch==/d" -e "/^torchaudio==/d" -e "s|^onnxruntime-gpu==1.20.1$|onnxruntime==1.20.1|" requirements-heavy.txt > requirements-heavy.platform.txt; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        sed "s|^onnxruntime-gpu==1.20.1$|onnxruntime==1.20.1|" requirements-heavy.txt > requirements-heavy.platform.txt; \
+    else \
+        cp requirements-heavy.txt requirements-heavy.platform.txt; \
+    fi; \
+    pip install -r requirements-heavy.platform.txt
 COPY requirements-app.txt requirements.txt ./
 RUN --mount=type=cache,id=multimodal-pip-app,target=/root/.cache/pip \
     pip install -r requirements-app.txt
