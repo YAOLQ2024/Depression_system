@@ -5,6 +5,7 @@ ARG BASE_IMAGE=python:3.11-slim
 FROM ${BASE_IMAGE}
 ARG TARGETARCH
 ARG JETSON_GPU_ENABLED=false
+ARG JETSON_TORCHAUDIO_VERSION=2.8.0
 
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
@@ -46,7 +47,10 @@ RUN --mount=type=cache,id=multimodal-pip-heavy,target=/root/.cache/pip \
     else \
         cp requirements-heavy.txt requirements-heavy.platform.txt; \
     fi; \
-    pip install -r requirements-heavy.platform.txt
+    pip install -r requirements-heavy.platform.txt; \
+    if [ "$JETSON_GPU_ENABLED" = "true" ]; then \
+        python -c "import torchaudio" || pip install --no-deps "torchaudio==${JETSON_TORCHAUDIO_VERSION}"; \
+    fi
 COPY requirements-app.txt requirements.txt ./
 RUN --mount=type=cache,id=multimodal-pip-app,target=/root/.cache/pip \
     pip install -r requirements-app.txt

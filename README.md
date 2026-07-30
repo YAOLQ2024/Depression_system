@@ -252,6 +252,101 @@ docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-c
 docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build multimodal-service consultation-service consultation gateway-service caddy
 ```
 
+#### 4.5 日常快速启动 GPU + HTTPS
+
+Jetson / Orin 环境下，如果默认就要用 GPU 推理，并且要让局域网设备通过 HTTPS 访问摄像头、麦克风相关页面，优先使用这一组命令。
+
+部署排障记录见：[Jetson GPU + LAN HTTPS 部署排障记录](./docs/operations/jetson-gpu-https-deployment-troubleshooting_20260727.md)。
+
+首次使用 HTTPS 前，先确认本目录存在证书：
+
+```bash
+ls infra/certs/lan-cert.pem infra/certs/lan-key.pem
+```
+
+如果当前目录没有证书，需要先在本机生成或从可信备份恢复 `infra/certs/lan-cert.pem` 和 `infra/certs/lan-key.pem`。例如本机已安装 `mkcert` 时：
+
+```bash
+mkdir -p infra/certs
+mkcert -cert-file infra/certs/lan-cert.pem -key-file infra/certs/lan-key.pem \
+  localhost 127.0.0.1 ::1 "$(hostname -I | awk '{print $1}')"
+```
+
+启动或重建 GPU + HTTPS 全链路：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  up -d --build
+```
+
+如果镜像已经构建过，只想快速恢复服务：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  up -d
+```
+
+如果只是重启已启动的容器：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  restart
+```
+
+如果只修复或重启 HTTPS 入口：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  up -d caddy
+```
+
+查看服务状态：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  ps
+```
+
+局域网访问地址使用当前机器的局域网 IP，例如当前机器 IP 是 `10.43.33.232` 时：
+
+- 问诊前端 HTTPS：`https://10.43.33.232`
+- 问诊前端 HTTP：`http://10.43.33.232:3000`
+- 运维控制台 HTTP：`http://10.43.33.232:3001`
+- Gateway HTTP：`http://10.43.33.232:18080`
+- Multimodal HTTP：`http://10.43.33.232:18017`
+- MinIO 控制台：`http://10.43.33.232:9001`
+
+当前机器 IP 可以用下面命令查看：
+
+```bash
+hostname -I
+```
+
+如果 `caddy` 启动后立即退出，优先检查证书是否存在：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  logs --tail=80 caddy
+```
+
 ### 5. 只重建某个服务
 
 重建前端：
