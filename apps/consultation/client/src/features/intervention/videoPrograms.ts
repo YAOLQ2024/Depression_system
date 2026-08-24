@@ -30,4 +30,12 @@ export const INTERVENTION_VIDEO_PROGRAMS: InterventionVideoProgram[] = [
     audioSrc: "/intervention/audio/莫扎特《C大调钢琴奏鸣曲》第二乐章.mp3",
     videoSrc: SHARED_VIDEO_SRC,
   },
+  {
+    id: "ocean",
+    title: "海洋",
+    subtitle: "聆听海浪声，跟随海面舒缓呼吸。",
+    // The ocean video includes its own audio track, so both players use this source.
+    audioSrc: "/intervention/video/ocean.mp4",
+    videoSrc: "/intervention/video/ocean.mp4",
+  },
 ];
