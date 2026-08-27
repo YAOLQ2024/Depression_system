@@ -8,6 +8,7 @@ from typing import Any
 
 from app.bridge_worker import EegHostBridgeWorker
 from app.config import get_settings
+from app.runtime_checks import validate_runtime_environment
 
 
 def _serialize_settings(settings: dict[str, Any]) -> dict[str, Any]:
@@ -43,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.print_config:
         print(json.dumps(_serialize_settings(settings), ensure_ascii=False, indent=2, sort_keys=True))
         return 0
+
+    runtime_errors = validate_runtime_environment()
+    if runtime_errors:
+        for error in runtime_errors:
+            logging.error("EEG bridge runtime check failed: %s", error)
+        return 2
 
     worker = EegHostBridgeWorker(settings=settings)
     worker.run_forever()

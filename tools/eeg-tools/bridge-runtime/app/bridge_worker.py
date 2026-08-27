@@ -31,6 +31,11 @@ class PacketEnvelope:
     received_at: datetime
 
 
+def combine_packet_payloads(batch: list[PacketEnvelope]) -> bytes:
+    """Preserve the BLE notification byte order in one Redis payload."""
+    return b"".join(item.payload for item in batch)
+
+
 class EegHostBridgeWorker:
     def __init__(self, *, settings: dict[str, Any] | None = None) -> None:
         self._settings = dict(settings or get_settings())
@@ -233,7 +238,7 @@ class EegHostBridgeWorker:
 
             try:
                 last_envelope = batch[-1]
-                combined_payload = b"".join(item.payload for item in batch)
+                combined_payload = combine_packet_payloads(batch)
                 device_id = next(
                     (item.device_id for item in reversed(batch) if item.device_id),
                     None,

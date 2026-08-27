@@ -1,0 +1,15 @@
+dataoceanai-dolphin==20260513
+numpy==1.26.4
+scikit-learn==1.7.2
+bleak==0.22.3
+onnxruntime==1.20.1
+transformers==4.46.2
+huggingface_hub==0.35.3
+soundfile==0.12.1
+mediapipe==0.10.14
+
+# Stabilize transitive dependencies that otherwise trigger slow resolver backtracking.
+protobuf==4.25.9
+jax==0.4.33
+jaxlib==0.4.33
+opencv-contrib-python==4.10.0.84

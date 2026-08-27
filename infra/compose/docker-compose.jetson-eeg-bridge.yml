@@ -13,7 +13,9 @@ services:
       EEG_SCAN_SECONDS: ${EEG_SCAN_SECONDS:-5}
       EEG_RECONNECT_DELAY_SECONDS: ${EEG_RECONNECT_DELAY_SECONDS:-5}
       EEG_HOST_BRIDGE_APP_NAME: eeg-bridge
-      EEG_HOST_BRIDGE_SOURCE: jetson_eeg_bridge
+      # Keep the existing transport contract unchanged during containerization.
+      EEG_HOST_BRIDGE_SOURCE: ${EEG_HOST_BRIDGE_SOURCE:-windows_host_bridge}
+      EEG_HOST_BRIDGE_PAYLOAD_ENCODING: hex
       EEG_HOST_BRIDGE_REDIS_MAXLEN: ${EEG_HOST_BRIDGE_REDIS_MAXLEN:-5000}
       EEG_HOST_BRIDGE_REDIS_APPROX_MAXLEN: ${EEG_HOST_BRIDGE_REDIS_APPROX_MAXLEN:-true}
       EEG_HOST_BRIDGE_PUBLISH_BATCH_SIZE: ${EEG_HOST_BRIDGE_PUBLISH_BATCH_SIZE:-32}
@@ -31,6 +33,7 @@ services:
     network_mode: host
     privileged: true
     restart: unless-stopped
+    stop_grace_period: 10s
     volumes:
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
       - eeg_bridge_data:/app/tools/eeg-tools/data

@@ -59,6 +59,31 @@ class BridgeHealthTests(unittest.TestCase):
                 self.assertIn("writer", payload)
                 self.assertIn("index", payload)
 
+    def test_container_health_accepts_disconnected_bridge(self) -> None:
+        with activated_tool_app("bridge-runtime"):
+            container_health = importlib.import_module("app.container_health")
+            self.assertIsNone(
+                container_health.validate_status_payload(
+                    {
+                        "status": "disconnected",
+                        "updated_at": "2026-08-26T08:00:00Z",
+                    }
+                )
+            )
+
+    def test_container_health_rejects_stopped_bridge(self) -> None:
+        with activated_tool_app("bridge-runtime"):
+            container_health = importlib.import_module("app.container_health")
+            self.assertEqual(
+                container_health.validate_status_payload(
+                    {
+                        "status": "stopped",
+                        "updated_at": "2026-08-26T08:00:00Z",
+                    }
+                ),
+                "unhealthy_process_status:stopped",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
-.PHONY: help phase-a compose-config phase-b-check phase-check up up-core up-ai down logs logs-core ps
+.PHONY: help phase-a compose-config phase-b-check phase-check up up-core up-ai down logs logs-core ps eeg-config eeg-up eeg-down eeg-logs
 
 COMPOSE_FILE=infra/compose/docker-compose.dev.yml
+EEG_COMPOSE_FILE=infra/compose/docker-compose.jetson-eeg-bridge.yml
 CORE_SERVICES=postgres redis minio identity-service consultation-service gateway-service consultation operations-console
 
 help:
@@ -14,6 +15,10 @@ help:
 	@echo "  logs            Tail all compose logs"
 	@echo "  logs-core       Tail core-chain logs"
 	@echo "  ps              Show compose status"
+	@echo "  eeg-config      Validate Linux EEG compose configuration"
+	@echo "  eeg-up          Build and start Linux EEG bridge and multimodal service"
+	@echo "  eeg-down        Stop the stack including Linux EEG bridge"
+	@echo "  eeg-logs        Tail Linux EEG bridge and multimodal logs"
 
 phase-a:
 	@bash infra/scripts/bootstrap_phase_a.sh
@@ -47,3 +52,15 @@ logs-core:
 
 ps:
 	@docker compose -f $(COMPOSE_FILE) ps
+
+eeg-config:
+	@docker compose -f $(COMPOSE_FILE) -f $(EEG_COMPOSE_FILE) config
+
+eeg-up:
+	@docker compose -f $(COMPOSE_FILE) -f $(EEG_COMPOSE_FILE) up -d --build eeg-bridge multimodal-service
+
+eeg-down:
+	@docker compose -f $(COMPOSE_FILE) -f $(EEG_COMPOSE_FILE) down
+
+eeg-logs:
+	@docker compose -f $(COMPOSE_FILE) -f $(EEG_COMPOSE_FILE) logs -f eeg-bridge multimodal-service

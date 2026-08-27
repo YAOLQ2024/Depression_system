@@ -32,6 +32,14 @@ class FakeBleDevice:
         self.address = address
 
 
+def test_redis_stream_provider_decodes_frozen_hex_transport_payload() -> None:
+    provider = EEGRedisStreamProvider(on_bytes=lambda _: None)
+
+    assert provider._decode_payload_bytes({b"payload_hex": b"aa5501020d0a"}) == (
+        b"\xaa\x55\x01\x02\x0d\x0a"
+    )
+
+
 def test_runtime_emits_result_only_after_ten_filtered_feature_frames(monkeypatch) -> None:
     settings = get_settings()
     monkeypatch.setitem(settings, "eeg_enabled", True)
