@@ -52,6 +52,20 @@ export function InterventionEmbeddedExperience({
 
       if (event.data?.type === "intervention-exit") {
         handleReturnToLanding("iframe_message");
+        return;
+      }
+
+      if (event.data?.type === "intervention-game-progress") {
+        void trackEvent({
+          event_type: "experience_progressed",
+          program_id: openEvent.program_id,
+          program_title: openEvent.program_title,
+          delivery_mode: openEvent.delivery_mode,
+          payload: {
+            ...(openEvent.payload || {}),
+            ...event.data.payload,
+          },
+        });
       }
     };
 

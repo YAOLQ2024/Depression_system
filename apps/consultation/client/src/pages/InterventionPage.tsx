@@ -157,8 +157,8 @@ export default function InterventionPage() {
             onClick={() =>
               void handleSelectExperience(APP_PATHS.interventionGame, {
                 event_type: "experience_selected",
-                program_id: "breathing-rhythm-game",
-                program_title: "呼吸节奏小游戏",
+                program_id: "mindbloom-word-garden",
+                program_title: "心灵花园词语游戏",
                 delivery_mode: "game",
                 payload: { destination: "game" },
               })

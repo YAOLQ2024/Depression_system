@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="心灵花园：输入词语，种下属于自己的花。" />
+    <title>心灵花园</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="header__inner">
+        <div class="brand"><span aria-hidden="true">🌸</span><span>心灵花园</span></div>
+        <div class="header__actions">
+          <button class="icon-button" id="how-to-button" type="button" aria-label="查看玩法说明">?</button>
+          <button class="icon-button" id="sound-button" type="button" aria-label="关闭音效">♪</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="game-wrap">
+      <section class="mode-bar" aria-label="游戏模式">
+        <button class="mode-button is-active" id="solo-button" type="button">🌿 独享花园</button>
+        <button class="mode-button" id="two-player-button" type="button">🌹 双人花园</button>
+      </section>
+
+      <div class="turn-banner" id="turn-banner" aria-live="polite"><span class="turn-dot"></span><span id="turn-text">玩家 1 的回合</span></div>
+
+      <section class="scores" aria-label="游戏得分">
+        <div class="score-card"><span class="score-label" id="player-one-label">🌿 我的花园</span><strong id="player-one-score">0</strong><small>积分</small></div>
+        <div class="score-card is-hidden" id="player-two-card"><span class="score-label">🌹 玩家 2</span><strong class="is-player-two" id="player-two-score">0</strong><small>积分</small></div>
+        <div class="score-card"><span class="score-label">🌸 花朵</span><strong id="flower-count">0</strong><small>已种下</small></div>
+      </section>
+
+      <section class="garden-frame" aria-label="你的花园">
+        <canvas id="sky" aria-hidden="true"></canvas>
+        <div class="garden" id="garden">
+          <div class="garden-empty" id="garden-empty"><span>🌱</span><p>花园正在等待你……<br />输入一个词语，种下第一朵花吧！</p></div>
+        </div>
+        <div class="ground" aria-hidden="true"></div>
+      </section>
+
+      <section class="input-panel" aria-label="种下一个词语">
+        <div class="input-row">
+          <label class="sr-only" for="word-input">输入词语</label>
+          <div class="input-wrap"><input id="word-input" maxlength="24" autocomplete="off" placeholder="输入一个词语……" /><span id="char-count">0</span></div>
+          <button class="plant-button" id="plant-button" type="button">🌱 种下</button>
+        </div>
+        <p class="message" id="message" aria-live="polite"></p>
+        <div class="action-row">
+          <button class="action-button" id="undo-button" type="button">↩️ 撤销</button>
+          <button class="action-button" id="clear-button" type="button">🗑️ 清空花园</button>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal-overlay" id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" hidden>
+      <section class="modal">
+        <button class="modal-close" id="close-help" type="button" aria-label="关闭">×</button>
+        <h1 id="help-title">🌱 怎么玩？</h1>
+        <ol>
+          <li>输入一个让你感到温暖、有力量或平静的词语。</li>
+          <li>点击“种下”或按回车，让词语化作一朵花。</li>
+          <li>词语越长，花朵越大，获得的积分也越多。</li>
+          <li>可以和身边的人切换到双人模式，轮流种花。</li>
+        </ol>
+        <p class="score-guide">2–3 字：1 分 · 4–5 字：2 分 · 6–7 字：3 分 · 8–10 字：4 分 · 11 字以上：5 分</p>
+        <button class="primary-button" id="start-button" type="button">开始种花</button>
+      </section>
+    </div>
+
+    <div class="modal-overlay" id="winner-modal" role="dialog" aria-modal="true" aria-labelledby="winner-title" hidden>
+      <section class="modal winner"><span class="winner-emoji">🏆</span><h1 id="winner-title">花园完成啦！</h1><p id="winner-text"></p><button class="primary-button" id="play-again-button" type="button">再玩一次</button></section>
+    </div>
+
+    <footer>基于 <a href="https://github.com/David-del-pix/mindbloom" target="_blank" rel="noreferrer">MindBloom</a> 改编 · MIT License</footer>
+    <script src="./script.js"></script>
+  </body>
+</html>

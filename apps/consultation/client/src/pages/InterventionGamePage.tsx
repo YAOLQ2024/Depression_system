@@ -5,13 +5,13 @@ export default function InterventionGamePage() {
   return (
     <InterventionEmbeddedExperience
       eyebrow="Interactive Game"
-      title="玩一个小游戏"
-      subtitle="当前接入的是呼吸节奏小游戏，点击画面里的开始按钮即可进入互动。"
+      title="心灵花园"
+      subtitle="输入一个让你感到温暖或有力量的词语，让它在花园中绽放。"
       iframeSrc={INTERVENTION_GAME_IFRAME_SRC}
       openEvent={{
         event_type: "experience_opened",
-        program_id: "breathing-rhythm-game",
-        program_title: "呼吸节奏小游戏",
+        program_id: "mindbloom-word-garden",
+        program_title: "心灵花园词语游戏",
         delivery_mode: "game",
         payload: { page: "intervention-game" },
       }}
