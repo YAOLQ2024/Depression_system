@@ -68,6 +68,7 @@ export type SeamlessVideoPlayerProps = {
   autoPlay?: boolean;
   playsInline?: boolean;
   transitionDurationMs?: number;
+  performanceMode?: boolean;
   layerClassName?: string;
   videoClassName?: string;
   onClipReady?: (clip: SeamlessVideoClip) => void;
@@ -108,6 +109,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       autoPlay = true,
       playsInline = true,
       transitionDurationMs = 220,
+      performanceMode = window.__MCS_PERFORMANCE_MODE__ === true,
       layerClassName,
       videoClassName,
       onClipReady,
@@ -406,6 +408,18 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
     const syncPreloadClip = useEffectEvent((nextClip: SeamlessVideoClip | null) => {
       preloadClipRef.current = nextClip;
 
+      // On the Jetson display Chromium currently composites in software. Keep
+      // only the displayed 1080p clip loaded; the small transition delay is
+      // preferable to decoding/preparing a second full-resolution video.
+      if (performanceMode) {
+        const inactiveLayerId = getOtherLayerId(activeLayerIdRef.current);
+        if (layerClipRef.current[inactiveLayerId]) {
+          loadClipIntoLayer(inactiveLayerId, null);
+        }
+        emitStateChange();
+        return;
+      }
+
       if (!nextClip) {
         emitStateChange();
         return;
@@ -557,7 +571,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
                 loop={loop}
                 muted={muted}
                 playsInline={playsInline}
-                preload="auto"
+                preload={performanceMode ? "metadata" : "auto"}
                 className={cn(sharedVideoClassName, videoClassName)}
                 onCanPlay={() => handleLoadedState(layerId)}
                 onEnded={() => handleVideoEnded(layerId)}

@@ -175,9 +175,11 @@ services:
       MULTIMODAL_BUCKET: mcs-multimodal
       RUNTIME_ASSETS_DIR: /app/runtime-assets
       DOLPHIN_MODEL_NAME: base.cn.streaming
-      DOLPHIN_MODEL_REPO_ID: DataoceanAI1/dolphin-cn-dialect-base-streaming
       DOLPHIN_MODEL_DIR: /app/runtime-assets/asr/base.cn.streaming
-      AUTO_FETCH_DOLPHIN_ASR: "true"
+      # Runtime assets are provisioned before deployment; never fetch models at startup.
+      AUTO_FETCH_DOLPHIN_ASR: "false"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       ASR_DEVICE: auto
       ASR_SYNC_TIMEOUT_MS: 15000
       ASR_PREVIEW_MAX_DURATION_MS: 10000

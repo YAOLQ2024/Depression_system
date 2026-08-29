@@ -4,7 +4,7 @@ set -eu
 export PYTHONPATH="/app${PYTHONPATH:+:$PYTHONPATH}"
 
 auto_fetch_dolphin_asr() {
-  auto_fetch=$(printf '%s' "${AUTO_FETCH_DOLPHIN_ASR:-true}" | tr '[:upper:]' '[:lower:]')
+  auto_fetch=$(printf '%s' "${AUTO_FETCH_DOLPHIN_ASR:-false}" | tr '[:upper:]' '[:lower:]')
   case "$auto_fetch" in
     0|false|no|off)
       return 0

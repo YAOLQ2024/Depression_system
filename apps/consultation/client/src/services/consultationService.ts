@@ -16,7 +16,7 @@ export const mockConsultationService = {
       digitalHuman: {
         idleVideoUrl: "mock_idle.mp4",
         speakingVideoUrl: "mock_speaking.mp4",
-        posterUrl: "https://images.unsplash.com/photo-1594824436998-dd40e4f208c9?q=80&w=1470&auto=format&fit=crop", // Professional doctor placeholder
+        posterUrl: "/home-digital-human.png",
       },
       initialMessage: "您好，我将协助您完成心理状态评估。",
       currentStep: 1,

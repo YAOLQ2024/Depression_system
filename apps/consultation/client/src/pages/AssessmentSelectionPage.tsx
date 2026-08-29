@@ -168,7 +168,7 @@ export default function AssessmentSelectionPage() {
             <h1
               className="mb-3 text-4xl leading-snug tracking-wide sm:text-[42px]"
               style={{
-                fontFamily: "'Ma Shan Zheng', 'ZCOOL XiaoWei', cursive",
+                fontFamily: "'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
                 fontWeight: 400,
                 background: "linear-gradient(135deg, #7c5ce7 0%, #9070f0 40%, #ffa726 100%)",
                 WebkitBackgroundClip: "text",

@@ -12,3 +12,7 @@ services:
       MODEL_PROVIDERS: CUDAExecutionProvider,CPUExecutionProvider
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      # Jetson's TensorRT Python runtime depends on this host-provided library,
+      # but the NVIDIA container runtime does not mount it automatically.
+      - /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so:/usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so:ro

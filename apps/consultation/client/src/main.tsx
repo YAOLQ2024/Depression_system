@@ -4,6 +4,11 @@ import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
 import "./index.css";
+import { isPerformanceMode } from "./lib/runtimeConfig";
+
+if (isPerformanceMode()) {
+  document.documentElement.dataset.performanceMode = "true";
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

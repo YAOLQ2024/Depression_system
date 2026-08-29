@@ -2,10 +2,10 @@ import { Play } from "lucide-react";
 import { SoftCard } from "./SoftCard";
 
 const RECOMMENDATIONS = [
-  { img: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?q=80&w=600&auto=format&fit=crop", title: "呼吸放松训练", desc: "5-10分钟 · 缓解焦虑" },
-  { img: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=600&auto=format&fit=crop", title: "舒缓音乐", desc: "20分钟 · 放松心情" },
-  { img: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=600&auto=format&fit=crop", title: "正念冥想引导", desc: "10分钟 · 提升专注" },
-  { img: "https://images.unsplash.com/photo-1517842645767-c639042777db?q=80&w=600&auto=format&fit=crop", title: "心理小贴士", desc: "每日一条 · 温暖陪伴" }
+  { img: "/bg.webp", title: "呼吸放松训练", desc: "5-10分钟 · 缓解焦虑" },
+  { img: "/TKbg.png", title: "舒缓音乐", desc: "20分钟 · 放松心情" },
+  { img: "/4K.png", title: "正念冥想引导", desc: "10分钟 · 提升专注" },
+  { img: "/cover-background-v2.png", title: "心理小贴士", desc: "每日一条 · 温暖陪伴" }
 ];
 
 export function RecommendationCards() {

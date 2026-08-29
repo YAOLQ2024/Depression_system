@@ -61,8 +61,9 @@ export function MultimodalPanel({ data, onClose }: MultimodalPanelProps) {
           <DarkCard title="姿态状态" hasStatus>
             <div className="flex items-center justify-between h-full py-2">
                <div className="relative w-16 h-20">
-                  {/* Mock pose icon */}
-                  <img src="https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=100&auto=format&fit=crop" alt="Pose" className="w-full h-full object-cover mix-blend-screen opacity-60 rounded" />
+                  <div className="flex h-full w-full items-center justify-center rounded bg-blue-500/10 text-blue-300">
+                    <Smile className="h-10 w-10" aria-label="姿态状态示意" />
+                  </div>
                </div>
                <div className="flex flex-col items-end gap-2">
                  <span className="text-slate-300 text-sm">坐姿端正</span>

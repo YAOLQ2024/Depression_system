@@ -662,7 +662,7 @@ export default function PreparationPage() {
                 )}
               >
                 <img
-                  src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=200&auto=format&fit=crop"
+                  src="/home-digital-human.png"
                   alt="Doctor"
                   className="w-14 h-14 rounded-full object-cover border-2 border-blue-400/50"
                 />
