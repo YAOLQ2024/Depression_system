@@ -66,3 +66,44 @@ def test_get_consultation_multimodal_live_does_not_flush_snapshot_reads(
 
     assert result == live_payload
     assert db_session.flush_count == 0
+
+
+def test_get_consultation_multimodal_live_does_not_restart_active_eeg_turn(
+    monkeypatch,
+) -> None:
+    session_record = SimpleNamespace(
+        id="consult-session-1",
+        user_id="user-1",
+        multimodal_session_id="mm-session-1",
+        status="waiting_user_input",
+    )
+    db_session = _FakeDbSession(session_record)
+    live_payload = {"session_id": "mm-session-1", "eeg_waves": {"samples": []}}
+
+    monkeypatch.setattr(
+        "app.services.consultation_engine.get_db_session",
+        lambda: _FakeDbContext(db_session),
+    )
+    monkeypatch.setattr(
+        "app.services.consultation_engine._ensure_multimodal_session_binding",
+        lambda session_record, *, acting_user_id: "mm-session-1",
+    )
+    monkeypatch.setattr(
+        "app.services.consultation_engine._refresh_multimodal_live_snapshot",
+        lambda session_record, *, acting_user_id: live_payload,
+    )
+
+    def fail_if_eeg_turn_restarts(**_) -> None:
+        raise AssertionError("EEG turn must not restart on a live read")
+
+    monkeypatch.setattr(
+        "app.services.consultation_engine._start_eeg_turn_best_effort",
+        fail_if_eeg_turn_restarts,
+    )
+
+    result = get_consultation_multimodal_live(
+        "consult-session-1",
+        acting_user_id="user-1",
+    )
+
+    assert result == live_payload

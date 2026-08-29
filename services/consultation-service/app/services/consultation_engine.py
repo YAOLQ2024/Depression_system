@@ -765,12 +765,10 @@ def get_consultation_multimodal_live(
             session_record,
             acting_user_id=acting_user_id,
         )
-        if session_record.status == "waiting_user_input":
-            _start_eeg_turn_best_effort(
-                multimodal_session_id=multimodal_session_id,
-                session_record=session_record,
-                acting_user_id=acting_user_id,
-            )
+        # Reading the live snapshot is a high-frequency path.  EEG turns are
+        # started when the workflow enters an answer window, not when a client
+        # polls this endpoint; otherwise each fallback poll rewrites the live
+        # EEG payload and amplifies browser work.
         live_data = _refresh_multimodal_live_snapshot(
             session_record,
             acting_user_id=acting_user_id,
@@ -793,12 +791,6 @@ def stream_consultation_multimodal_live(
             session_record,
             acting_user_id=acting_user_id,
         )
-        if session_record.status == "waiting_user_input":
-            _start_eeg_turn_best_effort(
-                multimodal_session_id=multimodal_session_id,
-                session_record=session_record,
-                acting_user_id=acting_user_id,
-            )
         db_session.flush()
     return stream_upstream_multimodal_live(
         multimodal_session_id=multimodal_session_id,

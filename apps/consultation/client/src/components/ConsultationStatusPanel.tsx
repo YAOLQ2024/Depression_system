@@ -21,6 +21,7 @@ const EEG_VIEWBOX_PADDING_Y = 10;
 const EEG_RENDER_POINT_LIMIT = 2048;
 const EEG_CANVAS_BOUNDS_EPSILON = 0.001;
 const EEG_CANVAS_BOUNDS_FRAME_ALPHA = 0.05;
+const EEG_CANVAS_FRAME_INTERVAL_MS = 50;
 const EEG_MIN_VISIBLE_UPPER_UV = 20;
 const EEG_MAX_VISIBLE_LOWER_UV = -20;
 const EEG_PROBABILITY_LABELS = ["\u6d88\u6781", "\u4e2d\u6027", "\u79ef\u6781"];
@@ -418,8 +419,15 @@ function EegWaveChannelPlot({
     const drawFrame = (now: number) => {
       const canvas = canvasRef.current;
       if (canvas) {
-        const previousFrameAt = lastFrameAtRef.current ?? now;
-        const elapsedMs = Math.max(0, now - previousFrameAt);
+        const previousFrameAt = lastFrameAtRef.current;
+        const elapsedMs =
+          previousFrameAt === null
+            ? EEG_CANVAS_FRAME_INTERVAL_MS
+            : Math.max(0, now - previousFrameAt);
+        if (previousFrameAt !== null && elapsedMs < EEG_CANVAS_FRAME_INTERVAL_MS) {
+          animationFrameRef.current = window.requestAnimationFrame(drawFrame);
+          return;
+        }
         lastFrameAtRef.current = now;
         const pendingShiftSamples = Math.max(
           0,
