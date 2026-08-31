@@ -20,23 +20,6 @@ type StoredDeviceStatus = {
   speaker?: StoredSpeakerState;
 };
 
-function getHomeSubtitle({
-  profileStatus,
-  consultationStatus,
-  assessmentStatus,
-}: {
-  profileStatus?: string;
-  consultationStatus?: string | null;
-  assessmentStatus?: string | null;
-}) {
-  if (assessmentStatus === "completed") return "本轮评估已完成，可查看最新结果与建议。";
-  if (assessmentStatus) return "量表问诊进行中，可继续完成剩余题目。";
-  if (consultationStatus === "handoff_ready") return "规则问诊已完成，可继续进入量表评估。";
-  if (consultationStatus) return "数字人问诊正在进行，随时可以继续当前会话。";
-  if (profileStatus !== "completed") return "完成准备信息后，即可开始正式评估。";
-  return "设备与档案已准备就绪，可以开始本次心理评估。";
-}
-
 function buildNewConsultationPayload(
   profileStatus?: string,
   preparationState?: {
@@ -70,11 +53,6 @@ export default function HomePage() {
   const navigate = useNavigate();
   const [selectedIndex, setSelectedIndex] = useState(2);
   const userDisplayName = getUserDisplayName(state.user);
-  const heroSubtitle = getHomeSubtitle({
-    profileStatus: state.user?.profile_status,
-    consultationStatus: state.consultation?.status,
-    assessmentStatus: state.assessment?.status,
-  });
   const hasActiveSession = Boolean(state.consultation?.status || state.assessment?.status);
 
   const handleStartConsultation = () => navigate(state.homeEntryPath);
@@ -117,12 +95,8 @@ export default function HomePage() {
         <section className="relative z-20 col-span-12 flex h-full items-center justify-start lg:col-span-5" aria-label="首页功能入口">
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }} className="pointer-events-auto absolute right-2 top-3 z-30 text-right sm:right-8 sm:top-5">
             <div className="flex flex-col items-end">
-              <div className="mb-1.5 inline-flex items-center gap-2 text-xs font-medium text-sky-100 drop-shadow-[0_2px_5px_rgba(15,23,42,0.65)]">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300 shadow-[0_0_8px_#67e8f9]" />
-                <span className="tracking-wide">数字健康随访通道</span><span className="text-white/70">/</span><span className="font-mono text-[11px] text-white/90">当前会话已保留</span>
-              </div>
-              <h1 className="flex items-center gap-2.5 text-xl font-bold tracking-tight text-white drop-shadow-[0_2px_7px_rgba(15,23,42,0.82)] sm:text-2xl"><span>你好，{userDisplayName}</span><span className="rounded-md border border-white/45 bg-gradient-to-r from-sky-500/90 to-indigo-500/90 px-2 py-0.5 text-sm font-medium text-white shadow-[0_3px_10px_rgba(37,99,235,0.35)]">阶段二</span></h1>
-              <p className="mt-1 max-w-[360px] text-xs font-normal tracking-wide text-white/95 drop-shadow-[0_2px_5px_rgba(15,23,42,0.75)] sm:text-sm">{heroSubtitle}</p>
+              <h1 className="bg-gradient-to-r from-violet-300 via-fuchsia-200 to-violet-200 bg-clip-text text-[clamp(22px,1.55vw,32px)] font-bold tracking-tight text-transparent drop-shadow-[0_2px_6px_rgba(76,29,149,0.68)]">你好，{userDisplayName}</h1>
+              <p className="mt-1 text-[clamp(14px,0.9vw,18px)] font-medium tracking-wide text-violet-100/95 drop-shadow-[0_1px_4px_rgba(76,29,149,0.65)]">今天也可以随时继续你的评估。</p>
             </div>
           </motion.div>
           <div className="flex h-full w-full -translate-y-10 items-center justify-start sm:-translate-y-14 lg:-translate-y-16">
