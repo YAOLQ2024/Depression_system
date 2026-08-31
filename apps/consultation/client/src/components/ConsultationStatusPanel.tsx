@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Activity, AlertTriangle, AudioLines, RefreshCw, ScanFace, Sparkles } from "lucide-react";
+import { Activity, AudioLines, RefreshCw, ScanFace, Sparkles } from "lucide-react";
 
 import type { MediaDeviceStatusTone } from "../lib/mediaDeviceFeedback";
 import { cn } from "../lib/utils";
@@ -10,12 +10,9 @@ import type {
   EegWaveSample,
   FacePoseMultimodalLive,
   MultimodalRankedLabel,
-  SpeechMultimodalLive,
-  TextMultimodalLive,
 } from "../types";
 import { CameraPreview } from "./CameraPreview";
 import { EegEmotionImagePanel } from "./eeg/EegEmotionImagePanel";
-import { EegHeaderSummary } from "./eeg/EegHeaderSummary";
 import { normalizeEegEmotionDistribution } from "./eeg/eegEmotionPresentation";
 
 const EEG_CHANNEL_COLORS = ["#60a5fa", "#34d399", "#f59e0b"];
@@ -630,9 +627,43 @@ function formatPercent(score?: number | null) {
   return `${Math.max(0, Math.min(100, Math.round(normalized)))}%`;
 }
 
+const EMOTION_LABELS_ZH: Record<string, string> = {
+  ang: "愤怒",
+  angry: "愤怒",
+  calm: "平静",
+  contempt: "轻蔑",
+  disgust: "厌恶",
+  fear: "恐惧",
+  hap: "高兴",
+  happy: "高兴",
+  happiness: "高兴",
+  label_0: "消极",
+  label_1: "积极",
+  negative: "消极",
+  neg: "消极",
+  neu: "中性",
+  neutral: "中性",
+  positive: "积极",
+  pos: "积极",
+  sad: "悲伤",
+  sadness: "悲伤",
+  surprise: "惊讶",
+  surprised: "惊讶",
+  unhappy: "不悦",
+};
+
+function localizeEmotionLabel(label: string) {
+  const normalized = label.trim().toLowerCase();
+  const localized = EMOTION_LABELS_ZH[normalized];
+  if (localized) {
+    return localized;
+  }
+  return /[a-z]/i.test(label) ? "情绪待识别" : label;
+}
+
 function getPrimaryLabel(label?: string | null, status?: string) {
   if (label) {
-    return label;
+    return localizeEmotionLabel(label);
   }
   if (status === "failed") {
     return "识别失败";
@@ -724,77 +755,17 @@ function getFaceDetail(
   return parts.join(" · ") || "等待采样";
 }
 
-function getPoseDetail(
-  live: FacePoseMultimodalLive,
-  bundlePose?: { sample_count: number | null; valid_sample_count: number | null } | null,
-) {
-  if (live.status === "failed" && live.error_message) {
-    return live.error_message;
-  }
-  const parts: string[] = [];
-  const sampleCount = bundlePose?.sample_count ?? live.sample_count;
-  const validSampleCount = bundlePose?.valid_sample_count ?? live.valid_sample_count;
-  if (typeof sampleCount === "number" && sampleCount > 0) {
-    if (typeof validSampleCount === "number" && validSampleCount >= 0) {
-      parts.push(`样本 ${validSampleCount}/${sampleCount}`);
-    } else {
-      parts.push(`样本 ${sampleCount}`);
-    }
-  }
-  if (live.quality_flags?.no_pose) {
-    parts.push("未检测到姿态");
-  }
-  const flags = live.quality_flags || {};
-  const ratios = Object.entries(flags)
-    .filter(([, value]) => typeof value === "number" && (value as number) > 0)
-    .slice(0, 2)
-    .map(([key, value]) => `${key}:${formatPercent(value as number)}`);
-  parts.push(...ratios);
-  if (live.latest_capture_at) {
-    parts.push("已更新");
-  }
-  return parts.join(" · ") || "等待采样";
-}
-
-function getPoseSourceSummary(
-  label: string | null | undefined,
-  score: number | null | undefined,
-  status?: string | null,
-) {
-  return `${getPrimaryLabel(label, status || undefined)} · ${formatPercent(score)} `;
-}
-
-function getVoiceDetail(live: SpeechMultimodalLive, isRecording: boolean) {
-  if (isRecording) {
-    return "录音与识别进行中";
-  }
-  if (live.captured_at) {
-    return "本轮语音已入库";
-  }
-  return "等待语音提交";
-}
-
-function getTextBody(live: TextMultimodalLive, transcriptPending: boolean) {
-  if (live.transcript_text?.trim()) {
-    return live.transcript_text.trim();
-  }
-  if (transcriptPending) {
-    return "Dolphin 识别中，等待本轮最终转写文本。";
-  }
-  return "等待患者语音转写文本。";
-}
-
 function SectionCard({
   title,
   children,
-  rightStatus = "实时",
+  rightStatus = null,
   headerRight,
   className,
   contentClassName,
 }: {
   title: string;
   children: ReactNode;
-  rightStatus?: string;
+  rightStatus?: string | null;
   headerRight?: ReactNode;
   className?: string;
   contentClassName?: string;
@@ -810,12 +781,12 @@ function SectionCard({
         <h3 className="min-w-0 text-[13px] font-semibold tracking-wide text-slate-100">{title}</h3>
         {headerRight ? (
           <div className="min-w-0 flex-1">{headerRight}</div>
-        ) : (
+        ) : rightStatus ? (
           <div className="flex items-center gap-1 text-[10px] text-slate-400">
             <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
             {rightStatus}
           </div>
-        )}
+        ) : null}
       </div>
       <div className={cn("flex-1 min-h-0 px-2 pb-2", contentClassName)}>{children}</div>
     </div>
@@ -825,41 +796,13 @@ function SectionCard({
 function DistributionBar({ label, value }: { label: string; value: number }) {
   const percentage = Math.max(0, Math.min(100, Math.round(value <= 1 ? value * 100 : value)));
   return (
-    <div className="flex items-center gap-2 text-[11px]">
-      <span className="w-14 shrink-0 text-slate-400">{label}</span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/80">
+    <div className="flex items-center gap-2 text-[12px]">
+      <span className="w-14 shrink-0 font-medium text-slate-200">{localizeEmotionLabel(label)}</span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-700/80">
         <div className="h-full rounded-full bg-blue-500" style={{ width: `${percentage}%` }} />
       </div>
-      <span className="w-8 shrink-0 text-right text-slate-400">{percentage}%</span>
+      <span className="w-9 shrink-0 text-right font-medium text-slate-200">{percentage}%</span>
     </div>
-  );
-}
-
-function WaveBars({ active }: { active: boolean }) {
-  const barHeights = active ? [22, 34, 18, 42, 24, 36, 14, 40, 20, 30, 16, 28] : [8, 12, 10, 14, 9, 13, 7, 12, 8, 11, 7, 9];
-
-  return (
-    <div className="flex h-12 items-end justify-center gap-[3px]">
-      {barHeights.map((height, index) => (
-        <span
-          key={`${height}-${index}`}
-          className={cn("w-[3px] rounded-full bg-blue-500/90 transition-all duration-300", active && "animate-pulse")}
-          style={{
-            height,
-            animationDelay: `${index * 90}ms`,
-            animationDuration: active ? "900ms" : "1400ms",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function NegativeWordBadge({ word }: { word: string }) {
-  return (
-    <span className="rounded-full border border-rose-300/20 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-200">
-      {word}
-    </span>
   );
 }
 
@@ -876,7 +819,6 @@ export function ConsultationStatusPanel({
   cameraStatusTitle = "摄像头监测中",
   cameraStatusTone = "pending",
   microphoneStatusText = "麦克风待命",
-  transcriptPending = false,
 }: {
   consultation: ConsultationSession;
   onRefresh: () => void;
@@ -890,19 +832,16 @@ export function ConsultationStatusPanel({
   cameraStatusTitle?: string;
   cameraStatusTone?: MediaDeviceStatusTone;
   microphoneStatusText?: string;
-  transcriptPending?: boolean;
 }) {
   const snapshot = resolveLiveData(consultation);
   const currentTurnFaceBundle = readBundleFaceSummary(consultation.current_turn_bundle);
   const currentTurnPoseBundle = readBundlePoseSummary(consultation.current_turn_bundle);
-  const visualPipeline = consultation.visual_pipeline || null;
   const liveFacePrimaryLabel = snapshot.face.primary_label || currentTurnFaceBundle.primary_label;
   const liveFacePrimaryScore = snapshot.face.primary_score ?? currentTurnFaceBundle.primary_score;
   const faceLabels =
     currentTurnFaceBundle.label_distribution.length > 0
       ? currentTurnFaceBundle.label_distribution
       : getTopLabels(snapshot.face.top_3_labels);
-  const textWords = snapshot.text.negative_terms || [];
   const eegLatestResult = snapshot.eeg_live.latest_result;
   const eegDistribution = normalizeEegEmotionDistribution(eegLatestResult?.top_3_labels);
   const eegChannelNames = snapshot.eeg_waves.channel_names || snapshot.eeg_live.channel_names || ["T7", "T8", "Fpz"];
@@ -933,25 +872,13 @@ export function ConsultationStatusPanel({
         </div>
       </div>
 
-      {visualPipeline?.degraded ? (
-        <div className="mx-4 mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100 shadow-[0_8px_24px_rgba(245,158,11,0.12)]">
-          <div className="flex items-center gap-2 font-medium">
-            <AlertTriangle className="h-4 w-4 text-amber-300" />
-            视觉热路径已降级
-          </div>
-          <p className="mt-1 text-amber-50/90">
-            当前帧已切换为数据库直写，实时关键帧聚合可能延迟。
-          </p>
-        </div>
-      ) : null}
-
       <div className="flex flex-col gap-[3px] p-[3px]">
         <SectionCard
           title="表情检测"
-          className="min-h-[220px]"
-          rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}
+          className="min-h-[290px]"
+          rightStatus={null}
         >
-          <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[176px]">
+          <div className="grid h-[246px] grid-cols-[1.2fr_0.8fr] gap-[3px]">
             <div className="h-full overflow-hidden rounded-[16px] border border-white/8">
               <CameraPreview
                 className="h-full w-full !rounded-none !border-none !shadow-none"
@@ -964,28 +891,29 @@ export function ConsultationStatusPanel({
                 errorText={cameraError}
                 statusTone={cameraStatusTone}
                 audioStatusText={microphoneStatusText}
+                showFooter={false}
               />
             </div>
-            <div className="flex h-full min-h-0 flex-col justify-between rounded-[16px] bg-white/[0.03] px-2 py-2">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
-                  <ScanFace className="h-4 w-4" />
+            <div className="flex h-full min-h-0 flex-col rounded-[16px] bg-white/[0.03] px-3 py-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
+                  <ScanFace className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="text-[17px] font-bold leading-none text-emerald-400">
+                  <div className="text-[23px] font-bold leading-none text-emerald-400">
                     {getPrimaryLabel(liveFacePrimaryLabel, snapshot.face.status)}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-slate-300">
+                  <div className="mt-1 text-[14px] font-medium text-slate-200">
                     {formatPercent(liveFacePrimaryScore)} 置信度
                   </div>
                 </div>
               </div>
-              <div className="mt-2 min-h-0 space-y-1 overflow-y-auto pr-1">
+              <div className="mt-3 flex min-h-0 flex-1 flex-col justify-between gap-1 overflow-hidden">
                 {faceLabels.length > 0 ? (
                   faceLabels.map((item) => <DistributionBar key={item.label} label={item.label} value={item.score} />)
                 ) : (
-                  <div className="rounded-[14px] border border-dashed border-white/10 px-3 py-4 text-center text-[11px] text-slate-400">
-                    摄像头已开启后会持续上传表情帧并在这里显示结果。
+                  <div className="flex flex-1 items-center justify-center rounded-[14px] px-3 text-center text-[14px] leading-6 text-slate-400">
+                    表情识别结果会在摄像头开启后显示。
                   </div>
                 )}
               </div>
@@ -995,20 +923,16 @@ export function ConsultationStatusPanel({
 
         <SectionCard
           title="脑电情绪监测"
-          className="min-h-[298px]"
-          contentClassName="px-2 pb-2"
+          className="min-h-[370px]"
+          contentClassName="p-0"
           headerRight={
-            <EegHeaderSummary
-              distribution={eegDistribution}
-              primaryLabel={eegLatestResult?.primary_label}
-              primaryScore={eegLatestResult?.primary_score}
-              deviceStatus={snapshot.eeg_live.device_status}
-              errorMessage={snapshot.eeg_live.error_message}
-            />
+            <div className="pt-0.5 text-right text-[13px] font-semibold tracking-[0.08em] text-slate-200">
+              脑电情绪可视化
+            </div>
           }
         >
-          <div className="grid h-[264px] grid-cols-[1.62fr_1.18fr] gap-[3px]">
-            <div className="min-w-0 h-full overflow-hidden rounded-[16px] bg-white/[0.03] px-2 py-2">
+          <div className="grid h-[336px] grid-cols-[1.78fr_1fr] gap-0">
+            <div className="h-full min-w-0 overflow-hidden rounded-l-[16px] border border-dashed border-white/15">
               {eegHasSamples ? (
                 <EegWavePreview
                   appendSamples={eegAppendSamples}
@@ -1018,54 +942,39 @@ export function ConsultationStatusPanel({
                   samplingRate={eegSamplingRate}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center rounded-[14px] border border-dashed border-white/10 px-3 text-center text-[11px] text-slate-400">
-                  当前还没有收到真实 EEG 波形。设备连接并进入回答窗口后，这里会显示三通道实时信号。
+                <div className="flex h-full items-center justify-center px-8 text-center text-[15px] leading-7 text-slate-300">
+                  正在准备脑电信号，请佩戴好设备并按提示开始回答。
                 </div>
               )}
             </div>
-            <EegEmotionImagePanel
-              distribution={eegDistribution}
-              primaryLabel={eegLatestResult?.primary_label}
-              primaryScore={eegLatestResult?.primary_score}
-              deviceStatus={snapshot.eeg_live.device_status}
-              errorMessage={snapshot.eeg_live.error_message}
-            />
+            <div className="h-full min-w-0 overflow-hidden rounded-r-[16px] border border-dashed border-white/15">
+              <EegEmotionImagePanel
+                distribution={eegDistribution}
+                primaryLabel={eegLatestResult?.primary_label}
+                primaryScore={eegLatestResult?.primary_score}
+                deviceStatus={snapshot.eeg_live.device_status}
+                errorMessage={snapshot.eeg_live.error_message}
+              />
+            </div>
           </div>
         </SectionCard>
 
-        <div className="grid grid-cols-2 items-start gap-[3px]">
+        <div className="grid grid-cols-3 items-start gap-[3px]">
           <SectionCard
             title="姿态情绪检测"
             className="h-[196px]"
-            rightStatus={snapshot.pose.status === "failed" ? "failed" : snapshot.pose.status === "ready" ? "ready" : "pending"}
+            rightStatus={null}
           >
-            <div className="grid h-full grid-cols-[40px_1fr] gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
-                <Activity className="h-5 w-5" />
+            <div className="flex h-full flex-col items-center justify-center rounded-[16px] bg-white/[0.03] px-3 py-3 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
+                <Activity className="h-6 w-6" />
               </div>
-              <div className="min-w-0 overflow-hidden">
-                <div className="text-[16px] font-semibold text-slate-100">
+              <div className="mt-3 min-w-0">
+                <div className="text-[23px] font-semibold leading-none text-slate-100">
                   {getPrimaryLabel(currentTurnPoseBundle.primary_label || snapshot.pose.primary_label, snapshot.pose.status)}
                 </div>
-                <div className="mt-0.5 text-[11px] text-emerald-300">
+                <div className="mt-2 text-[15px] font-medium text-emerald-300">
                   {formatPercent(currentTurnPoseBundle.primary_score ?? snapshot.pose.primary_score)} 置信度
-                </div>
-                <div className="mt-0.5 line-clamp-1 text-[10px] text-slate-400">{getPoseDetail(snapshot.pose, currentTurnPoseBundle)}</div>
-                <div className="mt-2 grid grid-cols-2 gap-1.5">
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Live Result</div>
-                    <div className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-slate-200">
-                      {getPoseSourceSummary(snapshot.pose.primary_label, snapshot.pose.primary_score, snapshot.pose.status)}
-                    </div>
-                  </div>
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Current Turn Bundle Result</div>
-                    <div className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-slate-200">
-                      {currentTurnPoseBundle.primary_label || typeof currentTurnPoseBundle.primary_score === "number"
-                        ? getPoseSourceSummary(currentTurnPoseBundle.primary_label, currentTurnPoseBundle.primary_score, snapshot.pose.status)
-                        : "当前轮尚未形成 pose bundle 聚合结果"}
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1074,47 +983,32 @@ export function ConsultationStatusPanel({
           <SectionCard
             title="语音情绪检测"
             className="h-[196px]"
-            rightStatus={snapshot.speech.status === "ready" ? "ready" : "pending"}
+            rightStatus={null}
           >
-            <div className="flex h-full items-center gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
-              <div className="flex-1">
-                <WaveBars active={isRecording} />
+            <div className="flex h-full flex-col items-center justify-center rounded-[16px] bg-white/[0.03] px-3 py-3 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/12 text-blue-300">
+                <AudioLines className={cn("h-6 w-6", isRecording && "animate-pulse")} />
               </div>
-              <div className="min-w-[100px] text-right">
-                <div className="flex items-center justify-end gap-1 text-blue-300">
-                  <AudioLines className="h-4 w-4" />
-                  <span className="text-[11px]">语音</span>
-                </div>
-                <div className="mt-1 text-[16px] font-semibold text-slate-100">
+              <div className="mt-3 min-w-0">
+                <div className="text-[23px] font-semibold leading-none text-slate-100">
                   {getPrimaryLabel(snapshot.speech.primary_label, snapshot.speech.status)}
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">{getVoiceDetail(snapshot.speech, isRecording)}</div>
+                <div className="mt-2 text-[15px] font-medium text-emerald-300">
+                  {formatPercent(snapshot.speech.primary_score)} 置信度
+                </div>
               </div>
             </div>
           </SectionCard>
+          <SectionCard title="文本情绪分析" className="h-[196px]" rightStatus={null}>
+          <div className="flex h-full flex-col items-center justify-center rounded-[16px] bg-white/[0.03] px-3 py-3 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-500/12 text-indigo-300">
+                <Sparkles className="h-6 w-6" />
+              </div>
+              <div className="mt-3 text-[23px] font-semibold leading-none text-slate-100">{getPrimaryLabel(snapshot.text.primary_label, snapshot.text.status)}</div>
+              <div className="mt-2 text-[15px] font-medium text-emerald-300">{formatPercent(snapshot.text.primary_score)} 置信度</div>
+            </div>
+          </SectionCard>
         </div>
-
-        <SectionCard title="文本情绪分析" className="flex-1 min-h-[140px]" rightStatus={snapshot.text.status === "ready" ? "ready" : "pending"}>
-          <div className="flex h-full flex-col rounded-[16px] bg-white/[0.03] px-2 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/12 text-indigo-300">
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="text-[16px] font-semibold text-slate-100">{getPrimaryLabel(snapshot.text.primary_label, snapshot.text.status)}</div>
-                  <div className="text-[12px] text-emerald-300">{formatPercent(snapshot.text.primary_score)} 置信度</div>
-                </div>
-              </div>
-              <div className="flex flex-wrap justify-end gap-1.5 max-w-[46%]">
-                {textWords.length > 0 ? textWords.map((word) => <NegativeWordBadge key={word} word={word} />) : null}
-              </div>
-            </div>
-            <div className="mt-2 flex-1 rounded-[14px] border border-white/8 bg-slate-950/20 px-2 py-2 text-[12px] leading-6 text-slate-200">
-              {getTextBody(snapshot.text, transcriptPending)}
-            </div>
-          </div>
-        </SectionCard>
       </div>
     </div>
   );

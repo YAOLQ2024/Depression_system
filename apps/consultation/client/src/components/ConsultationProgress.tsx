@@ -17,7 +17,7 @@ export function ConsultationProgress({
   const resolvedCurrentStep = currentStageOrder ?? currentStep ?? 1;
 
   return (
-    <div className="flex items-center justify-between w-full max-w-2xl z-10 mx-auto px-4 sm:px-6 py-1 mt-0">
+    <div className="z-10 mx-auto mt-0 flex w-full max-w-[1080px] items-center justify-between px-[clamp(12px,1.25vw,28px)] py-[clamp(4px,0.4vw,10px)]">
       {steps.map((step, idx) => {
         const stepNum = idx + 1;
         const isCompleted = stepNum < resolvedCurrentStep;
@@ -27,19 +27,19 @@ export function ConsultationProgress({
         return (
           <div key={step} className="flex items-center flex-1 last:flex-none">
             <div className={cn(
-              "flex items-center gap-1.5 sm:gap-2 transition-colors flex-shrink-0",
+              "flex shrink-0 items-center gap-[clamp(6px,0.55vw,14px)] transition-colors",
               isActive ? "text-primary-600" : isFuture ? "text-slate-400" : "text-slate-700"
             )}>
               <div className={cn(
-                "w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-sm text-white shadow-md transition-all flex-shrink-0",
-                isActive ? "bg-primary-500 shadow-primary-500/50 ring-[2px] md:ring-[3px] ring-primary-100" : isFuture ? "bg-slate-300" : "bg-slate-700"
+                "flex h-[clamp(26px,2vw,44px)] w-[clamp(26px,2vw,44px)] shrink-0 items-center justify-center rounded-full text-[clamp(11px,0.8vw,18px)] text-white shadow-md transition-all",
+                isActive ? "bg-primary-500 shadow-primary-500/50 ring-[clamp(2px,0.16vw,4px)] ring-primary-100" : isFuture ? "bg-slate-300" : "bg-slate-700"
               )}>
-                {isCompleted ? <Check className="w-3 h-3 md:w-5 md:h-5" /> : stepNum}
+                {isCompleted ? <Check className="h-[clamp(13px,1.15vw,24px)] w-[clamp(13px,1.15vw,24px)]" /> : stepNum}
               </div>
-              <span className="text-[10px] sm:text-xs md:text-sm tracking-wide font-bold drop-shadow-sm whitespace-nowrap">{step}</span>
+              <span className="whitespace-nowrap text-[clamp(11px,0.9vw,20px)] font-bold tracking-wide drop-shadow-sm">{step}</span>
             </div>
             {idx < steps.length - 1 && (
-              <div className="flex-1 border-t-[1.5px] md:border-t-[2px] border-dashed border-slate-300/80 mx-1 sm:mx-2 md:mx-4"></div>
+              <div className="mx-[clamp(6px,1vw,24px)] flex-1 border-t-[clamp(1.5px,0.12vw,3px)] border-dashed border-slate-300/80"></div>
             )}
           </div>
         );

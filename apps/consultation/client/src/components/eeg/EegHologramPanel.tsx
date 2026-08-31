@@ -221,7 +221,7 @@ export function EegHologramPanel({
 
   return (
     <div
-      className="relative h-full overflow-hidden rounded-[22px] border border-white/10 bg-[#060b15]"
+      className="relative h-full overflow-hidden rounded-[16px] bg-[#060b15]"
       style={{
         boxShadow: `
           inset 0 1px 0 rgba(255,255,255,0.06),
@@ -247,7 +247,6 @@ export function EegHologramPanel({
         className="absolute right-4 top-4 h-10 w-10 rounded-tr-[16px] border-r-2 border-t-2"
         style={{ borderColor: withAlpha(tokens.accentColor, hasResult ? 0.48 : 0.16) }}
       />
-
       <motion.div
         className="absolute inset-0"
         animate={{ y: tokens.bodyOffsetY }}
@@ -334,9 +333,7 @@ export function EegHologramPanel({
         >
           {percentageText}
         </div>
-      ) : (
-        <div className="absolute bottom-3 right-3 text-[12px] font-medium text-slate-300">{statusText}</div>
-      )}
+      ) : null}
     </div>
   );
 }

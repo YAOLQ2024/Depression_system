@@ -17,6 +17,7 @@ interface CameraPreviewProps {
   errorText?: string | null;
   statusTone?: MediaDeviceStatusTone;
   audioStatusText?: string;
+  showFooter?: boolean;
   mirrored?: boolean;
 }
 
@@ -32,6 +33,7 @@ export function CameraPreview({
   errorText = null,
   statusTone = "pending",
   audioStatusText,
+  showFooter = true,
   mirrored = true,
 }: CameraPreviewProps) {
   const fallbackVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -98,7 +100,7 @@ export function CameraPreview({
         </div>
       )}
 
-      <div className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-between gap-2">
+      {showFooter ? <div className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-between gap-2">
         <div
           className={cn(
             "flex items-center gap-1 rounded-lg px-2 py-1.5",
@@ -117,7 +119,7 @@ export function CameraPreview({
           {audioActive ? <Mic className="h-3 w-3 text-emerald-300" /> : <MicOff className="h-3 w-3 text-white/75" />}
           <span className="text-[10px] text-white">{audioStatusText || (audioActive ? "麦克风开启" : "麦克风待命")}</span>
         </div>
-      </div>
+      </div> : null}
     </div>
   );
 }

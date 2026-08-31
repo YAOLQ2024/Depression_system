@@ -1198,7 +1198,7 @@ export default function ScaleQuestionnairePage() {
           >
             {playableVideoUri ? (
               <div className="relative flex w-full items-end justify-center">
-                <div className="relative flex h-[min(84vh,920px)] w-full max-w-[82vw] items-end justify-center">
+                <div className="relative flex h-[min(88dvh,48vw,1200px)] w-full max-w-[min(88vw,1500px)] items-end justify-center">
                   <SeamlessVideoPlayer
                     ref={playerRef}
                     currentClip={playerCurrentClip}
@@ -1206,7 +1206,7 @@ export default function ScaleQuestionnairePage() {
                     transitionDurationMs={0}
                     className="h-full w-full"
                     layerClassName="flex items-end justify-center"
-                    videoClassName="h-full w-auto max-w-full object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)] -translate-y-10 md:-translate-y-16 scale-[1.08] md:scale-[1.15]"
+                    videoClassName="h-full w-auto max-w-full origin-bottom translate-y-[7%] scale-[1.18] object-contain [background:transparent] drop-shadow-[0_28px_60px_rgba(15,23,42,0.28)]"
                     onClipReady={(clip) => {
                       if (!isAnswerReminderClip(clip)) {
                         markReadyClip(clip.clipKey);
@@ -1453,7 +1453,6 @@ export default function ScaleQuestionnairePage() {
                       cameraStatusTitle={cameraFeedback.title}
                       cameraStatusTone={cameraFeedback.tone}
                       microphoneStatusText={microphoneStatusTitle}
-                      transcriptPending={isRecording || isSubmittingAnswer}
                       className="min-h-full"
                     />
                   ) : null}

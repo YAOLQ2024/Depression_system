@@ -3,7 +3,6 @@ import {
   getEegEmotionConfig,
   getEegEmotionScore,
   hasEegEmotionResult,
-  resolveEegEmotionStatusLabel,
   resolvePrimaryEegEmotionLabel,
   withAlpha,
   type EegEmotionDistributionItem,
@@ -21,20 +20,12 @@ export function EegHeaderSummary({
   distribution,
   primaryLabel,
   primaryScore,
-  deviceStatus,
-  errorMessage,
 }: EegHeaderSummaryProps) {
   const hasResult = hasEegEmotionResult(distribution, primaryLabel);
   const resolvedPrimaryLabel = resolvePrimaryEegEmotionLabel(distribution, primaryLabel);
 
   if (!hasResult || !resolvedPrimaryLabel) {
-    return (
-      <div className="min-w-0 text-right">
-        <div className="text-[12px] font-medium text-slate-300">
-          {resolveEegEmotionStatusLabel(deviceStatus, errorMessage)}
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const primaryAccent = getEegEmotionConfig(resolvedPrimaryLabel).accentColor;

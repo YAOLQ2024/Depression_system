@@ -27,23 +27,23 @@ export function Header({ theme = 'light', title }: HeaderProps) {
   };
 
   return (
-    <header className="relative z-10 flex h-[60px] w-full items-center justify-between px-4 md:px-5">
-      <div className="flex min-w-0 items-center gap-2.5 cursor-pointer" onClick={handleLogoClick}>
-        <div className="h-[28px] w-[66px] shrink-0 overflow-hidden md:h-[32px] md:w-[76px]">
+    <header className="relative z-10 flex h-[clamp(56px,4.2vw,88px)] w-full items-center justify-between px-[clamp(12px,1.25vw,30px)]">
+      <div className="flex min-w-0 -translate-y-[clamp(6px,0.55vw,12px)] cursor-pointer items-center gap-[clamp(8px,0.7vw,16px)]" onClick={handleLogoClick}>
+        <div className="h-[clamp(28px,2.2vw,48px)] w-[clamp(66px,5.25vw,114px)] shrink-0 overflow-hidden">
           <img
             src="/aim-brand-lockup-transparent-clean.png"
             alt="AIM"
             className="h-full w-auto max-w-none object-contain object-left drop-shadow-[0_1px_4px_rgba(255,255,255,0.16)]"
           />
         </div>
-        <div className="flex min-w-0 items-center gap-2.5">
-          <h1 className={cn("shrink-0 text-base font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
+        <div className="flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
+          <h1 className={cn("shrink-0 text-[clamp(14px,1.05vw,24px)] font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
             抑郁症数字人辅助评估系统
           </h1>
           {title !== false ? (
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className={cn("h-4 w-px rounded-full", isDark ? "bg-white/20" : "bg-slate-300")} />
-              <span className={cn("truncate text-[13px] font-normal", isDark ? "text-white/70" : "text-slate-500")}>
+            <div className="flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
+              <span className={cn("h-[clamp(16px,1.25vw,28px)] w-px rounded-full", isDark ? "bg-white/20" : "bg-slate-300")} />
+              <span className={cn("truncate text-[clamp(12px,0.85vw,19px)] font-normal", isDark ? "text-white/70" : "text-slate-500")}>
                 {title || "量表问诊"}
               </span>
             </div>
@@ -51,34 +51,34 @@ export function Header({ theme = 'light', title }: HeaderProps) {
         </div>
       </div>
       
-      <div className="flex items-center gap-4">
-        <button className={cn("relative p-1.5 transition-colors", isDark ? "text-white/70 hover:text-white" : "text-slate-500 hover:text-primary-600")}>
-          <Bell className="w-5 h-5" />
+      <div className="flex -translate-y-[clamp(6px,0.55vw,12px)] items-center gap-[clamp(10px,1vw,24px)]">
+        <button className={cn("relative p-[clamp(5px,0.4vw,10px)] transition-colors", isDark ? "text-white/70 hover:text-white" : "text-slate-500 hover:text-primary-600")}>
+          <Bell className="h-[clamp(18px,1.35vw,30px)] w-[clamp(18px,1.35vw,30px)]" />
           <span className="sr-only">消息</span>
         </button>
         
         <button
           type="button"
           onClick={(event) => showProfileModal(event.currentTarget)}
-          className="flex items-center gap-2 cursor-pointer group hover:bg-white/10 p-1 md:pr-3 rounded-full transition-colors"
+          className="group flex cursor-pointer items-center gap-[clamp(7px,0.6vw,14px)] rounded-full p-[clamp(4px,0.35vw,8px)] transition-colors hover:bg-white/10 md:pr-[clamp(10px,0.9vw,20px)]"
         >
           <div
             className={cn(
-              "w-8 h-8 rounded-full border flex items-center justify-center text-sm font-semibold shadow-sm",
+              "flex h-[clamp(30px,2.25vw,50px)] w-[clamp(30px,2.25vw,50px)] items-center justify-center rounded-full border text-[clamp(13px,0.95vw,21px)] font-semibold shadow-sm",
               isDark ? "border-white/20 bg-white/10 text-white" : "border-slate-200 bg-primary-50 text-primary-700",
             )}
           >
             {userInitial}
           </div>
           <div className="hidden md:flex flex-col items-start leading-tight">
-            <span className={cn("text-sm font-medium transition-colors", isDark ? "text-white/90 group-hover:text-white" : "text-slate-700 group-hover:text-primary-600")}>
+            <span className={cn("text-[clamp(13px,0.95vw,21px)] font-medium transition-colors", isDark ? "text-white/90 group-hover:text-white" : "text-slate-700 group-hover:text-primary-600")}>
               {userDisplayName}
             </span>
-            <span className={cn("text-[11px]", isDark ? "text-white/60 group-hover:text-white/80" : "text-slate-400 group-hover:text-slate-500")}>
+            <span className={cn("text-[clamp(10px,0.7vw,15px)]", isDark ? "text-white/60 group-hover:text-white/80" : "text-slate-400 group-hover:text-slate-500")}>
               {profileStatusLabel}
             </span>
           </div>
-          <ChevronDown className={cn("w-4 h-4 transition-colors", isDark ? "text-white/60 group-hover:text-white" : "text-slate-400 group-hover:text-primary-600")} />
+          <ChevronDown className={cn("h-[clamp(15px,1.1vw,24px)] w-[clamp(15px,1.1vw,24px)] transition-colors", isDark ? "text-white/60 group-hover:text-white" : "text-slate-400 group-hover:text-primary-600")} />
         </button>
       </div>
     </header>
