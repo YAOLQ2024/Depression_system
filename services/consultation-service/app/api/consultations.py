@@ -9,7 +9,11 @@ from app.schemas.consultations import (
     ConsultationTurnRequest,
     CreateConsultationSessionRequest,
 )
-from app.services.encounter_service import list_encounters, EncounterServiceError as EncounterError
+from app.services.encounter_service import (
+    list_encounters,
+    get_scale_score_history,
+    EncounterServiceError as EncounterError,
+)
 from app.services.consultation_engine import (
     ConsultationServiceError,
     complete_system_question_item,
@@ -250,6 +254,23 @@ def get_encounter_detail_endpoint(
     try:
         from app.services.encounter_service import get_encounter_detail
         payload = get_encounter_detail(x_mcs_user_id, encounter_id)
+        return success_response(payload)
+    except EncounterError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=error_response(message=exc.message, code=exc.status_code),
+        )
+
+
+@router.get("/encounters/scale-history/{scale_slug}")
+def get_scale_history_endpoint(
+    scale_slug: str,
+    x_mcs_user_id: str | None = Header(default=None),
+):
+    if not x_mcs_user_id:
+        raise HTTPException(status_code=400, detail=error_response(message="missing user id", code=400))
+    try:
+        payload = get_scale_score_history(x_mcs_user_id, scale_slug)
         return success_response(payload)
     except EncounterError as exc:
         raise HTTPException(

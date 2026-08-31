@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pickle
+
 import numpy as np
 
 from app.config import get_settings
@@ -26,6 +28,16 @@ class ConstantClassifier:
         return np.array([[0.2, 0.6, 0.2]], dtype=np.float32)
 
 
+class FakeSVC:
+    classes_ = np.array([0, 1, 2], dtype=int)
+
+    def predict(self, values: np.ndarray) -> np.ndarray:
+        return np.array([2], dtype=int)
+
+    def decision_function(self, values: np.ndarray) -> np.ndarray:
+        return np.array([[0.1, 0.2, 0.9]], dtype=np.float32)
+
+
 class FakeBleDevice:
     def __init__(self, *, name: str | None = None, address: str = "") -> None:
         self.name = name
@@ -38,6 +50,18 @@ def test_redis_stream_provider_decodes_frozen_hex_transport_payload() -> None:
     assert provider._decode_payload_bytes({b"payload_hex": b"aa5501020d0a"}) == (
         b"\xaa\x55\x01\x02\x0d\x0a"
     )
+
+def build_filtered_feature_frame(filtered_values: list[float]) -> bytes:
+    dropped_indices = {26, 41, 46, 54, 55}
+    payload: list[float] = []
+    filtered_index = 0
+    for raw_index in range(57):
+        if raw_index in dropped_indices:
+            payload.append(-999.0)
+            continue
+        payload.append(float(filtered_values[filtered_index]))
+        filtered_index += 1
+    return build_feature_frame(payload)
 
 
 def test_runtime_emits_result_only_after_ten_filtered_feature_frames(monkeypatch) -> None:
@@ -96,14 +120,117 @@ def test_runtime_emits_result_only_after_ten_filtered_feature_frames(monkeypatch
     assert scaler.last_input[0].tolist() == expected_vector
 
 
+def test_runtime_emits_trial_aggregated_result_for_new_svm_model(monkeypatch) -> None:
+    settings = get_settings()
+    monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_window_seconds", 3)
+    monkeypatch.setitem(settings, "eeg_min_feature_frames", 3)
+
+    runtime = EEGRuntimeService()
+    scaler = RecordingScaler()
+    window_feature_names = [f"feat_{index}" for index in range(52)]
+    trial_feature_names = (
+        [f"med_{name}" for name in window_feature_names]
+        + [f"std_{name}" for name in window_feature_names]
+        + [f"slope_{name}" for name in window_feature_names]
+    )
+
+    runtime._clf = FakeSVC()
+    runtime._scaler = scaler
+    runtime._selected_features = np.array([0, 52, 104], dtype=int)
+    runtime._packet_feature_names = list(window_feature_names)
+    runtime._window_feature_names = list(window_feature_names)
+    runtime._trial_feature_names = list(trial_feature_names)
+    runtime._trial_feature_components = ("med", "std", "slope")
+    runtime._all_feature_names = list(trial_feature_names)
+    runtime._norm_mode = "session_zscore"
+    runtime._model_name = "SVM_rbf_C1.5"
+    runtime._model_version = "trial-agg-test"
+    runtime._model_loaded = True
+
+    monkeypatch.setattr(runtime, "_load_model_locked", lambda: True)
+    monkeypatch.setattr(runtime, "_ensure_provider_started_locked", lambda: None)
+    monkeypatch.setattr(runtime, "_upload_raw_window", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "_record_window_result_locked", lambda *args, **kwargs: None)
+
+    runtime.begin_turn(
+        session_id="session-1",
+        turn_id="turn-1",
+        flow_run_id="flow-1",
+        stage_id="stage-1",
+        question_key="question-1",
+    )
+
+    for step in range(3):
+        filtered_values = [float(step + index) for index in range(52)]
+        runtime.ingest_transport_bytes(build_filtered_feature_frame(filtered_values))
+
+    payload = runtime.get_session_live_payload("session-1")
+    latest_result = payload["eeg_live"]["latest_result"]
+    assert latest_result is not None
+    assert latest_result["window_index"] == 1
+    assert latest_result["feature_frame_count"] == 3
+    assert latest_result["primary_label"] == "\u79ef\u6781"
+    assert runtime._active_binding is not None
+    assert runtime._active_binding.window_index == 2
+    assert scaler.last_input is not None
+    assert scaler.last_input.shape == (1, 3)
+    assert np.allclose(scaler.last_input[0], np.array([0.0, 1.0, 1.0], dtype=np.float32))
+
+
+def test_runtime_loads_trial_aggregate_model_metadata(tmp_path, monkeypatch) -> None:
+    settings = get_settings()
+    monkeypatch.setitem(settings, "eeg_enabled", True)
+
+    window_feature_names = [f"feat_{index}" for index in range(52)]
+    trial_feature_names = (
+        [f"med_{name}" for name in window_feature_names]
+        + [f"std_{name}" for name in window_feature_names]
+        + [f"slope_{name}" for name in window_feature_names]
+    )
+    model_path = tmp_path / "EEG_model.pkl"
+    with model_path.open("wb") as fp:
+        pickle.dump(
+            {
+                "version": "v20_window52_trialagg_mss_3class",
+                "classifier_name": "SVM_rbf_C1.5",
+                "input_kind": "vector",
+                "norm_mode": "session_zscore",
+                "runtime_feature_source": "packet",
+                "model": FakeSVC(),
+                "scaler": RecordingScaler(),
+                "selected_features": np.array([0, 52, 104], dtype=int),
+                "packet_feature_names": list(window_feature_names),
+                "window_feature_names": list(window_feature_names),
+                "trial_feature_names": list(trial_feature_names),
+                "all_feature_names": list(trial_feature_names),
+                "trial_feature_components": ["med", "std", "slope"],
+            },
+            fp,
+        )
+    monkeypatch.setitem(settings, "eeg_model_path", model_path)
+
+    runtime = EEGRuntimeService()
+
+    assert runtime.warmup_model() is True
+    assert runtime._packet_feature_names == window_feature_names
+    assert runtime._window_feature_names == window_feature_names
+    assert runtime._trial_feature_names == trial_feature_names
+    assert runtime._trial_feature_components == ("med", "std", "slope")
+    assert runtime._norm_mode == "session_zscore"
+    assert runtime._model_name == "SVM_rbf_C1.5"
+
+
 def test_runtime_clears_stale_device_error_when_scan_restarts(monkeypatch) -> None:
     settings = get_settings()
     monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_provider", "ble")
 
     runtime = EEGRuntimeService()
     runtime._last_error = "[Errno 2] No such file or directory"
 
-    runtime._update_device_status("scanning", None, None)
+    assert runtime._provider is not None
+    runtime._provider._emit_status("scanning")
 
     assert runtime._device_status == "scanning"
     assert runtime._last_error is None
@@ -112,11 +239,13 @@ def test_runtime_clears_stale_device_error_when_scan_restarts(monkeypatch) -> No
 def test_runtime_warmup_does_not_auto_start_ble_provider(monkeypatch) -> None:
     settings = get_settings()
     monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_provider", "ble")
 
     runtime = EEGRuntimeService()
     starts: list[str] = []
 
     monkeypatch.setattr(runtime, "_load_model_locked", lambda: True)
+    monkeypatch.setattr(runtime, "_is_model_ready_locked", lambda: True)
     monkeypatch.setattr(runtime._provider, "start", lambda: starts.append("start"))
 
     snapshot = runtime.warmup()
@@ -214,6 +343,103 @@ def test_runtime_preserves_live_wave_preview_across_turn_boundaries(monkeypatch)
     assert turn_two_payload["eeg_live"]["turn_id"] == "turn-2"
     assert turn_two_payload["eeg_waves"]["samples"] == turn_one_samples
     assert callbacks[-1]["wave_delta"] is None
+
+
+def test_runtime_downsamples_live_wave_preview_to_256hz(monkeypatch) -> None:
+    settings = get_settings()
+    monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_sampling_rate", 500)
+    monkeypatch.setitem(settings, "eeg_preview_sampling_rate", 256)
+    monkeypatch.setitem(settings, "eeg_preview_seconds", 4)
+
+    runtime = EEGRuntimeService()
+
+    monkeypatch.setattr(runtime, "_load_model_locked", lambda: True)
+    monkeypatch.setattr(runtime, "_ensure_provider_started_locked", lambda: None)
+    monkeypatch.setattr(runtime, "_upload_raw_window", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "_record_window_result_locked", lambda *args, **kwargs: None)
+
+    runtime.begin_turn(
+        session_id="session-1",
+        turn_id="turn-1",
+        flow_run_id="flow-1",
+        stage_id="stage-1",
+        question_key="question-1",
+    )
+
+    for seq in range(20):
+        runtime.ingest_transport_bytes(build_wave_frame(seq, [0.1, 0.2, 0.3]))
+
+    payload = runtime.get_session_live_payload("session-1")
+    preview_samples = payload["eeg_waves"]["samples"]
+
+    assert payload["eeg_live"]["sampling_rate"] == 500
+    assert payload["eeg_waves"]["sampling_rate"] == 256
+    assert 0 < len(preview_samples) < 20
+    assert preview_samples == sorted(preview_samples, key=lambda sample: sample["seq"])
+
+
+def test_runtime_continues_live_wave_preview_after_seq_wraparound(monkeypatch) -> None:
+    settings = get_settings()
+    monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_sampling_rate", 500)
+    monkeypatch.setitem(settings, "eeg_preview_sampling_rate", 256)
+    monkeypatch.setitem(settings, "eeg_preview_seconds", 4)
+
+    runtime = EEGRuntimeService()
+
+    monkeypatch.setattr(runtime, "_load_model_locked", lambda: True)
+    monkeypatch.setattr(runtime, "_ensure_provider_started_locked", lambda: None)
+    monkeypatch.setattr(runtime, "_upload_raw_window", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "_record_window_result_locked", lambda *args, **kwargs: None)
+
+    runtime.begin_turn(
+        session_id="session-1",
+        turn_id="turn-1",
+        flow_run_id="flow-1",
+        stage_id="stage-1",
+        question_key="question-1",
+    )
+
+    for seq in [65530, 65531, 65532, 65533, 65534, 65535, 0, 1, 2, 3, 4, 5, 6]:
+        runtime.ingest_transport_bytes(build_wave_frame(seq, [0.1, 0.2, 0.3]))
+
+    payload = runtime.get_session_live_payload("session-1")
+    preview_sequences = [sample["seq"] for sample in payload["eeg_waves"]["samples"]]
+
+    assert preview_sequences[:3] == [65530, 65532, 65534]
+    assert preview_sequences[3:] == [0, 2, 4, 6]
+
+
+def test_runtime_continues_live_wave_preview_after_low_seq_restart(monkeypatch) -> None:
+    settings = get_settings()
+    monkeypatch.setitem(settings, "eeg_enabled", True)
+    monkeypatch.setitem(settings, "eeg_sampling_rate", 500)
+    monkeypatch.setitem(settings, "eeg_preview_sampling_rate", 256)
+    monkeypatch.setitem(settings, "eeg_preview_seconds", 4)
+
+    runtime = EEGRuntimeService()
+
+    monkeypatch.setattr(runtime, "_load_model_locked", lambda: True)
+    monkeypatch.setattr(runtime, "_ensure_provider_started_locked", lambda: None)
+    monkeypatch.setattr(runtime, "_upload_raw_window", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "_record_window_result_locked", lambda *args, **kwargs: None)
+
+    runtime.begin_turn(
+        session_id="session-1",
+        turn_id="turn-1",
+        flow_run_id="flow-1",
+        stage_id="stage-1",
+        question_key="question-1",
+    )
+
+    for seq in [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6]:
+        runtime.ingest_transport_bytes(build_wave_frame(seq, [0.1, 0.2, 0.3]))
+
+    payload = runtime.get_session_live_payload("session-1")
+    preview_sequences = [sample["seq"] for sample in payload["eeg_waves"]["samples"]]
+
+    assert preview_sequences == [0, 2, 4, 0, 2, 4, 6]
 
 
 def test_ble_provider_matches_hint_against_ble_address(monkeypatch) -> None:

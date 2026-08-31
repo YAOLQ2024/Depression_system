@@ -9,7 +9,7 @@ import { ConsultationProgress } from "../components/ConsultationProgress";
 import { ConsultationStatusPanel } from "../components/ConsultationStatusPanel";
 import { DraggableMessagePanel } from "../components/DraggableMessagePanel";
 import { FlowCompletionState } from "../components/FlowCompletionState";
-import { FloatingControlBar } from "../components/FloatingControlBar";
+import { VoiceOrbButton } from "../components/VoiceOrbButton";
 import {
   SeamlessVideoPlayer,
   type SeamlessVideoClip,
@@ -25,6 +25,7 @@ import {
   useVideoNodeTransitionController,
 } from "../features/video-node";
 import { buildRecordingFilename, formatDuration, sleep } from "../lib/mediaCapture";
+import { logAudioDebug } from "../lib/audioDebug";
 import { useMultimodalAudioSubmission } from "../lib/useMultimodalAudioSubmission";
 import { useAudioRecording, type RecordingCompletedPayload } from "../lib/useAudioRecording";
 import { useCamera } from "../lib/useCamera";
@@ -35,24 +36,58 @@ import { useVisualCapture } from "../lib/useVisualCapture";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
 import {
+  getMultimodalAudioTurn,
   uploadMultimodalAudioTurn,
 } from "../services/api/multimodal.api";
 import { getConsultationMultimodalLiveStreamUrl } from "../services/api/consultation.api";
-import { mergeConsultationMultimodalLive } from "../lib/multimodalLiveMerge";
+import { mergeConsultationMultimodalLivePatch } from "../lib/multimodalLiveMerge";
 import type {
-  ConsultationMultimodalLive,
   ConsultationMultimodalLivePatch,
   ConsultationSubtitleHistoryEntry,
 } from "../types";
 
 const STAGE_LABELS = ["问候说明", "主诉采集", "症状筛查", "风险筛查"];
 const LIVE_REFRESH_INTERVAL_MS = 1000;
+const LIVE_PATCH_BUFFER_INTERVAL_MS = 180;
 const SYSTEM_VIDEO_AUTO_COMMIT_THRESHOLD_SECONDS = 0.9;
 
 declare global {
   interface Window {
     webkitAudioContext?: typeof AudioContext;
   }
+}
+
+function extractImmediateEegWavePatch(
+  live: ConsultationMultimodalLivePatch,
+): ConsultationMultimodalLivePatch | null {
+  if (!live.eeg_waves) {
+    return null;
+  }
+
+  return {
+    session_id: live.session_id,
+    updated_at: live.updated_at,
+    eeg_waves: live.eeg_waves,
+  };
+}
+
+function extractBufferedLivePatch(
+  live: ConsultationMultimodalLivePatch,
+): ConsultationMultimodalLivePatch | null {
+  const hasDeferredPayload = Boolean(live.speech || live.text || live.face || live.pose || live.eeg_live);
+  if (!hasDeferredPayload) {
+    return null;
+  }
+
+  return {
+    session_id: live.session_id,
+    updated_at: live.updated_at,
+    speech: live.speech,
+    text: live.text,
+    face: live.face,
+    pose: live.pose,
+    eeg_live: live.eeg_live,
+  };
 }
 
 function formatSubtitleHistoryLine(entry: ConsultationSubtitleHistoryEntry) {
@@ -92,7 +127,7 @@ export default function ConsultationPage() {
   const lastRecordingUrlRef = useRef<string | null>(null);
   const answerWindowPromptKeyRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
-  const livePatchBufferRef = useRef<ConsultationMultimodalLive | null>(null);
+  const livePatchBufferRef = useRef<ConsultationMultimodalLivePatch | null>(null);
   const livePatchFlushTimerRef = useRef<number | null>(null);
   const consultationStatusRef = useRef<string | null>(consultation?.status ?? null);
   const currentQuestionItemRef = useRef(consultation?.current_question_item ?? null);
@@ -110,9 +145,15 @@ export default function ConsultationPage() {
     missingSessionMessage: "当前问诊会话缺少多模态会话绑定，请刷新页面后重试。",
   });
 
-  const handleAudioRecordingComplete = useEffectEvent(
-    async (payload: RecordingCompletedPayload) => {
+  const handleAudioRecordingComplete = async (payload: RecordingCompletedPayload) => {
       const { blob, mimeType, startedAt, completedAt } = payload;
+      logAudioDebug("consultation.callback.enter", {
+        blobSize: blob.size,
+        blobType: blob.type || "",
+        mimeType,
+        currentQuestionKey,
+        consultationStatus: consultation?.status ?? null,
+      });
 
       const objectUrl = URL.createObjectURL(blob);
       if (lastRecordingUrlRef.current) {
@@ -131,8 +172,16 @@ export default function ConsultationPage() {
 
       // Upload + transcribe + submit
       setIsSubmittingResponse(true);
+      logAudioDebug("consultation.callback.submitting", {
+        currentQuestionKey,
+        consultationTurnId: consultation?.current_turn_id ?? null,
+      });
       try {
         if (!consultation || !currentQuestionKey) {
+          logAudioDebug("consultation.callback.missing_context", {
+            hasConsultation: Boolean(consultation),
+            currentQuestionKey,
+          });
           pushToast("当前题目缺少转写所需上下文，请刷新后重试。", "error");
           return;
         }
@@ -179,6 +228,11 @@ export default function ConsultationPage() {
               filename: buildRecordingFilename(context.currentQuestionKey, resolvedMimeType),
             }),
         });
+        logAudioDebug("consultation.callback.uploaded", {
+          sessionId: submittedAudio.sessionId,
+          audioTurnId: submittedAudio.uploadedAudioTurn.audio_turn_id,
+          transcriptLength: submittedAudio.transcriptText.length,
+        });
         setSubtitleUserTranscript(submittedAudio.transcriptText);
 
         await actions.submitConsultationTurn({
@@ -200,15 +254,20 @@ export default function ConsultationPage() {
         }
         pushToast("转写成功", "success", { durationMs: 1800 });
       } catch (caught) {
+        logAudioDebug("consultation.callback.failed", {
+          error: caught instanceof Error ? caught.message : String(caught),
+        });
         pushToast(
           caught instanceof Error ? caught.message : "语音提交失败，请重新录音。",
           "error",
         );
       } finally {
+        logAudioDebug("consultation.callback.finally", {
+          currentQuestionKey,
+        });
         setIsSubmittingResponse(false);
       }
-    },
-  );
+  };
 
   const {
     isRecording,
@@ -404,9 +463,21 @@ export default function ConsultationPage() {
   });
 
   const applyLiveSnapshot = useEffectEvent((live: ConsultationMultimodalLivePatch) => {
-    livePatchBufferRef.current = mergeConsultationMultimodalLive(
+    const immediateEegWavePatch = extractImmediateEegWavePatch(live);
+    if (immediateEegWavePatch) {
+      startTransition(() => {
+        actions.applyConsultationMultimodalLive(immediateEegWavePatch);
+      });
+    }
+
+    const bufferedPatch = extractBufferedLivePatch(live);
+    if (!bufferedPatch) {
+      return;
+    }
+
+    livePatchBufferRef.current = mergeConsultationMultimodalLivePatch(
       livePatchBufferRef.current,
-      live,
+      bufferedPatch,
     );
     if (livePatchFlushTimerRef.current !== null) {
       return;
@@ -414,7 +485,7 @@ export default function ConsultationPage() {
     livePatchFlushTimerRef.current = window.setTimeout(() => {
       livePatchFlushTimerRef.current = null;
       flushBufferedLiveSnapshot();
-    }, 180);
+    }, LIVE_PATCH_BUFFER_INTERVAL_MS);
   });
 
   const {
@@ -426,7 +497,6 @@ export default function ConsultationPage() {
         ? getConsultationMultimodalLiveStreamUrl(consultation.session_id)
         : null,
     onMessage: applyLiveSnapshot,
-    enabled: isOpen,
   });
 
   const refreshLiveSnapshot = useEffectEvent(async () => {
@@ -558,6 +628,7 @@ export default function ConsultationPage() {
   }, [consultation?.session_id, isLiveStreamActive, isOpen]);
 
   useEffect(() => {
+    isUnmountingRef.current = false;
     return () => {
       isUnmountingRef.current = true;
       if (livePatchFlushTimerRef.current !== null) {
@@ -637,7 +708,6 @@ export default function ConsultationPage() {
     sessionId: string,
     audioTurnId: string,
   ) {
-    const { getMultimodalAudioTurn } = await import("../services/api/multimodal.api");
     for (let attempt = 0; attempt < 180; attempt += 1) {
       const audioTurn = await getMultimodalAudioTurn(sessionId, audioTurnId);
       if (audioTurn.processing_status === "completed" || audioTurn.processing_status === "failed") {
@@ -888,7 +958,7 @@ export default function ConsultationPage() {
           </div>
 
           <div
-            className="absolute bottom-4 md:bottom-5 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            className="absolute bottom-0 md:bottom-0 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
             style={{
               transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
             }}
@@ -898,14 +968,12 @@ export default function ConsultationPage() {
                 {responseWindowStatusText}
               </div>
             ) : null}
-            <FloatingControlBar
+            <VoiceOrbButton
               isRecording={isRecording}
               onToggleRecord={handleToggleRecord}
-              onEnd={handleEnd}
-              recordDisabled={(!isRecording && consultation.status !== "waiting_user_input") || isSubmittingResponse || state.loading}
-              endDisabled={isRecording || isSubmittingResponse || !canEnterAssessment}
-              recordLabel={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
-              endLabel={canEnterAssessment ? "进入量表评估" : "完成问诊后进入量表"}
+              disabled={(!isRecording && consultation.status !== "waiting_user_input") || isSubmittingResponse || state.loading}
+              label={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
+              className="-translate-y-[10px]"
             />
           </div>
 
@@ -947,7 +1015,7 @@ export default function ConsultationPage() {
             <div className="w-full h-full bg-slate-900/10 transition-all duration-500 backdrop-blur-md rounded-3xl border border-indigo-400/60 shadow-[0_0_40px_rgba(99,102,241,0.6),inset_0_0_20px_rgba(165,180,252,0.4)] overflow-hidden flex flex-col relative z-30 ring-1 ring-indigo-400/30">
               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-500/5 to-transparent pointer-events-none"></div>
               <div className="w-full h-full flex flex-col overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent relative z-10">
-                <div className="w-full h-full min-h-0">
+                <div className="w-full min-h-full">
                   {isOpen ? (
                     <ConsultationStatusPanel
                       consultation={consultation}
@@ -962,7 +1030,7 @@ export default function ConsultationPage() {
                       cameraStatusTone={cameraFeedback.tone}
                       microphoneStatusText={microphoneFeedback.title}
                       transcriptPending={isRecording || isSubmittingResponse}
-                      className="h-full"
+                      className="min-h-full"
                     />
                   ) : null}
                 </div>

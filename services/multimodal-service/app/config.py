@@ -209,6 +209,7 @@ def get_settings() -> dict:
         "eeg_scan_seconds": float(os.getenv("EEG_SCAN_SECONDS", "5")),
         "eeg_reconnect_delay_seconds": float(os.getenv("EEG_RECONNECT_DELAY_SECONDS", "5")),
         "eeg_sampling_rate": _as_int(os.getenv("EEG_SAMPLING_RATE"), 500),
+        "eeg_preview_sampling_rate": _as_int(os.getenv("EEG_PREVIEW_SAMPLING_RATE"), 256),
         "eeg_preview_seconds": _as_int(os.getenv("EEG_PREVIEW_SECONDS"), 4),
         "eeg_window_seconds": _as_int(os.getenv("EEG_WINDOW_SECONDS"), 10),
         "eeg_min_feature_frames": _as_int(os.getenv("EEG_MIN_FEATURE_FRAMES"), 10),
@@ -217,7 +218,7 @@ def get_settings() -> dict:
         "eeg_model_path": Path(
             os.getenv(
                 "EEG_MODEL_PATH",
-                str(eeg_root / "model_combined_3class.pkl"),
+                str(eeg_root / "EEG_model.pkl"),
             )
         ),
         "eeg_live_ttl_seconds": _as_int(os.getenv("EEG_LIVE_TTL_SECONDS"), 30),

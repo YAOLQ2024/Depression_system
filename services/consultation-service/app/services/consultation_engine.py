@@ -36,6 +36,7 @@ from app.services.consultation._session_state import (
     _apply_extraction,
     _default_engine_state,
     _normalize_text,
+    _record_completed_question_key,
     _resolve_current_question_item,
     _resolve_current_question_item_object,
     _resolve_current_stage_progress,
@@ -481,6 +482,13 @@ def _apply_system_question_item_completion_transition(
     node,
     bundle: WorkflowBundle,
 ) -> None:
+    current_question_item = _resolve_current_question_item_object(
+        session_record, bundle
+    )
+    _record_completed_question_key(
+        session_record,
+        current_question_item.question_key if current_question_item else None,
+    )
     session_record.status = "running"
     session_record.updated_at = _now()
     engine_state = _ensure_json_dict(session_record.engine_state)
@@ -730,6 +738,10 @@ def submit_consultation_turn(
             )
 
         _clear_active_turn(session_record)
+        _record_completed_question_key(
+            session_record,
+            current_question_item.question_key if current_question_item else None,
+        )
         session_record.status = "running"
         session_record.updated_at = _now()
         engine_state = _ensure_json_dict(session_record.engine_state)

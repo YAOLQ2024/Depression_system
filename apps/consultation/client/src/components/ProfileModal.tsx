@@ -169,9 +169,9 @@ export function ProfileModal() {
 
   const closeMenu = () => setIsOpen(false);
 
-  const handleGoToPreparation = () => {
+  const handleGoToProfile = () => {
     closeMenu();
-    navigate(APP_PATHS.preparation);
+    navigate(APP_PATHS.profile);
   };
 
   const handleContinueFlow = () => {
@@ -199,7 +199,7 @@ export function ProfileModal() {
         <MenuItem
           iconClassName="text-slate-300"
           label="个人资料"
-          onClick={handleGoToPreparation}
+          onClick={handleGoToProfile}
           icon={<User className="w-4 h-4" />}
         />
         <MenuItem

@@ -6,9 +6,8 @@ from typing import Any
 
 from app.models import ConsultationSession
 from app.schemas.consultations import ConsultationTurnRequest
-from app.services.consultation import _ensure_json_dict, _now
+from app.services.consultation import _ensure_json_dict, _ensure_json_list, _now
 from app.services.consultation._subtitle_history import (
-    _ensure_subtitle_history,
     _sync_doctor_subtitle_history,
 )
 from app.services.workflow_loader import QuestionItem, ScriptNode, WorkflowBundle
@@ -19,8 +18,178 @@ def _default_engine_state() -> dict[str, Any]:
         "current_prompt": None,
         "waiting_node_type": None,
         "completed_stages": [],
+        "completed_question_keys": [],
         "last_branch_taken": None,
     }
+
+
+CHIEF_COMPLAINT_NO_CLEAR_HINTS = (
+    "说不上来",
+    "一下子说不上来",
+    "一下说不上来",
+    "不太说得上来",
+    "有点说不上来",
+    "有点讲不清楚",
+    "说不太清楚",
+    "说不清楚",
+    "讲不清楚",
+    "不太清楚",
+    "不清楚",
+    "不知道该怎么说",
+    "不知道怎么说",
+    "不知道说什么",
+    "不太知道怎么说",
+    "也不知道怎么形容",
+    "不太会形容",
+    "不知道从哪说起",
+    "不知道从哪里说起",
+    "不知道该从哪说起",
+    "不知道先说什么",
+    "没什么特别的问题",
+    "没什么特别不舒服",
+    "没什么明显问题",
+    "没有特别的问题",
+    "没有明显的问题",
+    "没有什么大问题",
+    "也没啥问题",
+    "没啥问题",
+    "没什么问题",
+    "好像没什么问题",
+    "感觉没什么问题",
+    "暂时没什么问题",
+    "目前没什么问题",
+    "就是来看看",
+    "就想来看看",
+    "就是来咨询一下",
+    "就想咨询一下",
+    "来了解一下",
+    "想了解一下",
+    "来评估一下",
+    "想评估一下",
+    "做个评估",
+    "想做个评估",
+    "想做个状态评估",
+    "做个状态评估",
+    "来测一下",
+    "想测一下",
+    "来筛查一下",
+    "想筛查一下",
+    "做个筛查",
+    "想做个筛查",
+    "看看心理状态",
+    "看看自己的状态",
+    "想看看状态",
+    "看看最近状态",
+    "来做检查",
+    "想做检查",
+    "来复查一下",
+    "先来看看情况",
+    "先来了解情况",
+    "身边人建议我来",
+    "家里人建议我来",
+    "家人建议我来",
+    "父母让我来",
+    "老师建议我来",
+    "老师让我来",
+    "朋友建议我来",
+    "同学建议我来",
+    "同事建议我来",
+    "被建议来看看",
+    "别人建议我来",
+)
+
+CHIEF_COMPLAINT_CLEAR_SYMPTOM_HINTS = (
+    "失眠",
+    "睡不着",
+    "睡不踏实",
+    "早醒",
+    "入睡困难",
+    "睡眠不好",
+    "焦虑",
+    "紧张",
+    "害怕",
+    "恐慌",
+    "心慌",
+    "烦躁",
+    "易怒",
+    "脾气大",
+    "情绪低落",
+    "心情不好",
+    "抑郁",
+    "难受",
+    "压抑",
+    "没劲",
+    "提不起精神",
+    "不开心",
+    "总想哭",
+    "胸闷",
+    "头痛",
+    "头晕",
+    "食欲不好",
+    "不想吃饭",
+    "注意力不集中",
+    "学不进去",
+    "上不下去班",
+    "不想上学",
+    "不想上班",
+    "没法工作",
+    "反复想",
+    "控制不住",
+    "强迫",
+    "反复检查",
+    "想很多",
+    "胡思乱想",
+    "高兴不起来",
+    "没有兴趣",
+    "不想社交",
+    "不愿见人",
+    "躯体不舒服",
+    "心累",
+    "压力大",
+    "最近状态不对",
+)
+
+HIGH_RISK_POSITIVE_OVERRIDE_HINTS = (
+    "不是没有",
+    "并非没有",
+    "不能说没有",
+    "也不是没有",
+    "不完全没有",
+)
+
+HIGH_RISK_NEGATIVE_HINTS = (
+    "没有",
+    "没",
+    "无",
+    "不会",
+    "不是",
+    "从未",
+    "并没有",
+    "完全没有",
+    "一点都没有",
+    "没想过",
+    "不想",
+)
+
+HIGH_RISK_POSITIVE_HINTS = (
+    "有",
+    "有过",
+    "想过",
+    "想法",
+    "是",
+    "会",
+    "差点",
+    "做过",
+    "实施过",
+    "试过",
+    "准备过",
+    "查过",
+    "查找过",
+    "写过",
+    "道别过",
+    "交代过",
+    "囤过",
+)
 
 
 def _serialize_question_item(question_item: QuestionItem) -> dict[str, Any]:
@@ -40,11 +209,131 @@ def _serialize_question_item(question_item: QuestionItem) -> dict[str, Any]:
     }
 
 
-def _get_total_prompt_count(bundle: WorkflowBundle) -> int:
-    return sum(
-        len(stage.question_items)
-        for stage in bundle.digital_human_playlist.stages_in_order
+def _get_completed_question_keys(
+    session_record: ConsultationSession,
+) -> list[str]:
+    engine_state = _ensure_json_dict(session_record.engine_state)
+    completed_question_keys: list[str] = []
+    for raw_value in _ensure_json_list(
+        engine_state.get("completed_question_keys")
+    ):
+        value = str(raw_value or "").strip()
+        if value and value not in completed_question_keys:
+            completed_question_keys.append(value)
+    return completed_question_keys
+
+
+def _record_completed_question_key(
+    session_record: ConsultationSession, question_key: str | None
+) -> None:
+    normalized_key = str(question_key or "").strip()
+    if not normalized_key:
+        return
+    engine_state = _ensure_json_dict(session_record.engine_state)
+    completed_question_keys = _get_completed_question_keys(session_record)
+    if normalized_key not in completed_question_keys:
+        completed_question_keys.append(normalized_key)
+    engine_state["completed_question_keys"] = completed_question_keys
+    session_record.engine_state = engine_state
+
+
+def _advance_progress_cursor(
+    stage_id: str, bundle: WorkflowBundle
+) -> tuple[str | None, str | None]:
+    if stage_id not in bundle.substeps:
+        return None, None
+    current_index = bundle.substeps.index(stage_id)
+    if current_index >= len(bundle.substeps) - 1:
+        return None, None
+    next_stage_id = bundle.substeps[current_index + 1]
+    next_stage = bundle.stage_scripts[next_stage_id]
+    return next_stage_id, next_stage.entry_node
+
+
+def _resolve_default_prompt_next_target(node: ScriptNode) -> str | None:
+    branches = node.payload.get("branches", {})
+    preferred = branches.get("normal")
+    if isinstance(preferred, dict):
+        return preferred.get("next")
+    for branch_payload in branches.values():
+        if isinstance(branch_payload, dict):
+            next_target = branch_payload.get("next")
+            if next_target:
+                return next_target
+    return None
+
+
+def _count_remaining_prompt_items(
+    session_record: ConsultationSession, bundle: WorkflowBundle
+) -> int:
+    stage_id = str(session_record.current_stage_id or "").strip() or None
+    node_id = str(session_record.current_node_id or "").strip() or None
+    if not stage_id or not node_id:
+        return 0
+
+    prompt_count = 0
+    simulated_requires_human_review = bool(
+        session_record.requires_human_review
     )
+    visited: set[tuple[str, str, bool]] = set()
+
+    while stage_id and node_id:
+        visit_key = (stage_id, node_id, simulated_requires_human_review)
+        if visit_key in visited:
+            break
+        visited.add(visit_key)
+
+        stage = bundle.stage_scripts.get(stage_id)
+        if not stage:
+            break
+        node = stage.nodes.get(node_id)
+        if not node:
+            break
+
+        target: str | None = None
+        if node.type in {"system_gate", "speak"}:
+            target = node.payload.get("next")
+        elif node.type == "route_by_rule":
+            target = _resolve_route(session_record, node)
+        elif node.type == "decision":
+            branch_name = _evaluate_decision(session_record, node)
+            if (
+                stage_id == "stage-04-high-risk-screening"
+                and branch_name == "human_intervention_required"
+            ):
+                simulated_requires_human_review = True
+            target = node.payload.get("branches", {}).get(branch_name)
+        elif node.type == "speak_then_wait":
+            prompt_count += 1
+            target = _resolve_default_prompt_next_target(node)
+        elif node.type == "speak_then_complete":
+            prompt_count += 1
+            target = node.payload.get("next")
+        else:
+            break
+
+        if target == "stage-complete":
+            if (
+                stage_id == "stage-04-high-risk-screening"
+                and simulated_requires_human_review
+            ):
+                break
+            stage_id, node_id = _advance_progress_cursor(stage_id, bundle)
+            continue
+
+        node_id = str(target or "").strip() or None
+
+    return prompt_count
+
+
+def _resolve_prompt_progress(
+    session_record: ConsultationSession, bundle: WorkflowBundle
+) -> tuple[int, int]:
+    completed_prompt_count = len(_get_completed_question_keys(session_record))
+    total_prompt_count = completed_prompt_count + _count_remaining_prompt_items(
+        session_record, bundle
+    )
+    return completed_prompt_count, total_prompt_count
 
 
 def _resolve_current_question_item_object(
@@ -81,28 +370,12 @@ def _resolve_current_question_item(
     return _serialize_question_item(question_item) if question_item else None
 
 
-def _count_prompt_items_before(
-    question_item: QuestionItem, bundle: WorkflowBundle
-) -> int:
-    completed = 0
-    for stage in bundle.digital_human_playlist.stages_in_order:
-        if stage.stage_order < question_item.stage_order:
-            completed += len(stage.question_items)
-            continue
-        if stage.stage_order == question_item.stage_order:
-            completed += sum(
-                1
-                for item in stage.question_items
-                if item.order < question_item.order
-            )
-            break
-    return completed
-
-
 def _sync_playlist_state(
     session_record: ConsultationSession, bundle: WorkflowBundle
 ) -> None:
-    total_prompt_count = _get_total_prompt_count(bundle)
+    completed_prompt_count, total_prompt_count = _resolve_prompt_progress(
+        session_record, bundle
+    )
     session_record.playlist_version = (
         bundle.digital_human_playlist.playlist_version or None
     )
@@ -118,13 +391,7 @@ def _sync_playlist_state(
         session_record.current_question_video_uri = None
         session_record.current_question_text = None
         session_record.current_question_subtitle_text = None
-        session_record.completed_prompt_count = (
-            total_prompt_count
-            if session_record.status
-            in {"handoff_ready", "paused_for_human_review"}
-            or session_record.completed_at
-            else 0
-        )
+        session_record.completed_prompt_count = completed_prompt_count
         return
 
     session_record.current_question_key = current_question_item.question_key
@@ -140,9 +407,7 @@ def _sync_playlist_state(
         current_question_item.subtitle_text
         or current_question_item.question_text
     )
-    session_record.completed_prompt_count = _count_prompt_items_before(
-        current_question_item, bundle
-    )
+    session_record.completed_prompt_count = completed_prompt_count
     _sync_doctor_subtitle_history(session_record, current_question_item)
 
 
@@ -242,6 +507,7 @@ def _describe_risk_value(value: Any) -> str:
         "positive": "有",
         "negative": "无",
         "unclear": "未明确",
+        "not_asked": "未采集",
         "available": "有稳定支持",
         "limited": "支持有限",
         "none": "暂无支持",
@@ -253,14 +519,14 @@ def _describe_risk_value(value: Any) -> str:
 
 
 def _parse_positive_negative(text: str) -> str:
-    if any(
-        token in text for token in ["没有", "没", "不会", "不是", "无", "从未"]
-    ):
+    normalized = _normalize_chief_complaint_text(text)
+    if not normalized:
+        return "unclear"
+    if any(token in normalized for token in HIGH_RISK_POSITIVE_OVERRIDE_HINTS):
+        return "positive"
+    if any(token in normalized for token in HIGH_RISK_NEGATIVE_HINTS):
         return "negative"
-    if any(
-        token in text
-        for token in ["有", "想过", "出现过", "是", "会", "差点", "真的"]
-    ):
+    if any(token in normalized for token in HIGH_RISK_POSITIVE_HINTS):
         return "positive"
     return "unclear"
 
@@ -298,12 +564,92 @@ def _extract_risk_value(slot_name: str, text: str) -> str:
     return _parse_positive_negative(text)
 
 
+def _normalize_risk_slot_value(value: Any) -> str:
+    normalized = _normalize_slot_text(value)
+    return normalized or "unclear"
+
+
+def _compute_high_risk_confirmation_state(
+    slot_values: dict[str, Any],
+) -> tuple[int, str]:
+    suicidal_ideation = _normalize_risk_slot_value(
+        slot_values.get("suicidal_ideation")
+    )
+    tracked_values = [
+        suicidal_ideation,
+        _normalize_risk_slot_value(
+            slot_values.get("suicide_means_preparation")
+        ),
+        _normalize_risk_slot_value(
+            slot_values.get("suicide_farewell_behavior")
+        ),
+        _normalize_risk_slot_value(slot_values.get("suicide_plan")),
+    ]
+    positive_count = sum(
+        1 for value in tracked_values if value == "positive"
+    )
+
+    if suicidal_ideation != "positive":
+        if suicidal_ideation == "negative":
+            return positive_count, "negative"
+        return positive_count, "unclear"
+    if positive_count >= 2:
+        return positive_count, "confirmed"
+    return positive_count, "not_confirmed"
+
+
+def _update_high_risk_confirmation_slots(
+    session_record: ConsultationSession,
+) -> None:
+    slot_values = _ensure_json_dict(session_record.slot_values)
+    positive_count, outcome = _compute_high_risk_confirmation_state(
+        slot_values
+    )
+    slot_values["high_risk_positive_count"] = positive_count
+    slot_values["high_risk_confirmation_outcome"] = outcome
+    session_record.slot_values = slot_values
+
+
+def _normalize_chief_complaint_text(text: str) -> str:
+    return re.sub(r"[\s，。！？、,.!?；;：:“”\"'（）()【】\[\]\-]+", "", text)
+
+
+def _parse_chief_complaint_route(text: str) -> str:
+    normalized = _normalize_chief_complaint_text(text)
+    if not normalized:
+        return "clear_problem"
+    if any(token in normalized for token in CHIEF_COMPLAINT_CLEAR_SYMPTOM_HINTS):
+        return "clear_problem"
+    if any(token in normalized for token in CHIEF_COMPLAINT_NO_CLEAR_HINTS):
+        return "no_clear_problem"
+    return "clear_problem"
+
+
 def _set_slot(
     session_record: ConsultationSession, slot_name: str, value: Any
 ) -> None:
     slot_values = _ensure_json_dict(session_record.slot_values)
     slot_values[slot_name] = value
     session_record.slot_values = slot_values
+
+
+def _store_free_text_extraction(
+    session_record: ConsultationSession,
+    *,
+    target_slot: str | None,
+    target_slots: list[str],
+    text: str,
+    extracted: dict[str, Any],
+) -> None:
+    if target_slot:
+        extracted[target_slot] = text
+        _set_slot(session_record, target_slot, text)
+    for slot_name in target_slots:
+        extracted[slot_name] = text
+        _set_slot(session_record, slot_name, text)
+
+    if target_slot == "chief_complaint_text":
+        session_record.chief_complaint_raw_text = text or None
 
 
 def _apply_extraction(
@@ -319,15 +665,29 @@ def _apply_extraction(
     if strategy == "free_text":
         target_slot = extraction.get("target_slot")
         target_slots = extraction.get("target_slots", [])
-        if target_slot:
-            extracted[target_slot] = text
-            _set_slot(session_record, target_slot, text)
-        for slot_name in target_slots:
-            extracted[slot_name] = text
-            _set_slot(session_record, slot_name, text)
+        _store_free_text_extraction(
+            session_record,
+            target_slot=target_slot,
+            target_slots=target_slots,
+            text=text,
+            extracted=extracted,
+        )
 
-        if target_slot == "chief_complaint_text":
-            session_record.chief_complaint_raw_text = text or None
+    elif strategy == "chief_complaint_entry_parse":
+        target_slot = extraction.get("target_slot")
+        target_slots = extraction.get("target_slots", [])
+        route_slot = extraction.get("route_slot")
+        _store_free_text_extraction(
+            session_record,
+            target_slot=target_slot,
+            target_slots=target_slots,
+            text=text,
+            extracted=extracted,
+        )
+        if route_slot:
+            route_value = _parse_chief_complaint_route(text)
+            extracted[route_slot] = route_value
+            _set_slot(session_record, route_slot, route_value)
 
     elif strategy == "risk_enum_parse":
         target_slot = extraction.get("target_slot")
@@ -340,6 +700,7 @@ def _apply_extraction(
             value = _extract_risk_value(slot_name, text)
             extracted[slot_name] = value
             _set_slot(session_record, slot_name, value)
+        _update_high_risk_confirmation_slots(session_record)
 
     return extracted
 
@@ -492,20 +853,42 @@ def _build_high_risk_result(
     session_record: ConsultationSession, branch_name: str
 ) -> None:
     slot_values = _ensure_json_dict(session_record.slot_values)
-    suicidal_ideation = slot_values.get("suicidal_ideation", "unclear")
-    self_harm_behavior = slot_values.get("self_harm_behavior", "unclear")
-    suicide_plan = slot_values.get("suicide_plan", "unclear")
-    acute_support_state = slot_values.get("acute_support_state", "unclear")
+    suicidal_ideation_initial = _normalize_risk_slot_value(
+        slot_values.get("suicidal_ideation")
+    )
+    suicide_means_preparation = _normalize_risk_slot_value(
+        slot_values.get("suicide_means_preparation")
+    )
+    suicide_farewell_behavior = _normalize_risk_slot_value(
+        slot_values.get("suicide_farewell_behavior")
+    )
+    self_harm_behavior = _normalize_risk_slot_value(
+        slot_values.get("self_harm_behavior")
+    )
+    suicide_plan = _normalize_risk_slot_value(slot_values.get("suicide_plan"))
+    positive_count, confirmation_outcome = _compute_high_risk_confirmation_state(
+        slot_values
+    )
+    suicidal_ideation = (
+        "negative"
+        if confirmation_outcome == "not_confirmed"
+        else suicidal_ideation_initial
+    )
     primary_concern = _normalize_slot_text(slot_values.get("primary_concern"))
     alert_level = (
         "high" if branch_name == "human_intervention_required" else "low"
     )
     session_record.high_risk_screening_result = {
         "suicidal_ideation": suicidal_ideation,
+        "suicidal_ideation_initial": suicidal_ideation_initial,
+        "suicide_means_preparation": suicide_means_preparation,
+        "suicide_farewell_behavior": suicide_farewell_behavior,
         "self_harm_behavior": self_harm_behavior,
         "suicide_plan": suicide_plan,
-        "acute_support_state": acute_support_state,
+        "acute_support_state": "not_asked",
         "primary_concern": primary_concern,
+        "positive_count": positive_count,
+        "confirmation_outcome": confirmation_outcome,
         "alert_level": alert_level,
         "outcome": branch_name,
     }
@@ -514,17 +897,29 @@ def _build_high_risk_result(
         "high_risk_screening_stage_summary",
         _join_summary_lines(
             [
-                f"自伤或轻生想法：{_describe_risk_value(suicidal_ideation)}",
+                f"首问自伤或轻生想法：{_describe_risk_value(suicidal_ideation_initial)}",
+                (
+                    "危险物品准备或查找信息："
+                    f"{_describe_risk_value(suicide_means_preparation)}"
+                ),
+                (
+                    "道别、整理物品或交代后事："
+                    f"{_describe_risk_value(suicide_farewell_behavior)}"
+                ),
                 (
                     f"具体计划或实际行为："
                     f"{_describe_risk_value(suicide_plan)}/"
                     f"{_describe_risk_value(self_harm_behavior)}"
                 ),
-                (
-                    f"当前支持系统："
-                    f"{_describe_risk_value(acute_support_state)}"
-                ),
                 f"本次主要诉求：{primary_concern}" if primary_concern else "",
+                f"复核阳性次数：{positive_count}",
+                (
+                    "复核结论：已确认高风险"
+                    if confirmation_outcome == "confirmed"
+                    else "复核结论：未确认高风险"
+                    if confirmation_outcome == "not_confirmed"
+                    else "复核结论：未见明确高风险"
+                ),
                 f"风险判定：{alert_level}",
             ]
         ),

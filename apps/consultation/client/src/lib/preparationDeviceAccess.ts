@@ -1,3 +1,5 @@
+import { buildPreferredAudioConstraints } from "./mediaCapture";
+
 export type PreparationPermissionState = PermissionState | "unsupported";
 
 export type PreparationMediaChannelState = {
@@ -213,7 +215,7 @@ export async function requestPreparationDeviceAccess() {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+      audio: buildPreferredAudioConstraints(),
       video: {
         facingMode: "user",
         width: { ideal: 960 },

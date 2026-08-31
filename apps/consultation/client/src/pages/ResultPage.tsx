@@ -4,6 +4,7 @@ import { FileText, Pill, RefreshCw } from "lucide-react";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { FlowCompletionState } from "../components/FlowCompletionState";
 import {
+  buildTrendPointsFromHistory,
   buildResultPageViewModel,
   ConsultationSummaryDrawer,
   DetailDrawer,
@@ -14,6 +15,8 @@ import { ConsultationLayout } from "../layouts";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
 import { getAssessmentScaleDetail } from "../services/api/assessment.api";
+import { getEncounterScaleHistory } from "../services/api/consultation.api";
+import type { ResultTrendPoint } from "../features/result-page";
 import type { AssessmentScaleDetail } from "../types";
 
 type ActiveDrawerState =
@@ -26,6 +29,7 @@ export default function ResultPage() {
   const { state, actions } = useConsultationAppContext();
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawerState>(null);
   const [assessmentScaleDetails, setAssessmentScaleDetails] = useState<Record<string, AssessmentScaleDetail>>({});
+  const [assessmentScaleHistories, setAssessmentScaleHistories] = useState<Record<string, ResultTrendPoint[]>>({});
   const [scaleDetailLoadErrors, setScaleDetailLoadErrors] = useState<Record<string, string>>({});
   const gradientActionButtonClass =
     "flex flex-1 items-center justify-center gap-2 rounded-full bg-[linear-gradient(120deg,rgba(96,165,250,0.95),rgba(99,102,241,0.98),rgba(168,85,247,0.95),rgba(96,165,250,0.95))] px-6 py-3.5 font-medium text-white shadow-[0_18px_50px_rgba(99,102,241,0.28)] transition-all hover:scale-[1.02] hover:brightness-110 active:scale-[0.98]";
@@ -84,6 +88,44 @@ export default function ResultPage() {
     };
   }, [completedScaleIds, state.assessment?.session_id]);
 
+  useEffect(() => {
+    if (!completedScaleIds.length) {
+      setAssessmentScaleHistories({});
+      return;
+    }
+
+    let cancelled = false;
+    setAssessmentScaleHistories({});
+
+    void (async () => {
+      const settled = await Promise.allSettled(
+        completedScaleIds.map(async (scaleSlug) => ({
+          scaleSlug,
+          history: await getEncounterScaleHistory(scaleSlug),
+        })),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      const nextHistories: Record<string, ResultTrendPoint[]> = {};
+      settled.forEach((result, index) => {
+        const scaleSlug = completedScaleIds[index];
+        if (result.status !== "fulfilled") {
+          return;
+        }
+        nextHistories[scaleSlug] = buildTrendPointsFromHistory(result.value.history.history);
+      });
+
+      setAssessmentScaleHistories(nextHistories);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [completedScaleIds]);
+
   const viewModel = useMemo(
     () =>
       buildResultPageViewModel({
@@ -98,7 +140,7 @@ export default function ResultPage() {
   const canRenderResult = state.assessment?.status === "completed" && viewModel.hasAssessment;
   const isDrawerOpen = activeDrawer !== null;
   const selectedScaleId = activeDrawer?.kind === "scale" ? activeDrawer.scaleId : null;
-  const counselorPaneWidth = "clamp(360px, 25vw, 500px)";
+  const counselorPaneWidth = "clamp(420px, 28vw, 580px)";
   const selectedScaleDetail = useMemo(() => {
     if (!selectedScaleId) {
       return null;
@@ -109,17 +151,21 @@ export default function ResultPage() {
       return null;
     }
 
+    const nextDetail = {
+      ...detail,
+      history: assessmentScaleHistories[selectedScaleId] || [],
+    };
     const loadError = scaleDetailLoadErrors[selectedScaleId];
     if (!loadError) {
-      return detail;
+      return nextDetail;
     }
 
     return {
-      ...detail,
+      ...nextDetail,
       itemResultsReady: false,
       itemResultsNotice: loadError,
     };
-  }, [scaleDetailLoadErrors, selectedScaleId, viewModel.scaleDetails]);
+  }, [assessmentScaleHistories, scaleDetailLoadErrors, selectedScaleId, viewModel.scaleDetails]);
   const selectedDrawerWidth = "calc((100% - 5px) / 2)";
 
   const modules = viewModel.modules.map((module) =>
@@ -210,13 +256,14 @@ export default function ResultPage() {
                 }}
               >
                 <div className="h-full w-full">
-                  <DigitalCounselor className="px-0" />
+                  <DigitalCounselor className="px-0" overallSeverity={viewModel.overallSeverity} />
                 </div>
               </div>
 
               <div className="min-w-0 flex-1 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)]">
-                <div className="relative h-full p-4 md:p-5">
-                  <div className="relative z-10 flex h-full min-h-0 flex-col">
+                <div className="relative h-full overflow-hidden rounded-[10px] border border-white/16 bg-[linear-gradient(180deg,rgba(8,16,32,0.74),rgba(8,16,32,0.52))] shadow-[0_24px_60px_rgba(15,23,42,0.26)] backdrop-blur-[20px]">
+                  <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent_18%,transparent_82%,rgba(255,255,255,0.03))]" />
+                  <div className="relative z-10 flex h-full min-h-0 flex-col p-4 md:p-5">
                     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                       <SummaryDashboard
                         modules={modules}

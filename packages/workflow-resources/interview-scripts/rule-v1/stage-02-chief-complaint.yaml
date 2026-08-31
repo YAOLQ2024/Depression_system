@@ -6,6 +6,7 @@ revision: teacher-confirmed-flow-2026-04
 entry_node: ask-chief-complaint-001
 slots:
   - chief_complaint_text
+  - chief_complaint_route
   - chief_complaint_structured_result
   - chief_complaint_stage_summary
   - symptom_duration
@@ -15,16 +16,44 @@ nodes:
     type: speak_then_wait
     prompt: 您今天主要是因为什么问题来就诊？
     extraction:
+      strategy: chief_complaint_entry_parse
+      target_slot: chief_complaint_text
+      route_slot: chief_complaint_route
+    branches:
+      normal:
+        next: evaluate-chief-complaint-entry
+      silence:
+        after_seconds: 8
+        next: evaluate-chief-complaint-entry
+      recognition_failure:
+        next: evaluate-chief-complaint-entry
+
+  - id: evaluate-chief-complaint-entry
+    type: decision
+    decision_rules:
+      no_clear_problem:
+        any:
+          - chief_complaint_route == no_clear_problem
+      safe_to_continue:
+        default: true
+    branches:
+      no_clear_problem: ask-chief-complaint-no-clear-problem
+      safe_to_continue: ask-chief-complaint-002
+
+  - id: ask-chief-complaint-no-clear-problem
+    type: speak_then_wait
+    prompt: 如果一下子说不上来也没关系。您这次来，更多是想做个状态评估，还是最近有些变化让您开始关注自己的情况？
+    extraction:
       strategy: free_text
       target_slot: chief_complaint_text
     branches:
       normal:
-        next: ask-chief-complaint-002
+        next: ask-chief-complaint-003
       silence:
         after_seconds: 8
-        next: ask-chief-complaint-002
+        next: ask-chief-complaint-003
       recognition_failure:
-        next: ask-chief-complaint-002
+        next: ask-chief-complaint-003
 
   - id: ask-chief-complaint-002
     type: speak_then_wait

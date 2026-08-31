@@ -120,6 +120,30 @@ def convert_to_wav(source_path: Path, output_path: Path) -> None:
         )
 
 
+def trim_leading_silence(source_wav_path: Path, output_path: Path) -> None:
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source_wav_path),
+        "-af",
+        "silenceremove=start_periods=1:start_silence=0:start_threshold=-30dB",
+        str(output_path),
+    ]
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AudioProcessingError(
+            "failed to trim leading silence from wav",
+            error_code="AUDIO_CONVERSION_FAILED",
+            status_code=400,
+        )
+
+
 def get_wav_duration_ms(wav_path: Path) -> int:
     with wave.open(str(wav_path), "rb") as wav_file:
         frames = wav_file.getnframes()

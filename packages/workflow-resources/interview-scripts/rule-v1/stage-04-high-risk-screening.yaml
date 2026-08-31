@@ -2,14 +2,17 @@ version: 1
 stage_id: stage-04-high-risk-screening
 title: 高风险问题排查
 source_document: /home/ZR/data2/MCS/docs/交互剧本.txt
-revision: teacher-confirmed-flow-2026-04
+revision: teacher-confirmed-review-branch-2026-06
 entry_node: ask-suicidal-ideation
 slots:
   - suicidal_ideation
+  - suicide_means_preparation
+  - suicide_farewell_behavior
   - self_harm_behavior
   - suicide_plan
-  - acute_support_state
   - primary_concern
+  - high_risk_positive_count
+  - high_risk_confirmation_outcome
   - high_risk_flag
   - high_risk_reason
   - high_risk_screening_stage_summary
@@ -23,6 +26,56 @@ nodes:
     extraction:
       strategy: risk_enum_parse
       target_slot: suicidal_ideation
+      enums:
+        - positive
+        - negative
+        - unclear
+    branches:
+      normal:
+        next: evaluate-after-suicidal-ideation
+      silence:
+        after_seconds: 6
+        next: evaluate-after-suicidal-ideation
+      recognition_failure:
+        next: evaluate-after-suicidal-ideation
+
+  - id: evaluate-after-suicidal-ideation
+    type: decision
+    decision_rules:
+      enter-review-branch:
+        any:
+          - suicidal_ideation == positive
+      safe_to_continue:
+        default: true
+    branches:
+      enter-review-branch: ask-suicide-means-preparation
+      safe_to_continue: ask-primary-concern
+
+  - id: ask-suicide-means-preparation
+    type: speak_then_wait
+    prompt: 最近有没有囤积安眠药、刀具、绳索，主动查找自杀相关信息、教程的想法？
+    extraction:
+      strategy: risk_enum_parse
+      target_slot: suicide_means_preparation
+      enums:
+        - positive
+        - negative
+        - unclear
+    branches:
+      normal:
+        next: ask-suicide-farewell-behavior
+      silence:
+        after_seconds: 6
+        next: ask-suicide-farewell-behavior
+      recognition_failure:
+        next: ask-suicide-farewell-behavior
+
+  - id: ask-suicide-farewell-behavior
+    type: speak_then_wait
+    prompt: 最近有没有道别，整理物品，写遗书，交代后事的想法？
+    extraction:
+      strategy: risk_enum_parse
+      target_slot: suicide_farewell_behavior
       enums:
         - positive
         - negative
@@ -50,41 +103,6 @@ nodes:
         - unclear
     branches:
       normal:
-        next: ask-support-state
-      silence:
-        after_seconds: 6
-        next: ask-support-state
-      recognition_failure:
-        next: ask-support-state
-
-  - id: ask-support-state
-    type: speak_then_wait
-    prompt: 现在身边有没有家人、朋友、老师或同事可以及时联系和陪伴？
-    extraction:
-      strategy: risk_enum_parse
-      target_slot: acute_support_state
-      enums:
-        - available
-        - limited
-        - none
-        - unclear
-    branches:
-      normal:
-        next: ask-primary-concern
-      silence:
-        after_seconds: 6
-        next: ask-primary-concern
-      recognition_failure:
-        next: ask-primary-concern
-
-  - id: ask-primary-concern
-    type: speak_then_wait
-    prompt: 这次就诊您最希望医生帮您解决什么问题？
-    extraction:
-      strategy: free_text
-      target_slot: primary_concern
-    branches:
-      normal:
         next: evaluate-high-risk
       silence:
         after_seconds: 6
@@ -97,14 +115,42 @@ nodes:
     decision_rules:
       human_intervention_required:
         any:
-          - suicide_plan == positive
-          - self_harm_behavior == positive
-          - suicidal_ideation == positive and acute_support_state in [limited, none, unclear]
+          - high_risk_confirmation_outcome == confirmed
       safe_to_continue:
         default: true
     branches:
       human_intervention_required: risk-screening-005
-      safe_to_continue: stage-complete
+      safe_to_continue: ask-primary-concern-after-review
+
+  - id: ask-primary-concern
+    type: speak_then_wait
+    prompt: 这次就诊您最希望医生帮您解决什么问题？
+    extraction:
+      strategy: free_text
+      target_slot: primary_concern
+    branches:
+      normal:
+        next: stage-complete
+      silence:
+        after_seconds: 6
+        next: stage-complete
+      recognition_failure:
+        next: stage-complete
+
+  - id: ask-primary-concern-after-review
+    type: speak_then_wait
+    prompt: 这次就诊您最希望医生帮您解决什么问题？
+    extraction:
+      strategy: free_text
+      target_slot: primary_concern
+    branches:
+      normal:
+        next: stage-complete
+      silence:
+        after_seconds: 6
+        next: stage-complete
+      recognition_failure:
+        next: stage-complete
 
   - id: risk-screening-005
     type: speak_then_complete

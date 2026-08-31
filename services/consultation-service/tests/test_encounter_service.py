@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from app.services.encounter_service import (
     EncounterServiceError,
     get_encounter_detail,
+    get_scale_score_history,
     list_encounters,
 )
 
@@ -315,3 +316,61 @@ class TestGetEncounterDetail:
         assert result["encounter"]["consultation"]["required_scales"] == ["phq9", "sds"]
         assert result["encounter"]["consultation"]["subtitle_history"][0]["speaker"] == "doctor"
         assert any(item["event"] == "assessment_started" for item in result["encounter"]["timeline"])
+
+
+class TestGetScaleScoreHistory:
+    @patch("app.services.encounter_service.get_db_session")
+    def test_history_includes_completed_scale_from_incomplete_encounter_and_dedupes_visit(self, mock_db_ctx):
+        mock_session = MagicMock()
+        mock_db_ctx.return_value.__enter__ = MagicMock(return_value=mock_session)
+        mock_db_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_session.execute.return_value = _mapping_all_result(
+            [
+                {
+                    "scale_slug": "phq9",
+                    "raw_score": 16,
+                    "derived_score": 16,
+                    "result_completed_at": datetime(2026, 5, 22, 10, 0, tzinfo=timezone.utc),
+                    "result_created_at": datetime(2026, 5, 22, 10, 0, tzinfo=timezone.utc),
+                    "assessment_session_id": "assess-2b",
+                    "assessment_status": "completed",
+                    "encounter_session_id": "enc-2",
+                    "assessment_created_at": datetime(2026, 5, 22, 9, 50, tzinfo=timezone.utc),
+                    "encounter_status": "completed",
+                },
+                {
+                    "scale_slug": "phq9",
+                    "raw_score": 14,
+                    "derived_score": 14,
+                    "result_completed_at": datetime(2026, 5, 22, 9, 30, tzinfo=timezone.utc),
+                    "result_created_at": datetime(2026, 5, 22, 9, 30, tzinfo=timezone.utc),
+                    "assessment_session_id": "assess-2a",
+                    "assessment_status": "completed",
+                    "encounter_session_id": "enc-2",
+                    "assessment_created_at": datetime(2026, 5, 22, 9, 20, tzinfo=timezone.utc),
+                    "encounter_status": "completed",
+                },
+                {
+                    "scale_slug": "phq9",
+                    "raw_score": 12,
+                    "derived_score": 12,
+                    "result_completed_at": datetime(2026, 5, 20, 15, 10, tzinfo=timezone.utc),
+                    "result_created_at": datetime(2026, 5, 20, 15, 10, tzinfo=timezone.utc),
+                    "assessment_session_id": "assess-1",
+                    "assessment_status": "in_progress",
+                    "encounter_session_id": "enc-1",
+                    "assessment_created_at": datetime(2026, 5, 20, 15, 0, tzinfo=timezone.utc),
+                    "encounter_status": "in_progress",
+                },
+            ]
+        )
+
+        result = get_scale_score_history("user-1", "phq9")
+
+        assert result["scale_slug"] == "phq9"
+        assert [item["encounter_id"] for item in result["history"]] == ["enc-1", "enc-2"]
+        assert result["history"][0]["score"] == 12
+        assert result["history"][0]["encounter_status"] == "in_progress"
+        assert result["history"][1]["score"] == 16
+        assert result["history"][1]["assessment_session_id"] == "assess-2b"

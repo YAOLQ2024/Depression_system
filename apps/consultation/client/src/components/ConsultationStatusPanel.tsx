@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Activity, AlertTriangle, AudioLines, BrainCircuit, RefreshCw, ScanFace, Sparkles } from "lucide-react";
+import { Activity, AlertTriangle, AudioLines, RefreshCw, ScanFace, Sparkles } from "lucide-react";
 
 import type { MediaDeviceStatusTone } from "../lib/mediaDeviceFeedback";
 import { cn } from "../lib/utils";
@@ -7,7 +7,6 @@ import type {
   ConsultationMultimodalLive,
   ConsultationSession,
   ConsultationTurnMultimodalBundle,
-  EegLiveResult,
   EegWaveSample,
   FacePoseMultimodalLive,
   MultimodalRankedLabel,
@@ -15,6 +14,9 @@ import type {
   TextMultimodalLive,
 } from "../types";
 import { CameraPreview } from "./CameraPreview";
+import { EegEmotionImagePanel } from "./eeg/EegEmotionImagePanel";
+import { EegHeaderSummary } from "./eeg/EegHeaderSummary";
+import { normalizeEegEmotionDistribution } from "./eeg/eegEmotionPresentation";
 
 const EEG_CHANNEL_COLORS = ["#60a5fa", "#34d399", "#f59e0b"];
 const EEG_VIEWBOX_PADDING_Y = 10;
@@ -22,9 +24,9 @@ const EEG_RENDER_POINT_LIMIT = 2048;
 const EEG_CANVAS_BOUNDS_EPSILON = 0.001;
 const EEG_CANVAS_BOUNDS_FRAME_ALPHA = 0.05;
 const EEG_CANVAS_FRAME_INTERVAL_MS = 50;
+const EEG_BOUNDS_UPDATE_INTERVAL_MS = 480;
 const EEG_MIN_VISIBLE_UPPER_UV = 20;
 const EEG_MAX_VISIBLE_LOWER_UV = -20;
-const EEG_PROBABILITY_LABELS = ["\u6d88\u6781", "\u4e2d\u6027", "\u79ef\u6781"];
 
 type EegWaveSampleMeta = {
   length: number;
@@ -198,7 +200,8 @@ function drawEegWaveCanvas(
   values: number[],
   color: string,
   bounds: EegWaveBounds,
-  offsetSamples: number,
+  visibleSampleCount: number,
+  windowStartSample: number,
 ) {
   const context = canvas.getContext("2d");
   if (!context) {
@@ -213,10 +216,12 @@ function drawEegWaveCanvas(
   const bottomGuideY = height - EEG_VIEWBOX_PADDING_Y;
   const plotHeight = Math.max(1, height - EEG_VIEWBOX_PADDING_Y * 2);
   const span = Math.max(bounds.upperBound - bounds.lowerBound, EEG_CANVAS_BOUNDS_EPSILON);
-  const step = Math.max(1, Math.ceil(values.length / EEG_RENDER_POINT_LIMIT));
-  const renderedPointCount = Math.max(1, Math.ceil(values.length / step));
+  const effectiveVisibleSampleCount = Math.max(1, Math.min(visibleSampleCount, values.length));
+  const maxWindowStart = Math.max(0, values.length - effectiveVisibleSampleCount);
+  const clampedWindowStart = clampNumber(windowStartSample, 0, maxWindowStart);
+  const renderedPointCount = Math.max(2, Math.min(EEG_RENDER_POINT_LIMIT, Math.round(width)));
   const denominator = Math.max(1, renderedPointCount - 1);
-  const scrollOffset = clampNumber(offsetSamples / step, 0, denominator);
+  const sampleSpan = Math.max(0, effectiveVisibleSampleCount - 1);
 
   context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   context.clearRect(0, 0, width, height);
@@ -246,30 +251,22 @@ function drawEegWaveCanvas(
   context.lineJoin = "round";
   context.beginPath();
 
-  let hasStarted = false;
-  let renderIndex = 0;
-  for (let index = 0; index < values.length; index += step) {
-    const x = ((renderIndex + scrollOffset) / denominator) * width;
-    if (x < -12 || x > width + 12) {
-      renderIndex += 1;
-      continue;
-    }
-
-    const normalized = (values[index] - bounds.lowerBound) / span;
+  for (let pointIndex = 0; pointIndex < renderedPointCount; pointIndex += 1) {
+    const ratio = pointIndex / denominator;
+    const samplePosition =
+      sampleSpan > 0 ? clampedWindowStart + ratio * sampleSpan : clampedWindowStart;
+    const interpolatedValue = interpolateWaveValue(values, samplePosition);
+    const normalized = (interpolatedValue - bounds.lowerBound) / span;
     const y = EEG_VIEWBOX_PADDING_Y + (1 - clampNumber(normalized, 0, 1)) * plotHeight;
+    const x = ratio * width;
 
-    if (!hasStarted) {
-      context.moveTo(x, y);
-      hasStarted = true;
+    if (pointIndex === 0) {
+      context.moveTo(0, y);
     } else {
       context.lineTo(x, y);
     }
-    renderIndex += 1;
   }
-
-  if (hasStarted) {
-    context.stroke();
-  }
+  context.stroke();
 }
 
 function extractEegWaveSampleMeta(samples: EegWaveSample[]): EegWaveSampleMeta {
@@ -308,6 +305,25 @@ function buildEmptyWaveBounds(): EegWaveBounds {
   };
 }
 
+function interpolateWaveValue(values: number[], samplePosition: number) {
+  if (values.length === 0) {
+    return 0;
+  }
+  if (values.length === 1 || samplePosition <= 0) {
+    return values[0];
+  }
+
+  const lastIndex = values.length - 1;
+  if (samplePosition >= lastIndex) {
+    return values[lastIndex];
+  }
+
+  const leftIndex = Math.floor(samplePosition);
+  const rightIndex = Math.min(lastIndex, leftIndex + 1);
+  const ratio = samplePosition - leftIndex;
+  return values[leftIndex] + (values[rightIndex] - values[leftIndex]) * ratio;
+}
+
 function extractChannelValues(samples: EegWaveSample[], channelIndex: number) {
   return samples.map((sample) => {
     const value = sample.values?.[channelIndex];
@@ -315,19 +331,21 @@ function extractChannelValues(samples: EegWaveSample[], channelIndex: number) {
   });
 }
 
-function appendValuesToFixedBuffer(buffer: number[], values: number[], maxLength: number) {
+function appendValuesToWaveBuffer(buffer: number[], values: number[], maxVisibleLength: number) {
   if (values.length === 0) {
     return;
   }
-  if (values.length >= maxLength) {
-    buffer.splice(0, buffer.length, ...values.slice(values.length - maxLength));
-    return;
-  }
-  const overflow = Math.max(0, buffer.length + values.length - maxLength);
+
+  buffer.push(...values);
+  const maxBufferLength = Math.max(maxVisibleLength * 2, maxVisibleLength + values.length * 4);
+  const overflow = Math.max(0, buffer.length - maxBufferLength);
   if (overflow > 0) {
     buffer.splice(0, overflow);
   }
-  buffer.push(...values);
+}
+
+function shouldUpdateWaveBounds(lastUpdatedAt: number, now: number) {
+  return now - lastUpdatedAt >= EEG_BOUNDS_UPDATE_INTERVAL_MS;
 }
 
 type EegWaveChannelPlotProps = {
@@ -371,6 +389,7 @@ function EegWaveChannelPlot({
   const targetBoundsRef = useRef<EegWaveBounds>(buildEmptyWaveBounds());
   const displayBoundsRef = useRef<EegWaveBounds>(buildEmptyWaveBounds());
   const valuesRef = useRef<number[]>([]);
+  const lastBoundsUpdateAtRef = useRef(0);
   const [axisBounds, setAxisBounds] = useState<EegWaveBounds>(buildEmptyWaveBounds());
 
   useEffect(() => {
@@ -381,6 +400,7 @@ function EegWaveChannelPlot({
     const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
     targetBoundsRef.current = nextBounds;
     setAxisBounds(nextBounds);
+    lastBoundsUpdateAtRef.current = performance.now();
   }, []);
 
   useEffect(() => {
@@ -396,6 +416,7 @@ function EegWaveChannelPlot({
       targetBoundsRef.current = nextBounds;
       displayBoundsRef.current = nextBounds;
       setAxisBounds(nextBounds);
+      lastBoundsUpdateAtRef.current = performance.now();
       lastAppliedFullMetaRef.current = fullMeta;
       lastAppliedAppendMetaRef.current = appendMeta;
       lastFrameAtRef.current = null;
@@ -406,11 +427,22 @@ function EegWaveChannelPlot({
       appendValues.length > 0 &&
       !areEegWaveSampleMetasEqual(lastAppliedAppendMetaRef.current, appendMeta)
     ) {
-      appendValuesToFixedBuffer(valuesRef.current, appendValues, maxSamples);
-      pendingShiftSamplesRef.current += appendValues.length;
-      const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
-      targetBoundsRef.current = nextBounds;
-      setAxisBounds(nextBounds);
+      appendValuesToWaveBuffer(valuesRef.current, appendValues, maxSamples);
+      const maxPendingShiftSamples = Math.max(
+        0,
+        valuesRef.current.length - Math.min(maxSamples, valuesRef.current.length),
+      );
+      pendingShiftSamplesRef.current = Math.min(
+        pendingShiftSamplesRef.current + appendValues.length,
+        maxPendingShiftSamples,
+      );
+      const now = performance.now();
+      if (shouldUpdateWaveBounds(lastBoundsUpdateAtRef.current, now)) {
+        const nextBounds = computeAdaptiveWaveBounds(valuesRef.current);
+        targetBoundsRef.current = nextBounds;
+        setAxisBounds(nextBounds);
+        lastBoundsUpdateAtRef.current = now;
+      }
       lastAppliedAppendMetaRef.current = appendMeta;
     }
   }, [appendMeta, appendValues, fullMeta, fullValues, maxSamples, reset]);
@@ -435,6 +467,11 @@ function EegWaveChannelPlot({
             (Math.max(1, samplingRateRef.current) * elapsedMs) / 1000,
         );
         pendingShiftSamplesRef.current = pendingShiftSamples;
+        const visibleSampleCount = Math.max(1, Math.min(maxSamples, valuesRef.current.length));
+        const windowStartSample = Math.max(
+          0,
+          valuesRef.current.length - visibleSampleCount - pendingShiftSamples,
+        );
 
         const displayBounds = displayBoundsRef.current;
         const targetBounds = targetBoundsRef.current;
@@ -452,7 +489,8 @@ function EegWaveChannelPlot({
           valuesRef.current,
           color,
           displayBoundsRef.current,
-          pendingShiftSamples,
+          visibleSampleCount,
+          windowStartSample,
         );
       }
 
@@ -466,12 +504,18 @@ function EegWaveChannelPlot({
       if (!canvas) {
         return;
       }
+      const visibleSampleCount = Math.max(1, Math.min(maxSamples, valuesRef.current.length));
+      const windowStartSample = Math.max(
+        0,
+        valuesRef.current.length - visibleSampleCount - pendingShiftSamplesRef.current,
+      );
       drawEegWaveCanvas(
         canvas,
         valuesRef.current,
         color,
         displayBoundsRef.current,
-        0,
+        visibleSampleCount,
+        windowStartSample,
       );
     };
 
@@ -482,7 +526,7 @@ function EegWaveChannelPlot({
         window.cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, []);
+  }, [color, maxSamples]);
 
   return (
     <div className="relative h-full overflow-hidden rounded-[10px] border border-white/8 bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.32))]">
@@ -527,7 +571,7 @@ const EegWavePreview = memo(function EegWavePreview({
     () => visibleChannelNames.map((_, channelIndex) => extractChannelValues(appendSamples, channelIndex)),
     [appendSamples, visibleChannelNames],
   );
-  const maxSamples = Math.max(samples.length, samplingRate * 4, EEG_RENDER_POINT_LIMIT);
+  const maxSamples = Math.max(1, samples.length, samplingRate * 4);
 
   return (
     <div
@@ -578,43 +622,6 @@ const EegWavePreview = memo(function EegWavePreview({
   );
 });
 
-function getEegSummaryText(live: ConsultationMultimodalLive) {
-  const latestResult = live.eeg_live.latest_result;
-  if (latestResult?.primary_label) {
-    return `${latestResult.primary_label} · ${formatPercent(latestResult.primary_score)}`;
-  }
-  if (live.eeg_live.device_status === "streaming") {
-    return "设备已连接，等待形成窗口结果";
-  }
-  if (live.eeg_live.error_message) {
-    return live.eeg_live.error_message;
-  }
-  return "等待脑电设备实时信号";
-}
-
-function getEegDeviceText(live: ConsultationMultimodalLive) {
-  const channelNames = live.eeg_waves.channel_names || live.eeg_live.channel_names || [];
-  const samplingRate = live.eeg_waves.sampling_rate || live.eeg_live.sampling_rate;
-  const status = live.eeg_live.device_status || live.eeg_live.status || "pending";
-  const statusMap: Record<string, string> = {
-    disabled: "未启用",
-    idle: "待绑定",
-    scanning: "扫描中",
-    connecting: "连接中",
-    connected: "已连接",
-    streaming: "采集中",
-    disconnected: "未连接",
-    dependency_missing: "依赖缺失",
-    pending: "等待中",
-  };
-  const parts = [
-    `状态 ${statusMap[status] || status}`,
-    channelNames.length > 0 ? `${channelNames.join(" / ")}` : null,
-    typeof samplingRate === "number" ? `${samplingRate}Hz` : null,
-  ].filter(Boolean);
-  return parts.join(" · ");
-}
-
 function formatPercent(score?: number | null) {
   if (typeof score !== "number" || Number.isNaN(score)) {
     return "0%";
@@ -635,28 +642,6 @@ function getPrimaryLabel(label?: string | null, status?: string) {
 
 function getTopLabels(labels?: MultimodalRankedLabel[]) {
   return (labels || []).slice(0, 4);
-}
-
-function getEegDistribution(result?: EegLiveResult | null) {
-  const labels = result?.top_3_labels || [];
-  if (labels.length === 0) {
-    return [];
-  }
-
-  const scoreByLabel = new Map<string, number>();
-  for (const item of labels) {
-    if (!item?.label) {
-      continue;
-    }
-    scoreByLabel.set(item.label, typeof item.score === "number" ? item.score : 0);
-  }
-
-  const ordered = EEG_PROBABILITY_LABELS.map((label) => ({
-    label,
-    score: scoreByLabel.get(label) ?? 0,
-  }));
-  const hasKnownLabels = ordered.some((item) => item.score > 0);
-  return hasKnownLabels ? ordered : labels.slice(0, 3);
 }
 
 function readBundleFaceSummary(bundle?: ConsultationTurnMultimodalBundle | null) {
@@ -803,12 +788,16 @@ function SectionCard({
   title,
   children,
   rightStatus = "实时",
+  headerRight,
   className,
+  contentClassName,
 }: {
   title: string;
   children: ReactNode;
   rightStatus?: string;
+  headerRight?: ReactNode;
   className?: string;
+  contentClassName?: string;
 }) {
   return (
     <div
@@ -817,14 +806,18 @@ function SectionCard({
         className,
       )}
     >
-      <div className="flex items-center justify-between px-2 py-1">
-        <h3 className="text-[13px] font-semibold text-slate-100 tracking-wide">{title}</h3>
-        <div className="flex items-center gap-1 text-[10px] text-slate-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-          {rightStatus}
-        </div>
+      <div className={cn("flex justify-between gap-2 px-2 py-1", headerRight ? "items-start" : "items-center")}>
+        <h3 className="min-w-0 text-[13px] font-semibold tracking-wide text-slate-100">{title}</h3>
+        {headerRight ? (
+          <div className="min-w-0 flex-1">{headerRight}</div>
+        ) : (
+          <div className="flex items-center gap-1 text-[10px] text-slate-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+            {rightStatus}
+          </div>
+        )}
       </div>
-      <div className="flex-1 min-h-0 px-2 pb-2">{children}</div>
+      <div className={cn("flex-1 min-h-0 px-2 pb-2", contentClassName)}>{children}</div>
     </div>
   );
 }
@@ -903,13 +896,15 @@ export function ConsultationStatusPanel({
   const currentTurnFaceBundle = readBundleFaceSummary(consultation.current_turn_bundle);
   const currentTurnPoseBundle = readBundlePoseSummary(consultation.current_turn_bundle);
   const visualPipeline = consultation.visual_pipeline || null;
+  const liveFacePrimaryLabel = snapshot.face.primary_label || currentTurnFaceBundle.primary_label;
+  const liveFacePrimaryScore = snapshot.face.primary_score ?? currentTurnFaceBundle.primary_score;
   const faceLabels =
     currentTurnFaceBundle.label_distribution.length > 0
       ? currentTurnFaceBundle.label_distribution
       : getTopLabels(snapshot.face.top_3_labels);
   const textWords = snapshot.text.negative_terms || [];
   const eegLatestResult = snapshot.eeg_live.latest_result;
-  const eegDistribution = getEegDistribution(eegLatestResult);
+  const eegDistribution = normalizeEegEmotionDistribution(eegLatestResult?.top_3_labels);
   const eegChannelNames = snapshot.eeg_waves.channel_names || snapshot.eeg_live.channel_names || ["T7", "T8", "Fpz"];
   const eegSamplingRate = snapshot.eeg_waves.sampling_rate || snapshot.eeg_live.sampling_rate || 500;
   const eegSamples = snapshot.eeg_waves.samples || [];
@@ -918,7 +913,7 @@ export function ConsultationStatusPanel({
   const eegHasSamples = Boolean(eegSamples.length || eegAppendSamples.length);
 
   return (
-    <div className={cn("w-full h-full min-h-0 font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
+    <div className={cn("w-full min-h-full font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
       <div className="flex items-center justify-between py-2 px-4 top-0 sticky bg-slate-900/82 backdrop-blur-md z-10 border-b border-indigo-500/20 shadow-md">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-indigo-300" />
@@ -950,9 +945,13 @@ export function ConsultationStatusPanel({
         </div>
       ) : null}
 
-      <div className="flex-1 flex flex-col gap-[3px] p-[3px]">
-        <SectionCard title="表情检测" rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}>
-          <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[132px]">
+      <div className="flex flex-col gap-[3px] p-[3px]">
+        <SectionCard
+          title="表情检测"
+          className="min-h-[220px]"
+          rightStatus={snapshot.face.status === "failed" ? "failed" : snapshot.face.status === "ready" ? "ready" : "pending"}
+        >
+          <div className="grid grid-cols-[1.2fr_0.8fr] gap-[3px] h-[176px]">
             <div className="h-full overflow-hidden rounded-[16px] border border-white/8">
               <CameraPreview
                 className="h-full w-full !rounded-none !border-none !shadow-none"
@@ -974,10 +973,10 @@ export function ConsultationStatusPanel({
                 </div>
                 <div>
                   <div className="text-[17px] font-bold leading-none text-emerald-400">
-                    {getPrimaryLabel(currentTurnFaceBundle.primary_label || snapshot.face.primary_label, snapshot.face.status)}
+                    {getPrimaryLabel(liveFacePrimaryLabel, snapshot.face.status)}
                   </div>
                   <div className="mt-0.5 text-[11px] text-slate-300">
-                    {formatPercent(currentTurnFaceBundle.primary_score ?? snapshot.face.primary_score)} 置信度
+                    {formatPercent(liveFacePrimaryScore)} 置信度
                   </div>
                 </div>
               </div>
@@ -996,16 +995,19 @@ export function ConsultationStatusPanel({
 
         <SectionCard
           title="脑电情绪监测"
-          className="min-h-[202px]"
-          rightStatus={
-            snapshot.eeg_live.device_status === "streaming"
-              ? "streaming"
-              : eegHasSamples
-                ? "ready"
-                : snapshot.eeg_live.device_status || snapshot.eeg_live.status || "pending"
+          className="min-h-[298px]"
+          contentClassName="px-2 pb-2"
+          headerRight={
+            <EegHeaderSummary
+              distribution={eegDistribution}
+              primaryLabel={eegLatestResult?.primary_label}
+              primaryScore={eegLatestResult?.primary_score}
+              deviceStatus={snapshot.eeg_live.device_status}
+              errorMessage={snapshot.eeg_live.error_message}
+            />
           }
         >
-          <div className="grid h-[194px] grid-cols-[1.82fr_0.98fr] gap-[3px]">
+          <div className="grid h-[264px] grid-cols-[1.62fr_1.18fr] gap-[3px]">
             <div className="min-w-0 h-full overflow-hidden rounded-[16px] bg-white/[0.03] px-2 py-2">
               {eegHasSamples ? (
                 <EegWavePreview
@@ -1021,72 +1023,44 @@ export function ConsultationStatusPanel({
                 </div>
               )}
             </div>
-            <div className="rounded-[16px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(96,165,250,0.16),transparent_58%)] px-2 py-1.5">
-              <div className="flex h-full flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <BrainCircuit className="h-5 w-5 text-indigo-200/80" />
-                    <div className="text-[13px] font-semibold text-slate-100">实时脑电</div>
-                  </div>
-                  <div className="mt-1.5 text-[16px] font-bold leading-none text-sky-300">
-                    {eegLatestResult?.primary_label || "等待中"}
-                  </div>
-                  <div className="mt-1 text-[10px] text-slate-300">{getEegSummaryText(snapshot)}</div>
-                </div>
-                <div className="mt-2 min-h-0 space-y-1 overflow-y-auto pr-1">
-                  {eegDistribution.length > 0 ? (
-                    eegDistribution.map((item) => (
-                      <DistributionBar key={item.label} label={item.label} value={item.score} />
-                    ))
-                  ) : (
-                    <div className="rounded-[12px] border border-dashed border-white/10 px-2 py-2 text-center text-[10px] text-slate-400">
-                      绛夊緟 10s EEG 绐楀彛缁撴灉
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Device</div>
-                    <div className="mt-0.5 text-[10px] leading-4 text-slate-200">{getEegDeviceText(snapshot)}</div>
-                  </div>
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Window</div>
-                    <div className="mt-0.5 text-[10px] leading-4 text-slate-200">
-                      {typeof eegLatestResult?.window_index === "number"
-                        ? `window-${eegLatestResult.window_index}`
-                        : "尚未形成推理窗口"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <EegEmotionImagePanel
+              distribution={eegDistribution}
+              primaryLabel={eegLatestResult?.primary_label}
+              primaryScore={eegLatestResult?.primary_score}
+              deviceStatus={snapshot.eeg_live.device_status}
+              errorMessage={snapshot.eeg_live.error_message}
+            />
           </div>
         </SectionCard>
 
-        <div className="grid grid-cols-2 gap-[3px]">
-          <SectionCard title="姿态情绪检测" rightStatus={snapshot.pose.status === "failed" ? "failed" : snapshot.pose.status === "ready" ? "ready" : "pending"}>
-            <div className="flex h-full gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
+        <div className="grid grid-cols-2 items-start gap-[3px]">
+          <SectionCard
+            title="姿态情绪检测"
+            className="h-[196px]"
+            rightStatus={snapshot.pose.status === "failed" ? "failed" : snapshot.pose.status === "ready" ? "ready" : "pending"}
+          >
+            <div className="grid h-full grid-cols-[40px_1fr] gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/12 text-cyan-300">
                 <Activity className="h-5 w-5" />
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[18px] font-semibold text-slate-100">
+              <div className="min-w-0 overflow-hidden">
+                <div className="text-[16px] font-semibold text-slate-100">
                   {getPrimaryLabel(currentTurnPoseBundle.primary_label || snapshot.pose.primary_label, snapshot.pose.status)}
                 </div>
-                <div className="mt-1 text-[12px] text-emerald-300">
+                <div className="mt-0.5 text-[11px] text-emerald-300">
                   {formatPercent(currentTurnPoseBundle.primary_score ?? snapshot.pose.primary_score)} 置信度
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">{getPoseDetail(snapshot.pose, currentTurnPoseBundle)}</div>
-                <div className="mt-2 space-y-1.5">
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                <div className="mt-0.5 line-clamp-1 text-[10px] text-slate-400">{getPoseDetail(snapshot.pose, currentTurnPoseBundle)}</div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Latest Live Result</div>
-                    <div className="mt-1 text-[12px] font-medium text-slate-200">
+                    <div className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-slate-200">
                       {getPoseSourceSummary(snapshot.pose.primary_label, snapshot.pose.primary_score, snapshot.pose.status)}
                     </div>
                   </div>
-                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2.5 py-2">
+                  <div className="rounded-[12px] border border-white/8 bg-slate-950/20 px-2 py-1.5">
                     <div className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Current Turn Bundle Result</div>
-                    <div className="mt-1 text-[12px] font-medium text-slate-200">
+                    <div className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-slate-200">
                       {currentTurnPoseBundle.primary_label || typeof currentTurnPoseBundle.primary_score === "number"
                         ? getPoseSourceSummary(currentTurnPoseBundle.primary_label, currentTurnPoseBundle.primary_score, snapshot.pose.status)
                         : "当前轮尚未形成 pose bundle 聚合结果"}
@@ -1097,7 +1071,11 @@ export function ConsultationStatusPanel({
             </div>
           </SectionCard>
 
-          <SectionCard title="语音情绪检测" rightStatus={snapshot.speech.status === "ready" ? "ready" : "pending"}>
+          <SectionCard
+            title="语音情绪检测"
+            className="h-[196px]"
+            rightStatus={snapshot.speech.status === "ready" ? "ready" : "pending"}
+          >
             <div className="flex h-full items-center gap-3 rounded-[16px] bg-white/[0.03] px-2 py-2">
               <div className="flex-1">
                 <WaveBars active={isRecording} />

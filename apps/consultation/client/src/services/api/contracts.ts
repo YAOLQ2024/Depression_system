@@ -368,3 +368,19 @@ export type EncounterDetailData = {
 export type EncounterDetailResponse = {
   encounter: EncounterDetailData;
 };
+
+export type EncounterScaleHistoryPoint = {
+  encounter_id?: string | null;
+  encounter_status?: string | null;
+  assessment_session_id?: string | null;
+  assessment_status?: string | null;
+  completed_at: string;
+  raw_score?: number | null;
+  derived_score?: number | null;
+  score: number;
+};
+
+export type EncounterScaleHistoryResponse = {
+  scale_slug: string;
+  history: EncounterScaleHistoryPoint[];
+};

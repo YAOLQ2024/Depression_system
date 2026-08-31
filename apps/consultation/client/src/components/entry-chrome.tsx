@@ -2,7 +2,7 @@ import { Shield } from "lucide-react";
 
 export const entryBackgroundStyle = {
   backgroundImage:
-    "linear-gradient(90deg, rgba(14,24,56,0.52) 0%, rgba(18,32,72,0.30) 34%, rgba(18,32,72,0.10) 60%, rgba(18,32,72,0.22) 100%), url('/cover-background-v2.png')",
+    "linear-gradient(90deg, rgba(14,24,56,0.52) 0%, rgba(18,32,72,0.30) 34%, rgba(18,32,72,0.10) 60%, rgba(18,32,72,0.22) 100%), url('/yun.jpg')",
   backgroundPosition: "center",
   backgroundSize: "cover",
 };
@@ -21,11 +21,11 @@ function cx(...classes: Array<string | false | null | undefined>) {
 
 export function EntryBrand({ className }: EntryBrandProps) {
   return (
-    <header className={cx("absolute left-8 top-8 z-20 md:left-10 md:top-10", className)}>
-      <div className="rounded-[22px] bg-white/8 px-3.5 py-3.5 shadow-[0_14px_36px_rgba(18,32,72,0.16)] ring-1 ring-white/12 backdrop-blur-md">
+    <header className={cx("absolute left-[clamp(1rem,2.1vw,2.6rem)] top-[clamp(1rem,2.1vw,2.4rem)] z-20", className)}>
+      <div className="rounded-[clamp(18px,2.4vw,30px)] bg-white/14 px-[clamp(0.75rem,1.3vw,1.25rem)] py-[clamp(0.7rem,1.2vw,1.05rem)] shadow-[0_18px_44px_rgba(72,52,164,0.2)] ring-1 ring-white/18 backdrop-blur-xl">
         <img
           alt="Artificial Intelligence in Medicine Lab"
-          className="h-10 w-auto object-contain md:h-12"
+          className="h-auto w-[clamp(11rem,22vw,29rem)] max-w-[72vw] object-contain"
           src="/aim-brand-lockup-transparent-clean.png"
         />
       </div>
@@ -35,10 +35,15 @@ export function EntryBrand({ className }: EntryBrandProps) {
 
 export function EntryFooter({ className }: EntryFooterProps) {
   return (
-    <footer className={cx("absolute inset-x-0 bottom-0 z-20 flex w-full justify-center px-6 pb-5", className)}>
-      <div className="flex w-full max-w-[980px] flex-col items-center justify-center gap-1 text-center text-[0.72rem] leading-5 text-white/40">
+    <footer
+      className={cx(
+        "absolute inset-x-0 bottom-0 z-20 flex w-full justify-center px-[clamp(1rem,3vw,2.4rem)] pb-[clamp(1rem,2vw,1.7rem)]",
+        className,
+      )}
+    >
+      <div className="flex w-full max-w-[1120px] flex-col items-center justify-center gap-1.5 text-center text-[clamp(0.82rem,0.78vw,1.02rem)] leading-[1.7] text-[#7b54c6]/86">
         <div className="inline-flex items-center gap-2">
-          <Shield size={13} />
+          <Shield className="h-[clamp(0.9rem,0.88vw,1.08rem)] w-[clamp(0.9rem,0.88vw,1.08rem)]" />
           <span>所有信息仅用于医疗评估流程，传输与存储均受保护。</span>
         </div>
         <p>本系统用于辅助评估，不替代临床诊断。</p>

@@ -14,6 +14,7 @@ import type {
   ResultRiskFlag,
   ResultScaleBrief,
   ResultScaleItem,
+  ResultTrendPoint,
 } from "./types";
 
 const CONSULTATION_SUMMARY_SECTION_DEFINITIONS = [
@@ -124,6 +125,41 @@ function formatDateTime(value?: string | null) {
   });
 
   return formatter.format(candidate).replace(/\//g, "-");
+}
+
+function formatTrendDate(value?: string | null) {
+  const normalized = asString(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const candidate = new Date(normalized);
+  if (Number.isNaN(candidate.getTime())) {
+    return normalized;
+  }
+
+  const month = String(candidate.getMonth() + 1).padStart(2, "0");
+  const day = String(candidate.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
+}
+
+export function buildTrendPointsFromHistory(
+  items: Array<{ completed_at?: string | null; score?: number | null }> | null | undefined,
+): ResultTrendPoint[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.reduce<ResultTrendPoint[]>((accumulator, item) => {
+    const score = asNumber(item?.score);
+    const date = formatTrendDate(item?.completed_at);
+    if (score === null || !date) {
+      return accumulator;
+    }
+
+    accumulator.push({ date, score });
+    return accumulator;
+  }, []);
 }
 
 function truncateText(value: string, maxLength = 54) {
@@ -245,7 +281,41 @@ function getScoreBreakdown(assessment: AssessmentSession | null) {
 function getAssessmentModuleValue(assessment: AssessmentSession | null) {
   const scoreBreakdown = getScoreBreakdown(assessment);
   const scaleScore = asRecord(scoreBreakdown?.scale_score);
-  return formatModuleScore(scaleScore?.value);
+  const explicitModuleScore = formatModuleScore(scaleScore?.value);
+  if (explicitModuleScore) {
+    return explicitModuleScore;
+  }
+
+  const results = assessment?.results || [];
+  if (results.length !== 1) {
+    return null;
+  }
+
+  const [singleResult] = results;
+  const directNormalizedScore = asNumber(singleResult?.normalized_score);
+  if (directNormalizedScore !== null) {
+    return formatModuleScore(directNormalizedScore);
+  }
+
+  const aggregate = asRecord(assessment?.aggregate_payload);
+  const normalizedScores = asRecord(aggregate?.normalized_scores);
+  const scaleResultMap = asRecord(aggregate?.scale_result_map);
+  const slug = asString(singleResult?.scale_slug);
+
+  if (slug) {
+    const normalizedScoreFromMap = asNumber(normalizedScores?.[slug]);
+    if (normalizedScoreFromMap !== null) {
+      return formatModuleScore(normalizedScoreFromMap);
+    }
+
+    const aggregateResult = asRecord(scaleResultMap?.[slug]);
+    const normalizedScoreFromAggregateResult = asNumber(aggregateResult?.normalized_score);
+    if (normalizedScoreFromAggregateResult !== null) {
+      return formatModuleScore(normalizedScoreFromAggregateResult);
+    }
+  }
+
+  return null;
 }
 
 function getMultimodalModuleValue(assessment: AssessmentSession | null) {
@@ -413,8 +483,88 @@ function buildScalePlaceholderItems(meta?: AssessmentCatalogItem | null): Result
   }));
 }
 
-function buildScaleItemsFromDetail(detail: AssessmentScaleDetail): ResultScaleItem[] {
+function formatItemScoreLabel(value: number) {
+  if (value > 0) {
+    return `+${value}分`;
+  }
+
+  if (value < 0) {
+    return `${value}分`;
+  }
+
+  return "0分";
+}
+
+function buildScaleItemScoreMeta(
+  detail: AssessmentScaleDetail,
+  result: AssessmentResult,
+  item: AssessmentScaleDetail["items"][number],
+) {
+  const selectedScore = asNumber(item.selected_option_score);
+  if (selectedScore === null) {
+    return {
+      effectiveScore: null,
+      effectiveScoreLabel: null,
+      effectiveScoreTone: null,
+      effectiveScoreHint: null,
+    };
+  }
+
+  const scoreDetails = asRecord(result.score_details);
+  const scoreMethod = getScaleScoreMethod(result);
+
+  if (scoreMethod === "sum_excluding_not_applicable") {
+    const notApplicableValue = asNumber(scoreDetails?.not_applicable_value);
+    if (notApplicableValue !== null && selectedScore === notApplicableValue) {
+      return {
+        effectiveScore: null,
+        effectiveScoreLabel: "不计分",
+        effectiveScoreTone: "excluded" as const,
+        effectiveScoreHint: "不适用项",
+      };
+    }
+  }
+
+  let effectiveScore = selectedScore;
+  let effectiveScoreHint: string | null = null;
+
+  if (scoreMethod === "standard_score") {
+    const reverseScoredItems = new Set(asStringArray(scoreDetails?.reverse_scored_items));
+    if (reverseScoredItems.has(item.item_id)) {
+      const optionScores = detail.answer_options
+        .map((option) => asNumber(option.score))
+        .filter((score): score is number => score !== null);
+
+      if (optionScores.length) {
+        const minimumScore = Math.min(...optionScores);
+        const maximumScore = Math.max(...optionScores);
+        effectiveScore = maximumScore + minimumScore - selectedScore;
+        effectiveScoreHint = "反向计分";
+      }
+    }
+  }
+
+  let effectiveScoreTone: ResultScaleItem["effectiveScoreTone"] = "neutral";
+  if (effectiveScore > 0) {
+    effectiveScoreTone = "positive";
+  } else if (effectiveScore < 0) {
+    effectiveScoreTone = "negative";
+  }
+
+  return {
+    effectiveScore,
+    effectiveScoreLabel: formatItemScoreLabel(effectiveScore),
+    effectiveScoreTone,
+    effectiveScoreHint,
+  };
+}
+
+function buildScaleItemsFromDetail(
+  detail: AssessmentScaleDetail,
+  result: AssessmentResult,
+): ResultScaleItem[] {
   return detail.items.map((item) => ({
+    ...buildScaleItemScoreMeta(detail, result, item),
     no: item.item_index,
     label: sanitizeScaleItemLabel(detail.scale_slug, item.item_index, item.question_text),
     answerLabel: asString(item.selected_option_label),
@@ -635,7 +785,7 @@ function buildScaleDetail(
   const verificationStatus = getVerificationStatus(result);
   const riskFlags = buildScaleRiskFlags(result);
   const placeholderItems = buildScalePlaceholderItems(meta);
-  const detailItems = scaleDetail ? buildScaleItemsFromDetail(scaleDetail) : placeholderItems;
+  const detailItems = scaleDetail ? buildScaleItemsFromDetail(scaleDetail, result) : placeholderItems;
   const itemResultsReady = Boolean(scaleDetail);
   const severity = resolveDisplaySeverity({
     slug,

@@ -30,6 +30,7 @@ docs/superpowers/
 refer/
 
 tmp/
+.codex-tmp/
 tools/eeg-tools/.env
 tools/eeg-tools/data/
 tools/eeg-tools/tmp/
@@ -46,3 +47,6 @@ eeg-bridge.exe
 !services/consultation-service/tests/
 services/multimodal-service/tests/test_multimodal_scope_rules.py
 services/multimodal-service/tests/test_multimodal_visual_service.py
+
+tmp_export_audio/
+tmp_response_original.webm

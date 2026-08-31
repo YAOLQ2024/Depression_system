@@ -56,6 +56,7 @@ DEFAULT_MULTIMODAL_WEIGHTS: dict[str, float] = {
     "face": 0.30,
     "pose": 0.10,
 }
+DEFAULT_MODALITY_CONFIDENCE_FLOOR = 0.10
 DEFAULT_DEPRESSION_SEVERITY_BANDS: list[dict[str, Any]] = [
     {"min": 0.0, "max": 24.99, "level": "minimal", "label": "无或极轻度抑郁倾向"},
     {"min": 25.0, "max": 49.99, "level": "mild", "label": "轻度抑郁倾向"},
@@ -655,6 +656,176 @@ def _lookup_modality_section(container: dict[str, Any], modality: str) -> Any:
     return None
 
 
+def _resolve_multimodal_container(multimodal_payload: dict[str, Any]) -> dict[str, Any]:
+    container = _ensure_json_dict(multimodal_payload.get("bundle"))
+    if not container:
+        container = _ensure_json_dict(multimodal_payload.get("live_snapshot"))
+    if not container:
+        container = _ensure_json_dict(multimodal_payload)
+    return container
+
+
+def _clamp_01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _clamp_100(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
+def _normalize_confidence_value(value: Any) -> float | None:
+    numeric = _safe_float(value)
+    if numeric is None:
+        return None
+    if numeric > 1.0:
+        numeric = numeric / 100.0
+    return round(_clamp_01(numeric), 4)
+
+
+def _normalize_score_value(value: Any) -> float | None:
+    numeric = _safe_float(value)
+    if numeric is None:
+        return None
+    if numeric <= 1.0:
+        numeric = numeric * 100.0
+    return round(_clamp_100(numeric), 2)
+
+
+def _extract_top_label_confidence(section: dict[str, Any]) -> float | None:
+    for key in ("confidence", "primary_score", "primary_ratio", "score"):
+        normalized = _normalize_confidence_value(section.get(key))
+        if normalized is not None:
+            return normalized
+
+    top_labels = section.get("top_3_labels")
+    if not isinstance(top_labels, list):
+        return None
+    for item in top_labels:
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_confidence_value(item.get("score"))
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _extract_quality_ratio(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    numeric = _safe_float(value)
+    if numeric is None:
+        return None
+    if numeric > 1.0:
+        numeric = numeric / 100.0
+    return round(_clamp_01(numeric), 4)
+
+
+def _extract_coverage_ratio(section: dict[str, Any]) -> float | None:
+    sample_count = _safe_float(section.get("sample_count"))
+    valid_sample_count = _safe_float(section.get("valid_sample_count"))
+    if sample_count is None or sample_count <= 0 or valid_sample_count is None:
+        return None
+    return round(_clamp_01(valid_sample_count / sample_count), 4)
+
+
+def _compute_quality_factor(section: dict[str, Any], *, modality: str) -> float | None:
+    quality_flags = _ensure_json_dict(section.get("quality_flags"))
+    if modality == "face":
+        no_face_ratio = _extract_quality_ratio(
+            quality_flags.get("no_face_ratio", quality_flags.get("no_face"))
+        )
+        blur_ratio = _extract_quality_ratio(
+            quality_flags.get("blur_ratio", quality_flags.get("blur"))
+        )
+        low_light_ratio = _extract_quality_ratio(
+            quality_flags.get("low_light_ratio", quality_flags.get("low_light"))
+        )
+        ratios = [item for item in (no_face_ratio, blur_ratio, low_light_ratio) if item is not None]
+        if not ratios:
+            return None
+        penalty = (
+            0.60 * (no_face_ratio or 0.0)
+            + 0.25 * (blur_ratio or 0.0)
+            + 0.15 * (low_light_ratio or 0.0)
+        )
+        return round(_clamp_01(1.0 - penalty), 4)
+
+    if modality == "pose":
+        no_pose_ratio = _extract_quality_ratio(
+            quality_flags.get("no_pose_ratio", quality_flags.get("no_pose"))
+        )
+        body_cutoff_ratio = _extract_quality_ratio(
+            quality_flags.get("body_cutoff_ratio", quality_flags.get("body_cutoff"))
+        )
+        motion_blur_ratio = _extract_quality_ratio(
+            quality_flags.get("motion_blur_ratio", quality_flags.get("motion_blur"))
+        )
+        ratios = [item for item in (no_pose_ratio, body_cutoff_ratio, motion_blur_ratio) if item is not None]
+        if not ratios:
+            return None
+        penalty = (
+            0.60 * (no_pose_ratio or 0.0)
+            + 0.25 * (body_cutoff_ratio or 0.0)
+            + 0.15 * (motion_blur_ratio or 0.0)
+        )
+        return round(_clamp_01(1.0 - penalty), 4)
+
+    return None
+
+
+def _blend_confidence_components(
+    weighted_components: list[tuple[str, float, float | None]],
+    *,
+    default_value: float = 0.5,
+) -> tuple[float, dict[str, Any]]:
+    weighted_sum = 0.0
+    total_weight = 0.0
+    used_components: dict[str, float] = {}
+    for key, weight, value in weighted_components:
+        if value is None:
+            continue
+        weighted_sum += weight * value
+        total_weight += weight
+        used_components[key] = round(value, 4)
+    if total_weight <= 0:
+        return round(default_value, 4), {
+            "confidence_components": {},
+            "confidence_formula": "default_fallback",
+        }
+    return round(weighted_sum / total_weight, 4), {
+        "confidence_components": used_components,
+        "confidence_formula": "weighted_average_over_available_components",
+    }
+
+
+def _extract_top_label_distribution_score(
+    section: dict[str, Any],
+    *,
+    negative_labels: set[str],
+) -> tuple[float | None, dict[str, Any]]:
+    top_labels = section.get("top_3_labels")
+    if not isinstance(top_labels, list):
+        return None, {}
+
+    negative_total = 0.0
+    total_score = 0.0
+    for item in top_labels:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip().lower()
+        score = _safe_float(item.get("score"))
+        if score is None or score < 0:
+            continue
+        total_score += score
+        if label in negative_labels:
+            negative_total += score
+    if total_score <= 0:
+        return None, {}
+    return round(_clamp_100((negative_total / total_score) * 100.0), 2), {
+        "score_source": "top_3_labels_ratio",
+    }
+
+
 def _extract_label_distribution_score(
     section: dict[str, Any],
     *,
@@ -707,31 +878,27 @@ def _extract_modality_score(
     modality: str,
     negative_labels: set[str],
 ) -> tuple[float | None, dict[str, Any]]:
-    container = _ensure_json_dict(multimodal_payload.get("bundle"))
-    if not container:
-        container = _ensure_json_dict(multimodal_payload.get("live_snapshot"))
-    if not container:
-        container = multimodal_payload
+    container = _resolve_multimodal_container(multimodal_payload)
 
     modality_scores = container.get("modality_scores")
     if isinstance(modality_scores, dict):
         for key in (modality, f"{modality}_score"):
-            score = _safe_float(modality_scores.get(key))
+            score = _normalize_score_value(modality_scores.get(key))
             if score is not None:
                 return round(score, 2), {"score_source": "modality_scores"}
 
-    direct_score = _safe_float(container.get(f"{modality}_score"))
+    direct_score = _normalize_score_value(container.get(f"{modality}_score"))
     if direct_score is not None:
         return round(direct_score, 2), {"score_source": "top_level_score"}
 
     section = _lookup_modality_section(container, modality)
     if isinstance(section, (int, float)):
-        return round(float(section), 2), {"score_source": "section_numeric"}
+        return round(_normalize_score_value(section) or 0.0, 2), {"score_source": "section_numeric"}
     if not isinstance(section, dict):
         return None, {}
 
     for key in ("modality_score", "score", "normalized_score"):
-        score = _safe_float(section.get(key))
+        score = _normalize_score_value(section.get(key))
         if score is not None:
             return round(score, 2), {"score_source": key}
 
@@ -750,12 +917,99 @@ def _extract_modality_score(
     negative_ratio = _safe_float(section.get("negative_ratio"))
     if negative_ratio is not None:
         ratio_value = negative_ratio * 100.0 if negative_ratio <= 1 else negative_ratio
-        return round(ratio_value, 2), {"score_source": "negative_ratio"}
+        return round(_clamp_100(ratio_value), 2), {"score_source": "negative_ratio"}
+
+    top_label_score, top_label_metadata = _extract_top_label_distribution_score(
+        section,
+        negative_labels=negative_labels,
+    )
+    if top_label_score is not None:
+        return top_label_score, top_label_metadata
 
     return _extract_label_distribution_score(
         section,
         negative_labels=negative_labels,
     )
+
+
+def _compute_modality_confidence(
+    multimodal_payload: dict[str, Any],
+    *,
+    modality: str,
+) -> tuple[float | None, dict[str, Any]]:
+    container = _resolve_multimodal_container(multimodal_payload)
+    section = _lookup_modality_section(container, modality)
+    if not isinstance(section, dict):
+        if modality == "eeg":
+            score, _ = _extract_modality_score(multimodal_payload, modality=modality, negative_labels=set())
+            if score is not None:
+                return 0.6, {
+                    "confidence_components": {"availability": 0.6},
+                    "confidence_formula": "fixed_eeg_confidence",
+                }
+        return None, {}
+
+    if modality == "text":
+        model_confidence = _extract_top_label_confidence(section)
+        transcript_confidence = _normalize_confidence_value(section.get("transcript_confidence"))
+        if transcript_confidence is None:
+            speech_section = _lookup_modality_section(container, "speech")
+            if isinstance(speech_section, dict):
+                transcript_confidence = _normalize_confidence_value(
+                    speech_section.get("transcript_confidence")
+                )
+        transcript_text = str(section.get("transcript_text") or "").strip()
+        text_length_factor = round(_clamp_01(len(transcript_text) / 20.0), 4) if transcript_text else None
+        return _blend_confidence_components(
+            [
+                ("model_confidence", 0.5, model_confidence),
+                ("transcript_confidence", 0.3, transcript_confidence),
+                ("text_length_factor", 0.2, text_length_factor),
+            ]
+        )
+
+    if modality == "speech":
+        model_confidence = _extract_top_label_confidence(section)
+        transcript_confidence = _normalize_confidence_value(section.get("transcript_confidence"))
+        return _blend_confidence_components(
+            [
+                ("model_confidence", 0.7, model_confidence),
+                ("transcript_confidence", 0.3, transcript_confidence),
+            ]
+        )
+
+    if modality == "face":
+        model_confidence = _extract_top_label_confidence(section)
+        coverage_ratio = _extract_coverage_ratio(section)
+        quality_factor = _compute_quality_factor(section, modality="face")
+        return _blend_confidence_components(
+            [
+                ("model_confidence", 0.4, model_confidence),
+                ("coverage_ratio", 0.3, coverage_ratio),
+                ("quality_factor", 0.3, quality_factor),
+            ]
+        )
+
+    if modality == "pose":
+        coverage_ratio = _extract_coverage_ratio(section)
+        quality_factor = _compute_quality_factor(section, modality="pose")
+        return _blend_confidence_components(
+            [
+                ("coverage_ratio", 0.5, coverage_ratio),
+                ("quality_factor", 0.5, quality_factor),
+            ]
+        )
+
+    if modality == "eeg":
+        score, _ = _extract_modality_score(multimodal_payload, modality=modality, negative_labels=set())
+        if score is None:
+            return None, {}
+        return 0.6, {
+            "confidence_components": {"availability": 0.6},
+            "confidence_formula": "fixed_eeg_confidence",
+        }
+
+    return None, {}
 
 
 def _compute_weighted_score(
@@ -781,6 +1035,45 @@ def _compute_weighted_score(
                 "weighted_contribution": round(score * weight, 2),
             }
         )
+    if total_weight <= 0:
+        return None, used_components, missing_components
+    return round(weighted_sum / total_weight, 2), used_components, missing_components
+
+
+def _compute_confidence_weighted_score(
+    base_weights: dict[str, float],
+    score_lookup: dict[str, float],
+    confidence_lookup: dict[str, float],
+    *,
+    confidence_floor: float,
+) -> tuple[float | None, list[dict[str, Any]], list[str]]:
+    weighted_sum = 0.0
+    total_weight = 0.0
+    used_components: list[dict[str, Any]] = []
+    missing_components: list[str] = []
+    resolved_floor = _clamp_01(confidence_floor)
+
+    for key, base_weight in base_weights.items():
+        score = score_lookup.get(key)
+        if score is None:
+            missing_components.append(key)
+            continue
+
+        confidence = _clamp_01(confidence_lookup.get(key, 0.5))
+        effective_weight = base_weight * (resolved_floor + ((1.0 - resolved_floor) * confidence))
+        weighted_sum += score * effective_weight
+        total_weight += effective_weight
+        used_components.append(
+            {
+                "key": key,
+                "score": round(score, 2),
+                "base_weight": round(base_weight, 4),
+                "confidence": round(confidence, 4),
+                "effective_weight": round(effective_weight, 4),
+                "weighted_contribution": round(score * effective_weight, 2),
+            }
+        )
+
     if total_weight <= 0:
         return None, used_components, missing_components
     return round(weighted_sum / total_weight, 2), used_components, missing_components
@@ -1042,49 +1335,129 @@ def _evaluate_depression_axis(
             _canonical_modality_name(key) or str(key): float(value)
             for key, value in multimodal_weights.items()
         }
+    modality_confidence_floor = _safe_float(
+        aggregation.get("modality_confidence_floor", DEFAULT_MODALITY_CONFIDENCE_FLOOR)
+    )
+    if modality_confidence_floor is None:
+        modality_confidence_floor = DEFAULT_MODALITY_CONFIDENCE_FLOOR
+    modality_confidence_floor = _clamp_01(modality_confidence_floor)
 
     negative_label_sets = _normalize_negative_label_sets(rule_set)
     modality_score_lookup: dict[str, float] = {}
+    modality_confidence_lookup: dict[str, float] = {}
     modality_components: list[dict[str, Any]] = []
     missing_modalities: list[str] = []
     for modality in multimodal_weights:
-        score, metadata = _extract_modality_score(
+        raw_score, raw_score_metadata = _extract_modality_score(
             multimodal_payload,
             modality=modality,
             negative_labels=negative_label_sets.get(modality, set()),
         )
-        if score is None:
+        if raw_score is None:
             missing_modalities.append(modality)
             continue
-        modality_score_lookup[modality] = score
+        confidence, confidence_metadata = _compute_modality_confidence(
+            multimodal_payload,
+            modality=modality,
+        )
+        if confidence is None:
+            confidence = 0.5
+            confidence_metadata = {
+                "confidence_components": {},
+                "confidence_formula": "default_fallback",
+            }
+        effective_weight = multimodal_weights[modality] * (
+            modality_confidence_floor + ((1.0 - modality_confidence_floor) * confidence)
+        )
+        modality_score_lookup[modality] = raw_score
+        modality_confidence_lookup[modality] = confidence
         modality_components.append(
             {
                 "key": modality,
-                "score": score,
-                "score_metadata": metadata,
+                "score": raw_score,
+                "confidence": round(confidence, 4),
+                "base_weight": round(multimodal_weights[modality], 4),
+                "effective_weight": round(effective_weight, 4),
+                "score_metadata": raw_score_metadata,
+                "confidence_metadata": confidence_metadata,
             }
         )
 
-    multimodal_score, used_modalities, computed_missing_modalities = _compute_weighted_score(
+    multimodal_score, used_modalities, computed_missing_modalities = _compute_confidence_weighted_score(
         multimodal_weights,
         modality_score_lookup,
+        modality_confidence_lookup,
+        confidence_floor=modality_confidence_floor,
     )
     if not missing_modalities:
         missing_modalities = computed_missing_modalities
+
+    multimodal_confidence_weighted_sum = 0.0
+    multimodal_confidence_total_weight = 0.0
+    for modality, weight in multimodal_weights.items():
+        confidence = modality_confidence_lookup.get(modality, 0.0)
+        multimodal_confidence_weighted_sum += confidence * weight
+        multimodal_confidence_total_weight += weight
+    multimodal_confidence = None
+    if multimodal_confidence_total_weight > 0:
+        multimodal_confidence = round(
+            multimodal_confidence_weighted_sum / multimodal_confidence_total_weight,
+            4,
+        )
+    multimodal_confidence_grade = None
+    if multimodal_confidence is not None:
+        if multimodal_confidence >= 0.75:
+            multimodal_confidence_grade = "A"
+        elif multimodal_confidence >= 0.55:
+            multimodal_confidence_grade = "B"
+        elif multimodal_confidence >= 0.30:
+            multimodal_confidence_grade = "C"
+        else:
+            multimodal_confidence_grade = "insufficient"
 
     top_level_weights = {
         "scale_score": float(aggregation.get("assessment_weight", 0.80)),
         "multimodal_score": float(aggregation.get("multimodal_weight", 0.20)),
     }
-    top_level_lookup: dict[str, float] = {}
-    if scale_score is not None:
-        top_level_lookup["scale_score"] = scale_score
-    if multimodal_score is not None:
-        top_level_lookup["multimodal_score"] = multimodal_score
-    depression_score, used_top_level, missing_top_level = _compute_weighted_score(
-        top_level_weights,
-        top_level_lookup,
-    )
+    if scale_score is not None and multimodal_score is not None:
+        depression_score = round(
+            (top_level_weights["scale_score"] * scale_score)
+            + (top_level_weights["multimodal_score"] * multimodal_score),
+            2,
+        )
+        used_top_level = [
+            {
+                "key": "scale_score",
+                "score": round(scale_score, 2),
+                "weight": round(top_level_weights["scale_score"], 4),
+                "weighted_contribution": round(
+                    top_level_weights["scale_score"] * scale_score,
+                    2,
+                ),
+            },
+            {
+                "key": "multimodal_score",
+                "score": round(multimodal_score, 2),
+                "weight": round(top_level_weights["multimodal_score"], 4),
+                "weighted_contribution": round(
+                    top_level_weights["multimodal_score"] * multimodal_score,
+                    2,
+                ),
+            },
+        ]
+        missing_top_level: list[str] = []
+        top_level_formula = "fixed_weighted_average"
+    else:
+        top_level_lookup: dict[str, float] = {}
+        if scale_score is not None:
+            top_level_lookup["scale_score"] = scale_score
+        if multimodal_score is not None:
+            top_level_lookup["multimodal_score"] = multimodal_score
+        depression_score, used_top_level, missing_top_level = _compute_weighted_score(
+            top_level_weights,
+            top_level_lookup,
+        )
+        top_level_formula = "renormalized_weighted_average_over_available_components"
     depression_severity, depression_severity_label = _resolve_depression_severity(
         depression_score,
         rule_set=rule_set,
@@ -1101,6 +1474,8 @@ def _evaluate_depression_axis(
     return {
         "scale_score": scale_score,
         "multimodal_score": multimodal_score,
+        "multimodal_confidence": multimodal_confidence,
+        "multimodal_confidence_grade": multimodal_confidence_grade,
         "depression_score": depression_score,
         "depression_severity": depression_severity,
         "depression_severity_label": depression_severity_label,
@@ -1114,16 +1489,20 @@ def _evaluate_depression_axis(
             },
             "multimodal_score": {
                 "value": multimodal_score,
+                "overall_confidence": multimodal_confidence,
+                "overall_confidence_grade": multimodal_confidence_grade,
+                "confidence_floor": round(modality_confidence_floor, 4),
                 "used_modalities": used_modalities,
                 "detected_modality_scores": modality_components,
                 "missing_modalities": missing_modalities,
                 "source_type": multimodal_source,
+                "formula": "weighted average over raw modality scores with confidence-adjusted effective weights",
             },
             "depression_score": {
                 "value": depression_score,
                 "used_components": used_top_level,
                 "missing_components": missing_top_level,
-                "formula": "renormalized weighted average over available components",
+                "formula": top_level_formula,
             },
         },
         "pending_integrations": pending_integrations,

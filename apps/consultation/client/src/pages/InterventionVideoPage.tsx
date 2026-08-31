@@ -1,12 +1,20 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RotateCcw, X } from "lucide-react";
+import {
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 
 import { useInterventionExecution } from "../features/intervention/useInterventionExecution";
+import { INTERVENTION_VIDEO_PROGRAMS, type InterventionVideoProgram } from "../features/intervention/videoPrograms";
+import { ConsultationLayout } from "../layouts";
 import { APP_PATHS } from "../routes";
-
-const OCEAN_VIDEO_SRC = "/intervention/video/ocean-h264.mp4";
-const CONTROLS_HIDE_DELAY_MS = 3_000;
 
 type FullscreenElement = HTMLDivElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -16,6 +24,52 @@ type FullscreenDocument = Document & {
   webkitExitFullscreen?: () => Promise<void> | void;
   webkitFullscreenElement?: Element | null;
 };
+
+const COPY = {
+  pageTitle: "\u89c6\u9891\u8c03\u8282",
+  heroTitle: "\u770b\u4e00\u6bb5\u89c6\u9891",
+  backHome: "\u8fd4\u56de\u5e72\u9884\u9996\u9875",
+  playbackCardLabel: "\u5f53\u524d\u64ad\u653e",
+  emptyProgram: "\u8bf7\u9009\u62e9\u4e00\u4e2a\u89c6\u9891\u5f00\u59cb\u64ad\u653e",
+  emptyHint:
+    "\u9009\u62e9\u89c6\u9891\u540e\u5c06\u81ea\u52a8\u8fdb\u5165\u5168\u5c4f\u3002\u70b9\u51fb\u753b\u9762\u53ef\u6682\u505c\u6216\u7ee7\u7eed\u64ad\u653e\uff0c\u53f3\u4e0a\u89d2\u53ef\u5c55\u5f00\u66f4\u591a\u63a7\u5236\u3002",
+  panelTitle: "\u63a7\u5236\u9762\u677f",
+  progressLabel: "\u64ad\u653e\u8fdb\u5ea6",
+  volumeLabel: "\u97f3\u91cf",
+  replay: "\u4ece\u5934\u64ad\u653e",
+  moreControlsOpen: "\u5c55\u5f00\u66f4\u591a\u63a7\u5236",
+  moreControlsClose: "\u6536\u8d77\u66f4\u591a\u63a7\u5236",
+  enterFullscreen: "\u8fdb\u5165\u5168\u5c4f",
+  exitFullscreen: "\u9000\u51fa\u5168\u5c4f",
+  pause: "\u6682\u505c\u64ad\u653e",
+  resume: "\u7ee7\u7eed\u64ad\u653e",
+  restoreVolume: "\u6062\u590d\u97f3\u91cf",
+  mute: "\u9759\u97f3",
+  selectionTitle: "\u9009\u62e9\u4e00\u4e2a\u89c6\u9891",
+  selectionHint:
+    "\u9009\u62e9\u4efb\u610f\u4e00\u4e2a\u89c6\u9891\u540e\uff0c\u4f1a\u81ea\u52a8\u8fdb\u5165\u5168\u5c4f\u64ad\u653e\u3002\u89c6\u9891\u81ea\u5e26\u58f0\u97f3\uff0c\u4f60\u53ef\u4ee5\u6309\u9700\u6682\u505c\u3001\u62d6\u52a8\u8fdb\u5ea6\u3001\u8c03\u6574\u97f3\u91cf\u6216\u5207\u6362\u5168\u5c4f\u3002",
+  cannotFullscreen: "\u672a\u80fd\u8fdb\u5165\u5168\u5c4f\uff0c\u4f46\u89c6\u9891\u5df2\u7ecf\u5f00\u59cb\u64ad\u653e\u3002",
+  playbackBlocked: "\u6d4f\u89c8\u5668\u62e6\u622a\u4e86\u64ad\u653e\uff0c\u8bf7\u70b9\u51fb\u7ee7\u7eed\u64ad\u653e\u91cd\u8bd5\u3002",
+  cannotReenterFullscreen: "\u5f53\u524d\u6d4f\u89c8\u5668\u672a\u80fd\u518d\u6b21\u8fdb\u5165\u5168\u5c4f\u3002",
+  controlPanelOpen: "\u5c55\u5f00\u66f4\u591a\u63a7\u5236",
+  controlPanelClose: "\u6536\u8d77\u66f4\u591a\u63a7\u5236",
+} as const;
+
+function toAssetUri(path: string) {
+  return encodeURI(path);
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "00:00";
+  }
+
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainSeconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
 
 async function requestPlayerFullscreen(element: HTMLDivElement | null) {
   if (!element) {
@@ -29,7 +83,9 @@ async function requestPlayerFullscreen(element: HTMLDivElement | null) {
     return;
   }
 
-  await fullscreenElement.webkitRequestFullscreen?.();
+  if (fullscreenElement.webkitRequestFullscreen) {
+    await fullscreenElement.webkitRequestFullscreen();
+  }
 }
 
 async function exitPlayerFullscreen() {
@@ -40,139 +96,496 @@ async function exitPlayerFullscreen() {
     return;
   }
 
-  await fullscreenDocument.webkitExitFullscreen?.();
+  if (fullscreenDocument.webkitFullscreenElement && fullscreenDocument.webkitExitFullscreen) {
+    await fullscreenDocument.webkitExitFullscreen();
+  }
 }
 
 export default function InterventionVideoPage() {
   const navigate = useNavigate();
-  const { buildRouteState, trackEvent } = useInterventionExecution({
+  const { buildRouteState, sessionError, trackEvent } = useInterventionExecution({
     pageTag: "intervention-video",
     openEvent: {
       event_type: "experience_opened",
-      program_id: "ocean",
-      program_title: "海洋",
+      program_id: "video-regulation",
+      program_title: COPY.pageTitle,
       delivery_mode: "video",
-      payload: { page: "intervention-video", video_src: OCEAN_VIDEO_SRC },
+      payload: { page: "intervention-video" },
     },
   });
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const hideControlsTimerRef = useRef<number | null>(null);
-  const [areControlsVisible, setAreControlsVisible] = useState(false);
+  const lastNonZeroVolumeRef = useRef(1);
 
-  const clearControlsHideTimer = () => {
-    if (hideControlsTimerRef.current !== null) {
-      window.clearTimeout(hideControlsTimerRef.current);
-      hideControlsTimerRef.current = null;
-    }
-  };
+  const [activeProgram, setActiveProgram] = useState<InterventionVideoProgram | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isControlPanelOpen, setIsControlPanelOpen] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [playbackError, setPlaybackError] = useState("");
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [seekValue, setSeekValue] = useState(0);
+  const [volume, setVolume] = useState(1);
 
-  const showControls = useEffectEvent(() => {
-    clearControlsHideTimer();
-    setAreControlsVisible(true);
-    hideControlsTimerRef.current = window.setTimeout(() => {
-      setAreControlsVisible(false);
-      hideControlsTimerRef.current = null;
-    }, CONTROLS_HIDE_DELAY_MS);
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const fullscreenDocument = document as FullscreenDocument;
+      const fullscreenTarget = document.fullscreenElement ?? fullscreenDocument.webkitFullscreenElement ?? null;
+      setIsFullscreen(fullscreenTarget === playerShellRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange as EventListener);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange as EventListener);
+      videoRef.current?.pause();
+    };
+  }, []);
+
+  const handleReturnToLanding = useEffectEvent((reason: "return_button") => {
+    void trackEvent({
+      event_type: "experience_exited",
+      program_id: activeProgram?.id ?? "video-regulation",
+      program_title: activeProgram?.title ?? COPY.pageTitle,
+      delivery_mode: "video",
+      payload: {
+        page: "intervention-video",
+        reason,
+        destination: "intervention-landing",
+        active_program_id: activeProgram?.id ?? null,
+        active_program_title: activeProgram?.title ?? null,
+        current_time_seconds: Number(currentTime.toFixed(1)),
+        duration_seconds: Number(duration.toFixed(1)),
+      },
+    });
+
+    navigate(APP_PATHS.intervention, {
+      state: buildRouteState(),
+    });
   });
 
-  const startPlayback = useEffectEvent(async () => {
+  const syncAndPlay = async (
+    program: InterventionVideoProgram,
+    options: { restart: boolean; enterFullscreen?: boolean },
+  ) => {
     const video = videoRef.current;
     if (!video) {
       return;
+    }
+
+    const videoSrc = toAssetUri(program.videoSrc);
+
+    if (video.getAttribute("src") !== videoSrc) {
+      setIsVideoReady(false);
+      video.setAttribute("src", videoSrc);
+      video.load();
+    }
+
+    if (options.restart) {
+      setIsVideoReady(false);
+      video.currentTime = 0;
+      setCurrentTime(0);
+      setSeekValue(0);
+    }
+
+    video.volume = volume;
+    video.muted = volume === 0;
+    video.loop = false;
+
+    if (options.enterFullscreen) {
+      void requestPlayerFullscreen(playerShellRef.current).catch(() => {
+        setPlaybackError(COPY.cannotFullscreen);
+      });
     }
 
     try {
       await video.play();
+      setIsPlaying(true);
+      setPlaybackError("");
     } catch {
-      // A user touch reveals the controls and lets the visitor retry playback.
-    }
-  });
-
-  useLayoutEffect(() => {
-    void requestPlayerFullscreen(playerShellRef.current).catch(() => undefined);
-    void startPlayback();
-  }, [startPlayback]);
-
-  useEffect(
-    () => () => {
-      clearControlsHideTimer();
-      videoRef.current?.pause();
-    },
-    [],
-  );
-
-  const handleSurfaceInteraction = () => {
-    showControls();
-    void requestPlayerFullscreen(playerShellRef.current).catch(() => undefined);
-
-    if (videoRef.current?.paused) {
-      void startPlayback();
+      setIsPlaying(false);
+      setPlaybackError(COPY.playbackBlocked);
     }
   };
 
+  const handleSelectProgram = async (program: InterventionVideoProgram) => {
+    setActiveProgram(program);
+    setIsControlPanelOpen(false);
+    void trackEvent({
+      event_type: "media_selected",
+      program_id: program.id,
+      program_title: program.title,
+      delivery_mode: "video",
+      payload: {
+        video_src: program.videoSrc,
+        poster_src: program.posterSrc,
+      },
+    });
+    await syncAndPlay(program, { restart: true, enterFullscreen: true });
+  };
+
+  const handleTogglePlayback = async () => {
+    const video = videoRef.current;
+    if (!activeProgram || !video) {
+      return;
+    }
+
+    if (isPlaying) {
+      video.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    await syncAndPlay(activeProgram, { restart: false });
+  };
+
   const handleReplay = async () => {
+    if (!activeProgram) {
+      return;
+    }
+
+    await syncAndPlay(activeProgram, { restart: true });
+  };
+
+  const handleFullscreenToggle = async () => {
+    if (!activeProgram) {
+      return;
+    }
+
+    if (isFullscreen) {
+      await exitPlayerFullscreen();
+      return;
+    }
+
+    await requestPlayerFullscreen(playerShellRef.current).catch(() => {
+      setPlaybackError(COPY.cannotReenterFullscreen);
+    });
+  };
+
+  const handleSeek = (nextValue: number) => {
+    setSeekValue(nextValue);
+  };
+
+  const commitSeek = () => {
     const video = videoRef.current;
     if (!video) {
       return;
     }
 
-    showControls();
-    video.currentTime = 0;
-    await startPlayback();
+    const nextValue = Math.min(Math.max(seekValue, 0), duration || 0);
+    video.currentTime = nextValue;
+    setCurrentTime(nextValue);
+    setSeekValue(nextValue);
   };
 
-  const handleExit = () => {
-    void trackEvent({
-      event_type: "experience_exited",
-      program_id: "ocean",
-      program_title: "海洋",
-      delivery_mode: "video",
-      payload: { page: "intervention-video", reason: "exit_button" },
-    });
-    void exitPlayerFullscreen().catch(() => undefined);
-    navigate(APP_PATHS.intervention, { state: buildRouteState() });
+  const handleSeekStart = () => {
+    setIsSeeking(true);
+  };
+
+  const handleSeekEnd = () => {
+    commitSeek();
+    setIsSeeking(false);
+  };
+
+  const handleVolumeChange = (nextVolume: number) => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    video.volume = nextVolume;
+    video.muted = nextVolume === 0;
+    setVolume(nextVolume);
+
+    if (nextVolume > 0) {
+      lastNonZeroVolumeRef.current = nextVolume;
+    }
+  };
+
+  const handleToggleMute = () => {
+    if (volume === 0) {
+      handleVolumeChange(lastNonZeroVolumeRef.current || 1);
+      return;
+    }
+
+    handleVolumeChange(0);
+  };
+
+  const handleVideoLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+  };
+
+  const handleVideoTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (isSeeking) {
+      return;
+    }
+
+    setCurrentTime(video.currentTime);
+    setSeekValue(video.currentTime);
+  };
+
+  const handleVideoEnded = () => {
+    setCurrentTime(duration);
+    setSeekValue(duration);
+    setIsPlaying(false);
   };
 
   return (
-    <div
-      ref={playerShellRef}
-      className="fixed inset-0 overflow-hidden bg-black"
-      onPointerDown={handleSurfaceInteraction}
-    >
-      <video
-        ref={videoRef}
-        src={OCEAN_VIDEO_SRC}
-        className="h-full w-full object-cover"
-        playsInline
-        loop
-        preload="auto"
-      />
+    <ConsultationLayout backgroundImage="/bg.webp" title={COPY.pageTitle}>
+      <div className="relative flex h-full w-full overflow-hidden bg-[radial-gradient(circle_at_top,rgba(130,181,255,0.18),transparent_42%),linear-gradient(180deg,rgba(10,16,31,0.18),rgba(10,16,31,0.78))]">
+        <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-6 px-5 pb-6 pt-6 md:px-8 lg:flex-row">
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-white/14 bg-slate-950/38 p-4 shadow-[0_24px_60px_rgba(2,6,23,0.45)] backdrop-blur-xl md:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/70">Video Regulation</p>
+                <h1 className="mt-3 text-2xl font-semibold tracking-[0.08em] text-white md:text-3xl">{COPY.heroTitle}</h1>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleReturnToLanding("return_button")}
+                className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm text-white/85 transition hover:bg-white/14"
+              >
+                {COPY.backHome}
+              </button>
+            </div>
+            {sessionError ? <p className="mt-3 text-sm text-amber-200/90">{sessionError}</p> : null}
 
-      {areControlsVisible ? (
-        <div className="absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-black/75 via-black/30 to-transparent px-6 pb-8 pt-24">
-          <div className="flex items-center gap-4 rounded-full border border-white/20 bg-black/45 p-3 backdrop-blur-md">
-            <button
-              type="button"
-              aria-label="重新播放"
-              onClick={() => void handleReplay()}
-              className="flex h-12 items-center justify-center gap-2 rounded-full bg-white/15 px-4 text-sm text-white transition hover:bg-white/25"
+            <div
+              ref={playerShellRef}
+              className="relative mt-5 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-black/60"
             >
-              <RotateCcw size={21} />
-              <span>重新播放</span>
-            </button>
-            <button
-              type="button"
-              aria-label="退出"
-              onClick={handleExit}
-              className="flex h-12 items-center justify-center gap-2 rounded-full bg-white/15 px-4 text-sm text-white transition hover:bg-white/25"
-            >
-              <X size={23} />
-              <span>退出</span>
-            </button>
-          </div>
+              <video
+                ref={videoRef}
+                className="h-full w-full object-cover"
+                playsInline
+                controls={false}
+                poster={activeProgram ? toAssetUri(activeProgram.posterSrc) : "/cover-background-v2.png"}
+                preload="metadata"
+                onLoadedMetadata={handleVideoLoadedMetadata}
+                onLoadedData={() => setIsVideoReady(true)}
+                onCanPlay={() => setIsVideoReady(true)}
+                onTimeUpdate={handleVideoTimeUpdate}
+                onEnded={handleVideoEnded}
+                onPause={() => setIsPlaying(false)}
+                onPlay={() => {
+                  setIsPlaying(true);
+                  setIsVideoReady(true);
+                }}
+                onDoubleClick={() => void handleFullscreenToggle()}
+              />
+
+              {activeProgram ? (
+                <>
+                  <img
+                    src={toAssetUri(activeProgram.posterSrc)}
+                    alt={activeProgram.title}
+                    className={`pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+                      isVideoReady ? "opacity-0" : "opacity-100"
+                    }`}
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/16" />
+
+                  <div className="absolute right-4 top-4 z-10 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                    <button
+                      type="button"
+                      aria-label={isPlaying ? COPY.pause : COPY.resume}
+                      onClick={() => void handleTogglePlayback()}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      {isPlaying ? <Pause size={18} /> : <Play size={18} className="translate-x-[1px]" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={COPY.replay}
+                      onClick={() => void handleReplay()}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      <RotateCcw size={18} />
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={volume === 0 ? COPY.restoreVolume : COPY.mute}
+                      onClick={handleToggleMute}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={isFullscreen ? COPY.exitFullscreen : COPY.enterFullscreen}
+                      onClick={() => void handleFullscreenToggle()}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={isControlPanelOpen ? COPY.controlPanelClose : COPY.controlPanelOpen}
+                      onClick={() => setIsControlPanelOpen((current) => !current)}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/48 text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      <SlidersHorizontal size={18} />
+                    </button>
+                  </div>
+
+                  {isControlPanelOpen ? (
+                    <div
+                      className="absolute right-4 top-[4.75rem] z-10 w-[min(320px,calc(100%-2rem))] rounded-[24px] border border-white/12 bg-black/62 p-4 text-white shadow-[0_20px_50px_rgba(2,6,23,0.42)] backdrop-blur-2xl"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] text-white/55">
+                        <span>{COPY.panelTitle}</span>
+                        <span>
+                          {formatDuration(currentTime)} / {formatDuration(duration)}
+                        </span>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-sm text-white/72">
+                          <span>{COPY.progressLabel}</span>
+                          <span>{Math.round(duration ? (currentTime / duration) * 100 : 0)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={duration || 0}
+                          step={0.1}
+                          value={duration ? Math.min(isSeeking ? seekValue : currentTime, duration) : 0}
+                          onInput={(event) => handleSeek(Number((event.target as HTMLInputElement).value))}
+                          onChange={(event) => handleSeek(Number(event.target.value))}
+                          onMouseDown={handleSeekStart}
+                          onMouseUp={handleSeekEnd}
+                          onTouchStart={handleSeekStart}
+                          onTouchEnd={handleSeekEnd}
+                          onKeyDown={(event) => {
+                            if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") {
+                              handleSeekStart();
+                            }
+                          }}
+                          onKeyUp={(event) => {
+                            if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") {
+                              handleSeekEnd();
+                            }
+                          }}
+                          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
+                        />
+                      </div>
+
+                      <div className="mt-5">
+                        <div className="flex items-center justify-between text-sm text-white/72">
+                          <span>{COPY.volumeLabel}</span>
+                          <span>{Math.round(volume * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={volume}
+                          onChange={(event) => handleVolumeChange(Number(event.target.value))}
+                          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-cyan-300"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex flex-col gap-4 rounded-[28px] border border-white/10 bg-black/18 px-4 py-4 text-white/90 md:flex-row md:items-center md:justify-between md:px-5">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-[0.25em] text-white/45">{COPY.playbackCardLabel}</p>
+                <p className="mt-2 truncate text-lg font-medium text-white">{activeProgram?.title ?? COPY.emptyProgram}</p>
+                <p className="mt-1 text-sm text-white/60">{activeProgram?.subtitle ?? COPY.emptyHint}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleReplay()}
+                  disabled={!activeProgram}
+                  className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {COPY.replay}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsControlPanelOpen((current) => !current)}
+                  disabled={!activeProgram}
+                  className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isControlPanelOpen ? COPY.moreControlsClose : COPY.moreControlsOpen}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleFullscreenToggle()}
+                  disabled={!activeProgram}
+                  className="rounded-full border border-white/18 bg-white/8 px-4 py-2 text-sm text-white transition hover:bg-white/14 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isFullscreen ? COPY.exitFullscreen : COPY.enterFullscreen}
+                </button>
+              </div>
+            </div>
+
+            {playbackError ? (
+              <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-100/10 px-4 py-3 text-sm text-amber-100">
+                {playbackError}
+              </div>
+            ) : null}
+          </section>
+
+          <aside className="w-full rounded-[32px] border border-white/14 bg-white/8 p-5 shadow-[0_20px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl lg:w-[380px]">
+            <p className="text-xs uppercase tracking-[0.35em] text-cyan-100/65">Program Selection</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[0.06em] text-white">{COPY.selectionTitle}</h2>
+            <p className="mt-3 text-sm leading-6 text-white/68">{COPY.selectionHint}</p>
+
+            <div className="mt-6 flex flex-col gap-3">
+              {INTERVENTION_VIDEO_PROGRAMS.map((program) => {
+                const isActive = activeProgram?.id === program.id;
+
+                return (
+                  <button
+                    key={program.id}
+                    type="button"
+                    onClick={() => void handleSelectProgram(program)}
+                    className={`rounded-[24px] border px-4 py-4 text-left transition ${
+                      isActive
+                        ? "border-cyan-300/70 bg-cyan-300/18 text-white shadow-[0_12px_32px_rgba(45,212,191,0.15)]"
+                        : "border-white/12 bg-slate-950/26 text-white/88 hover:border-white/28 hover:bg-white/10"
+                    }`}
+                  >
+                    <img
+                      src={toAssetUri(program.posterSrc)}
+                      alt={program.title}
+                      className="h-28 w-full rounded-[18px] object-cover"
+                    />
+                    <p className="text-base font-medium tracking-[0.02em]">{program.title}</p>
+                    <p className="mt-2 text-sm leading-6 text-white/62">{program.subtitle}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
         </div>
-      ) : null}
-    </div>
+      </div>
+    </ConsultationLayout>
   );
 }
