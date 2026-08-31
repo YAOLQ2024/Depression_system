@@ -29,7 +29,7 @@ export function Header({ theme = 'light', title }: HeaderProps) {
   return (
     <header className="relative z-10 flex h-[clamp(56px,4.2vw,88px)] w-full items-center justify-between px-[clamp(12px,1.25vw,30px)]">
       <div className="flex min-w-0 -translate-y-[clamp(6px,0.55vw,12px)] cursor-pointer items-center gap-[clamp(8px,0.7vw,16px)]" onClick={handleLogoClick}>
-        <div className="h-[clamp(28px,2.2vw,48px)] w-[clamp(66px,5.25vw,114px)] shrink-0 overflow-hidden">
+        <div className="h-[clamp(28px,2.2vw,48px)] w-[clamp(58px,4vw,84px)] shrink-0 overflow-hidden">
           <img
             src="/aim-brand-lockup-transparent-clean.png"
             alt="AIM"

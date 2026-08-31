@@ -26,6 +26,6 @@ export const INTERVENTION_VIDEO_PROGRAMS: InterventionVideoProgram[] = [
     title: "海洋",
     subtitle: "聆听海浪声，跟随海面舒缓呼吸。",
     videoSrc: "/intervention/video/ocean-h264.mp4",
-    posterSrc: "/cover-background-v2.png",
+    posterSrc: "/intervention/video/posters/ocean-001-poster.jpg",
   },
 ];

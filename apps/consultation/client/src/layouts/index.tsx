@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Header } from "../components/Header";
 import { Sidebar } from "../components/Sidebar";
 import { GlobalBackground } from "../components/GlobalBackground";
@@ -22,19 +22,41 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function FullScreenBackground({ imageSrc }: { imageSrc: string }) {
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const image = new Image();
+    image.src = imageSrc;
+    if (image.complete) {
+      setLoaded(true);
+      return;
+    }
+    image.onload = () => setLoaded(true);
+    return () => {
+      image.onload = null;
+    };
+  }, [imageSrc]);
+
+  return (
+    <div className="absolute inset-0 z-0 overflow-hidden bg-[radial-gradient(circle_at_50%_0%,#40506a,#111827_72%)]">
+      <img
+        src={imageSrc}
+        alt=""
+        aria-hidden="true"
+        onLoad={() => setLoaded(true)}
+        className={`absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,18,34,0.14),rgba(10,18,34,0.22))]" />
+    </div>
+  );
+}
+
 export function ConsultationLayout({ children, backgroundImage, title }: { children: React.ReactNode, backgroundImage?: string, title?: string | null | false }) {
   return (
     <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-slate-900 relative z-0">
       {backgroundImage ? (
-        <div 
-          className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-1000"
-          style={{
-            backgroundImage: `url('${backgroundImage}')`,
-            backgroundPosition: "center center",
-          }}
-        >
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,18,34,0.14),rgba(10,18,34,0.22))]" />
-        </div>
+        <FullScreenBackground imageSrc={backgroundImage} />
       ) : (
         <GlobalBackground />
       )}
