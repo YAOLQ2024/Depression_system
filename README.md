@@ -99,7 +99,7 @@ MCS 是一个面向抑郁症筛查与干预的**多模态问诊系统**，核心
 
 ### 1. Compose 文件关系
 
-当前仓库里，日常开发需要理解这三个 compose 文件：
+当前仓库里，日常开发需要理解以下 compose 文件：
 
 - `infra/compose/docker-compose.dev.yml`（基础环境，必须）
   - 定义了前端、网关、业务服务、数据库、对象存储等完整本地运行骨架
@@ -111,8 +111,12 @@ MCS 是一个面向抑郁症筛查与干预的**多模态问诊系统**，核心
   - 通过 Caddy 提供局域网 HTTPS 访问，用于测试摄像头、麦克风等需要安全上下文的浏览器 API
   - 不能单独使用，必须叠加在 `docker-compose.dev.yml` 之后
   - 证书生成方式见 [docs/architecture/lan-https-testing-plan.md](./docs/architecture/lan-https-testing-plan.md)
+- `infra/compose/docker-compose.jetson-eeg-bridge.yml`（Linux 原生 BLE EEG 覆盖层，真机可选）
+  - 启动 `eeg-bridge` 容器，通过宿主机 BlueZ 的 system D-Bus 原生扫描和连接 EEG 蓝牙设备
+  - `multimodal-service` 通过 Redis Stream 消费 EEG 数据；即使文件名含 `jetson`，Linux 桌面环境同样使用此覆盖层
+  - 使用真机 EEG 时必须叠加；不要在缺少此文件的启动命令上使用 `--remove-orphans`，以免误删正在运行的 `eeg-bridge`
 
-两个 override 文件可以单独或同时叠加在 `docker-compose.dev.yml` 之上，不会冲突：
+各个 override 文件可以按需叠加在 `docker-compose.dev.yml` 之上：
 
 - `docker-compose.dev.yml` 提供完整服务定义
 - override 文件只补充或覆盖各自关心的少数字段
@@ -124,6 +128,7 @@ MCS 是一个面向抑郁症筛查与干预的**多模态问诊系统**，核心
 - GPU 开发环境：`docker-compose.dev.yml + docker-compose.gpu.yml`
 - LAN HTTPS 环境：`docker-compose.dev.yml + docker-compose.lan-https.yml`
 - GPU + LAN HTTPS：三个文件同时叠加
+- Linux 真机 EEG：在所选组合后继续叠加 `docker-compose.jetson-eeg-bridge.yml`
 
 ### 2. HTTPS 证书一次性配置
 
@@ -153,7 +158,7 @@ ls infra/certs/lan-key.pem
 
 ### 3. 启动命令速查
 
-日常开发按是否使用 GPU、是否需要 HTTPS，共 4 种组合：
+日常开发按是否使用 GPU、是否需要 HTTPS 选择组合；Linux 真机 EEG 再额外叠加 BLE bridge 覆盖层：
 
 | 场景 | 命令 |
 |---|---|
@@ -161,8 +166,9 @@ ls infra/certs/lan-key.pem
 | GPU + HTTP | `docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml up -d --build` |
 | CPU + HTTPS | `docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.lan-https.yml up -d --build` |
 | GPU + HTTPS | `docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build` |
+| GPU + HTTPS + Linux 真机 EEG | `docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml -f infra/compose/docker-compose.jetson-eeg-bridge.yml up -d --build` |
 
-> 以上 4 条命令都会重建有变更的镜像并启动全部服务。如果只想启动或重建特定服务，在末尾追加服务名即可，见 [第 5 节](#5-只重建某个服务)。
+> 以上命令都会重建有变更的镜像并启动全部服务。如果只想启动或重建特定服务，在末尾追加服务名即可，见 [第 5 节](#5-只重建某个服务)。
 
 ### 3.1 Windows EEG 启动速查
 
@@ -193,6 +199,30 @@ docker compose -f infra/compose/docker-compose.dev.yml up -d --build
 
 - 不要同时启动 `bridge` 和 `replay`
 - 当前 EEG 波形不是进入页面立刻出现，而是在进入真正作答窗口后开始显示
+
+### 3.2 Linux 原生 BLE EEG 启动
+
+Linux 上连接真机 EEG 时，BLE 由 `eeg-bridge` 容器通过宿主机的 BlueZ / system D-Bus 原生处理；`multimodal-service` 只从 Redis Stream 消费数据。以 GPU + LAN HTTPS 为例：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  -f infra/compose/docker-compose.jetson-eeg-bridge.yml \
+  up -d --build
+```
+
+确认 `eeg-bridge` 正常运行：
+
+```bash
+docker compose \
+  -f infra/compose/docker-compose.dev.yml \
+  -f infra/compose/docker-compose.gpu.yml \
+  -f infra/compose/docker-compose.lan-https.yml \
+  -f infra/compose/docker-compose.jetson-eeg-bridge.yml \
+  ps eeg-bridge
+```
 
 ### 4. 各场景完整命令
 
@@ -252,9 +282,9 @@ docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-c
 docker compose -f infra/compose/docker-compose.dev.yml -f infra/compose/docker-compose.gpu.yml -f infra/compose/docker-compose.lan-https.yml up -d --build multimodal-service consultation-service consultation gateway-service caddy
 ```
 
-#### 4.5 日常快速启动 GPU + HTTPS
+#### 4.5 日常快速启动 GPU + HTTPS + Linux 原生 BLE EEG
 
-Jetson / Orin 环境下，如果默认就要用 GPU 推理，并且要让局域网设备通过 HTTPS 访问摄像头、麦克风相关页面，优先使用这一组命令。
+Jetson / Orin 或 Linux 桌面环境下，如果默认要使用 GPU 推理、让局域网设备通过 HTTPS 访问摄像头和麦克风页面，并连接真机 EEG，优先使用这一组命令。
 
 部署排障记录见：[Jetson GPU + LAN HTTPS 部署排障记录](./docs/operations/jetson-gpu-https-deployment-troubleshooting_20260727.md)。
 
@@ -279,6 +309,7 @@ docker compose \
   -f infra/compose/docker-compose.dev.yml \
   -f infra/compose/docker-compose.gpu.yml \
   -f infra/compose/docker-compose.lan-https.yml \
+  -f infra/compose/docker-compose.jetson-eeg-bridge.yml \
   up -d --build
 ```
 
@@ -289,6 +320,7 @@ docker compose \
   -f infra/compose/docker-compose.dev.yml \
   -f infra/compose/docker-compose.gpu.yml \
   -f infra/compose/docker-compose.lan-https.yml \
+  -f infra/compose/docker-compose.jetson-eeg-bridge.yml \
   up -d
 ```
 
@@ -299,6 +331,7 @@ docker compose \
   -f infra/compose/docker-compose.dev.yml \
   -f infra/compose/docker-compose.gpu.yml \
   -f infra/compose/docker-compose.lan-https.yml \
+  -f infra/compose/docker-compose.jetson-eeg-bridge.yml \
   restart
 ```
 
@@ -309,6 +342,7 @@ docker compose \
   -f infra/compose/docker-compose.dev.yml \
   -f infra/compose/docker-compose.gpu.yml \
   -f infra/compose/docker-compose.lan-https.yml \
+  -f infra/compose/docker-compose.jetson-eeg-bridge.yml \
   up -d caddy
 ```
 
@@ -319,6 +353,7 @@ docker compose \
   -f infra/compose/docker-compose.dev.yml \
   -f infra/compose/docker-compose.gpu.yml \
   -f infra/compose/docker-compose.lan-https.yml \
+  -f infra/compose/docker-compose.jetson-eeg-bridge.yml \
   ps
 ```
 
