@@ -24,9 +24,9 @@ export function DraggableMessagePanel({ lines, title = "AI 数字人医生" }: D
       dragListener={false}
       dragMomentum={false}
       style={{ x: 0, y: 0 }}
-      className="w-[240px] sm:w-[280px] min-w-[200px] h-[288px] min-h-[188px] max-w-[80vw] max-h-[80vh] resize bg-slate-900/[0.15] backdrop-blur-md border border-indigo-400/60 rounded-3xl p-[clamp(16px,4cqw,20px)] shadow-[0_0_30px_rgba(99,102,241,0.6),inset_0_0_15px_rgba(165,180,252,0.4)] flex flex-col pointer-events-auto relative overflow-hidden ring-1 ring-indigo-400/30 text-left touch-none"
+      className="w-[240px] sm:w-[280px] min-w-[200px] h-[288px] min-h-[188px] max-w-[80vw] max-h-[80vh] resize bg-[linear-gradient(145deg,rgba(30,41,59,0.66),rgba(71,85,105,0.55))] backdrop-blur-xl border border-indigo-300/60 rounded-3xl p-[clamp(16px,4cqw,20px)] shadow-[0_0_30px_rgba(99,102,241,0.42),inset_0_0_18px_rgba(165,180,252,0.25)] flex flex-col pointer-events-auto relative overflow-hidden ring-1 ring-indigo-300/20 text-left touch-none"
     >
-      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-400/10 to-transparent pointer-events-none"></div>
+      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-indigo-400/16 to-transparent pointer-events-none"></div>
       
       {/* Drag Handle Area */}
       <div className="relative z-10 flex flex-col h-full pointer-events-none">

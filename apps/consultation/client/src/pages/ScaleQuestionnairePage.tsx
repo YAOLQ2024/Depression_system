@@ -1328,7 +1328,7 @@ export default function ScaleQuestionnairePage() {
             transform: isScaleOpen ? "rotateY(15deg)" : "rotateY(15deg) translateX(-20px)",
           }}
         >
-          <div className="w-full bg-slate-900/10 backdrop-blur-md rounded-3xl border border-indigo-400/60 shadow-[0_0_30px_rgba(99,102,241,0.6),inset_0_0_20px_rgba(165,180,252,0.4)] overflow-hidden flex flex-col ring-1 ring-indigo-400/30 p-5 shrink-0 transform-gpu">
+          <div className="w-full bg-[linear-gradient(145deg,rgba(30,41,59,0.70),rgba(71,85,105,0.60))] backdrop-blur-xl rounded-3xl border border-indigo-300/60 shadow-[0_0_30px_rgba(99,102,241,0.42),inset_0_0_20px_rgba(165,180,252,0.25)] overflow-hidden flex flex-col ring-1 ring-indigo-300/20 p-5 shrink-0 transform-gpu">
             <div className="flex flex-col gap-4">
               {currentStage && (
                 <div className="max-h-[40vh] overflow-y-auto rounded-2xl border border-white/12 bg-white/5 p-5">

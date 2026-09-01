@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LogOut, User } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { cn } from "../lib/utils";
@@ -185,39 +186,43 @@ export function ProfileModal() {
     navigate(APP_PATHS.login);
   };
 
-  if (!isOpen) {
-    return null;
-  }
-
   return (
-    <div className="fixed inset-0 z-[100] pointer-events-none">
-      <div
-        ref={menuRef}
-        className="absolute z-[110] min-w-[180px] overflow-hidden rounded-xl border border-slate-700 bg-slate-800 py-1 shadow-2xl pointer-events-auto animate-in fade-in zoom-in-95 duration-150"
-        style={{ top: `${position.top}px`, left: `${position.left}px`, transformOrigin: position.transformOrigin }}
-      >
-        <MenuItem
-          iconClassName="text-slate-300"
-          label="个人资料"
-          onClick={handleGoToProfile}
-          icon={<User className="w-4 h-4" />}
-        />
-        <MenuItem
-          iconClassName="text-slate-300"
-          label={`当前流程：${state.homeEntryLabel}`}
-          onClick={handleContinueFlow}
-          icon={<span className="text-[10px] font-semibold">GO</span>}
-        />
-        <div className="mx-4 my-1 h-px bg-slate-700" />
-        <MenuItem
-          iconClassName="text-rose-400"
-          label="退出登录"
-          labelClassName="text-rose-400"
-          onClick={handleLogout}
-          icon={<LogOut className="w-4 h-4" />}
-        />
-      </div>
-    </div>
+    <AnimatePresence>
+      {isOpen ? (
+        <div className="fixed inset-0 z-[100] pointer-events-none">
+          <motion.div
+            ref={menuRef}
+            initial={{ opacity: 0, y: -8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -5, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="absolute z-[110] min-w-[180px] overflow-hidden rounded-xl border border-slate-700 bg-slate-800 py-1 shadow-2xl pointer-events-auto"
+            style={{ top: `${position.top}px`, left: `${position.left}px`, transformOrigin: position.transformOrigin }}
+          >
+            <MenuItem
+              iconClassName="text-slate-300"
+              label="个人资料"
+              onClick={handleGoToProfile}
+              icon={<User className="w-4 h-4" />}
+            />
+            <MenuItem
+              iconClassName="text-slate-300"
+              label={`当前流程：${state.homeEntryLabel}`}
+              onClick={handleContinueFlow}
+              icon={<span className="text-[10px] font-semibold">GO</span>}
+            />
+            <div className="mx-4 my-1 h-px bg-slate-700" />
+            <MenuItem
+              iconClassName="text-rose-400"
+              label="退出登录"
+              labelClassName="text-rose-400"
+              onClick={handleLogout}
+              icon={<LogOut className="w-4 h-4" />}
+            />
+          </motion.div>
+        </div>
+      ) : null}
+    </AnimatePresence>
   );
 }
 

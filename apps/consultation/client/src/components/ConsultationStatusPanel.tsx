@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Activity, AudioLines, RefreshCw, ScanFace, Sparkles } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
+import { Activity, AudioLines, Minus, Plus, RefreshCw, RotateCcw, ScanFace, Sparkles } from "lucide-react";
 
 import type { MediaDeviceStatusTone } from "../lib/mediaDeviceFeedback";
 import { cn } from "../lib/utils";
@@ -22,8 +22,11 @@ const EEG_CANVAS_BOUNDS_EPSILON = 0.001;
 const EEG_CANVAS_BOUNDS_FRAME_ALPHA = 0.05;
 const EEG_CANVAS_FRAME_INTERVAL_MS = 50;
 const EEG_BOUNDS_UPDATE_INTERVAL_MS = 480;
-const EEG_MIN_VISIBLE_UPPER_UV = 20;
-const EEG_MAX_VISIBLE_LOWER_UV = -20;
+const EEG_EMPTY_VISIBLE_UPPER_UV = 1;
+const EEG_EMPTY_VISIBLE_LOWER_UV = -1;
+const EEG_MIN_VISIBLE_SPAN_UV = 0.1;
+const EEG_VERTICAL_GAIN_MIN = 0.25;
+const EEG_VERTICAL_GAIN_MAX = 32;
 
 type EegWaveSampleMeta = {
   length: number;
@@ -156,8 +159,8 @@ function computeAdaptiveWaveBounds(values: number[]) {
   const finiteValues = values.filter((value) => Number.isFinite(value));
   if (finiteValues.length === 0) {
     return {
-      lowerBound: EEG_MAX_VISIBLE_LOWER_UV,
-      upperBound: EEG_MIN_VISIBLE_UPPER_UV,
+      lowerBound: EEG_EMPTY_VISIBLE_LOWER_UV,
+      upperBound: EEG_EMPTY_VISIBLE_UPPER_UV,
     };
   }
 
@@ -169,12 +172,22 @@ function computeAdaptiveWaveBounds(values: number[]) {
   const robustSpan = Math.max(quantileHigh - quantileLow, 0.01);
   const fullSpan = Math.max(maxValue - minValue, robustSpan);
   const center = (quantileLow + quantileHigh) / 2;
-  const visibleSpan = Math.max(robustSpan, fullSpan * 0.72, 1);
-  const padding = Math.max(visibleSpan * 0.18, 0.35);
+  const visibleSpan = Math.max(robustSpan * 1.35, fullSpan * 0.72, EEG_MIN_VISIBLE_SPAN_UV);
+  const padding = Math.max(visibleSpan * 0.08, EEG_MIN_VISIBLE_SPAN_UV * 0.08);
 
   return {
-    lowerBound: Math.min(center - visibleSpan / 2 - padding, EEG_MAX_VISIBLE_LOWER_UV),
-    upperBound: Math.max(center + visibleSpan / 2 + padding, EEG_MIN_VISIBLE_UPPER_UV),
+    lowerBound: center - visibleSpan / 2 - padding,
+    upperBound: center + visibleSpan / 2 + padding,
+  };
+}
+
+function applyVerticalGain(bounds: EegWaveBounds, gain: number): EegWaveBounds {
+  const center = (bounds.lowerBound + bounds.upperBound) / 2;
+  const span = Math.max(bounds.upperBound - bounds.lowerBound, EEG_CANVAS_BOUNDS_EPSILON);
+  const scaledSpan = Math.max(EEG_CANVAS_BOUNDS_EPSILON, span / clampNumber(gain, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX));
+  return {
+    lowerBound: center - scaledSpan / 2,
+    upperBound: center + scaledSpan / 2,
   };
 }
 
@@ -297,8 +310,8 @@ function areChannelNamesEqual(left: string[], right: string[]) {
 
 function buildEmptyWaveBounds(): EegWaveBounds {
   return {
-    lowerBound: EEG_MAX_VISIBLE_LOWER_UV,
-    upperBound: EEG_MIN_VISIBLE_UPPER_UV,
+    lowerBound: EEG_EMPTY_VISIBLE_LOWER_UV,
+    upperBound: EEG_EMPTY_VISIBLE_UPPER_UV,
   };
 }
 
@@ -355,6 +368,7 @@ type EegWaveChannelPlotProps = {
   maxSamples: number;
   reset: boolean;
   samplingRate: number;
+  verticalGain: number;
 };
 
 function EegWaveChannelPlot({
@@ -367,6 +381,7 @@ function EegWaveChannelPlot({
   maxSamples,
   reset,
   samplingRate,
+  verticalGain,
 }: EegWaveChannelPlotProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -485,7 +500,7 @@ function EegWaveChannelPlot({
           canvas,
           valuesRef.current,
           color,
-          displayBoundsRef.current,
+          applyVerticalGain(displayBoundsRef.current, verticalGain),
           visibleSampleCount,
           windowStartSample,
         );
@@ -523,17 +538,19 @@ function EegWaveChannelPlot({
         window.cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [color, maxSamples]);
+  }, [color, maxSamples, verticalGain]);
+
+  const displayedAxisBounds = applyVerticalGain(axisBounds, verticalGain);
 
   return (
     <div className="relative h-full overflow-hidden rounded-[10px] border border-white/8 bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.32))]">
       <canvas ref={canvasRef} className="block h-full w-full" />
       <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-slate-950/45 to-transparent" />
       <div className="pointer-events-none absolute right-2 top-1 text-[9px] font-medium text-slate-400">
-        {formatWaveAxisValue(axisBounds.upperBound)}
+        {formatWaveAxisValue(displayedAxisBounds.upperBound)}
       </div>
       <div className="pointer-events-none absolute right-2 bottom-[2px] text-[9px] font-medium text-slate-400">
-        {formatWaveAxisValue(axisBounds.lowerBound)}
+        {formatWaveAxisValue(displayedAxisBounds.lowerBound)}
       </div>
       <div className="pointer-events-none absolute left-2 top-1 text-[9px] font-semibold text-slate-200">
         {label}
@@ -557,6 +574,10 @@ const EegWavePreview = memo(function EegWavePreview({
   samples,
   samplingRate,
 }: EegWavePreviewProps) {
+  const [verticalGain, setVerticalGain] = useState(1);
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchDistanceRef = useRef<number | null>(null);
+  const pinchGainRef = useRef(1);
   const visibleChannelNames = channelNames.slice(0, 3);
   const fullMeta = useMemo(() => extractEegWaveSampleMeta(samples), [samples]);
   const appendMeta = useMemo(() => extractEegWaveSampleMeta(appendSamples), [appendSamples]);
@@ -570,10 +591,66 @@ const EegWavePreview = memo(function EegWavePreview({
   );
   const maxSamples = Math.max(1, samples.length, samplingRate * 4);
 
+  const updateVerticalGain = (nextGain: number) => {
+    setVerticalGain(clampNumber(nextGain, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX));
+  };
+
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const zoomFactor = Math.exp(-event.deltaY * 0.0025);
+    setVerticalGain((currentGain) => clampNumber(currentGain * zoomFactor, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX));
+  };
+
+  const getPinchDistance = () => {
+    const [firstPointer, secondPointer] = [...activePointersRef.current.values()];
+    if (!firstPointer || !secondPointer) {
+      return null;
+    }
+    return Math.hypot(secondPointer.x - firstPointer.x, secondPointer.y - firstPointer.y);
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const distance = getPinchDistance();
+    if (distance) {
+      pinchDistanceRef.current = distance;
+      pinchGainRef.current = verticalGain;
+    }
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!activePointersRef.current.has(event.pointerId)) {
+      return;
+    }
+    activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const distance = getPinchDistance();
+    if (distance && pinchDistanceRef.current) {
+      updateVerticalGain(pinchGainRef.current * (distance / pinchDistanceRef.current));
+    }
+  };
+
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(event.pointerId);
+    const distance = getPinchDistance();
+    if (distance) {
+      pinchDistanceRef.current = distance;
+      pinchGainRef.current = verticalGain;
+    } else {
+      pinchDistanceRef.current = null;
+    }
+  };
+
   return (
     <div
-      className="grid h-full min-h-0 gap-1"
+      className="relative grid h-full min-h-0 gap-1 touch-none"
       style={{ gridTemplateRows: `repeat(${Math.max(1, visibleChannelNames.length)}, minmax(0, 1fr))` }}
+      onDoubleClick={() => setVerticalGain(1)}
+      onPointerCancel={handlePointerEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onWheel={handleWheel}
     >
       {visibleChannelNames.map((channelName, channelIndex) => (
         <div
@@ -590,9 +667,39 @@ const EegWavePreview = memo(function EegWavePreview({
             maxSamples={maxSamples}
             reset={reset}
             samplingRate={samplingRate}
+            verticalGain={verticalGain}
           />
         </div>
       ))}
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-white/15 bg-slate-950/80 p-1 text-[10px] text-slate-200 shadow-lg backdrop-blur-md">
+        <button
+          type="button"
+          aria-label="减小脑电波形增益"
+          className="rounded p-1 transition hover:bg-white/10"
+          onClick={() => setVerticalGain((currentGain) => clampNumber(currentGain / 1.35, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX))}
+        >
+          <Minus className="h-3 w-3" />
+        </button>
+        <span className="min-w-14 text-center font-medium tabular-nums">增益 ×{verticalGain.toFixed(1)}</span>
+        <button
+          type="button"
+          aria-label="增大脑电波形增益"
+          className="rounded p-1 transition hover:bg-white/10"
+          onClick={() => setVerticalGain((currentGain) => clampNumber(currentGain * 1.35, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX))}
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+        <button
+          type="button"
+          className="ml-0.5 inline-flex items-center gap-1 rounded border border-white/10 px-1.5 py-1 text-[9px] transition hover:bg-white/10"
+          onClick={() => setVerticalGain(1)}
+        >
+          <RotateCcw className="h-2.5 w-2.5" /> 自动
+        </button>
+      </div>
+      <div className="pointer-events-none absolute bottom-1 right-2 z-10 rounded bg-slate-950/65 px-1.5 py-0.5 text-[9px] text-slate-400">
+        滚轮 / 双指缩放 · 双击复位
+      </div>
     </div>
   );
 }, (previousProps, nextProps) => {

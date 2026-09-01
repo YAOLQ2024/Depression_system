@@ -46,10 +46,10 @@ const RESULT_SEVERITY_CLIPS: Record<"none" | "mild" | "moderate" | "severe", Sea
 };
 
 const RESULT_VIDEO_CLASS_NAME =
-  "relative z-10 block h-auto max-h-[calc(100vh-140px)] w-full max-w-[clamp(380px,28vw,560px)] origin-bottom scale-[2.66] translate-y-[348px] select-none object-contain object-bottom drop-shadow-[0_24px_48px_rgba(15,23,42,0.28)] xl:max-h-[calc(100vh-132px)] xl:scale-[2.86] xl:translate-y-[368px]";
+  "relative z-10 block h-auto max-h-[calc(100vh-140px)] w-full max-w-[clamp(380px,28vw,560px)] origin-bottom scale-[2.66] translate-y-[400px] select-none object-contain object-bottom drop-shadow-[0_24px_48px_rgba(15,23,42,0.28)] xl:max-h-[calc(100vh-132px)] xl:scale-[2.86] xl:translate-y-[424px]";
 
 const RESULT_FALLBACK_IMAGE_CLASS_NAME =
-  "relative z-10 block h-auto max-h-[calc(100vh-160px)] w-full max-w-[clamp(380px,28vw,560px)] origin-bottom scale-[1.63] translate-y-[224px] select-none object-contain object-bottom drop-shadow-[0_24px_48px_rgba(15,23,42,0.28)] xl:max-h-[calc(100vh-148px)] xl:scale-[1.74] xl:translate-y-[240px]";
+  "relative z-10 block h-auto max-h-[calc(100vh-160px)] w-full max-w-[clamp(380px,28vw,560px)] origin-bottom scale-[1.63] translate-y-[260px] select-none object-contain object-bottom drop-shadow-[0_24px_48px_rgba(15,23,42,0.28)] xl:max-h-[calc(100vh-148px)] xl:scale-[1.74] xl:translate-y-[276px]";
 
 function resolveSeverityClip(overallSeverity?: string | null) {
   const normalized = String(overallSeverity || "").trim().toLowerCase();

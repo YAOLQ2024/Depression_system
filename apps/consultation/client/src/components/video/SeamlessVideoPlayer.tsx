@@ -413,7 +413,17 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       // preferable to decoding/preparing a second full-resolution video.
       if (performanceMode) {
         const inactiveLayerId = getOtherLayerId(activeLayerIdRef.current);
-        if (layerClipRef.current[inactiveLayerId]) {
+        const inactiveLayerSignature = layerClipSignatureRef.current[inactiveLayerId];
+        const currentSignature = buildClipSignature(currentClipRef.current);
+
+        // A current-clip change can load the next video into the inactive
+        // layer immediately before this preload effect runs. Do not release
+        // that layer: it is no longer a preload, but the video about to be
+        // displayed. Clearing it here aborts the question-to-question switch.
+        if (
+          layerClipRef.current[inactiveLayerId] &&
+          inactiveLayerSignature !== currentSignature
+        ) {
           loadClipIntoLayer(inactiveLayerId, null);
         }
         emitStateChange();

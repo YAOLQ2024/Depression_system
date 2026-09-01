@@ -22,7 +22,7 @@ function cx(...classes: Array<string | false | null | undefined>) {
 export function EntryBrand({ className }: EntryBrandProps) {
   return (
     <header className={cx("absolute left-[clamp(1rem,2.1vw,2.6rem)] top-[clamp(1rem,2.1vw,2.4rem)] z-20", className)}>
-      <div className="rounded-[clamp(18px,2.4vw,30px)] bg-white/14 px-[clamp(0.75rem,1.3vw,1.25rem)] py-[clamp(0.7rem,1.2vw,1.05rem)] shadow-[0_18px_44px_rgba(72,52,164,0.2)] ring-1 ring-white/18 backdrop-blur-xl">
+      <div className="rounded-[clamp(18px,2.4vw,30px)] border border-white/30 bg-white/30 px-[clamp(0.75rem,1.3vw,1.25rem)] py-[clamp(0.7rem,1.2vw,1.05rem)] shadow-[0_18px_44px_rgba(3,12,40,0.28)] backdrop-blur-xl">
         <img
           alt="Artificial Intelligence in Medicine Lab"
           className="h-auto w-[clamp(11rem,22vw,29rem)] max-w-[72vw] object-contain"

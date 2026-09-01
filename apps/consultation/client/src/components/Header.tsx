@@ -1,14 +1,43 @@
-import { Bell, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bell, ChevronDown, CircleAlert } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { showProfileModal } from "./ProfileModal";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { getProfileStatusLabel, getUserDisplayName, getUserInitial } from "../lib/account";
 import { cn } from "../lib/utils";
 import { APP_PATHS } from "../routes";
+import {
+  getSystemNotifications,
+  markSystemNotificationsRead,
+  subscribeSystemNotifications,
+  type SystemNotification,
+} from "../lib/systemNotifications";
 
 interface HeaderProps {
   theme?: 'light' | 'dark';
   title?: string | null | false;
+}
+
+function formatNotificationTime(createdAt: number) {
+  const elapsed = Date.now() - createdAt;
+  if (elapsed < 60_000) return "刚刚";
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`;
+  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(createdAt);
+}
+
+function NotificationItem({ notification, isDark }: { notification: SystemNotification; isDark: boolean }) {
+  return (
+    <div className={cn("rounded-xl border px-3 py-2.5", isDark ? "border-rose-300/15 bg-rose-400/10" : "border-rose-100 bg-rose-50/80")}>
+      <div className="flex items-start gap-2.5">
+        <CircleAlert className={cn("mt-0.5 h-4 w-4 shrink-0", isDark ? "text-rose-300" : "text-rose-500")} />
+        <div className="min-w-0 flex-1">
+          <p className={cn("break-words text-xs font-medium leading-5", isDark ? "text-rose-100" : "text-rose-700")}>{notification.message}</p>
+          <p className={cn("mt-1 text-[10px]", isDark ? "text-white/45" : "text-slate-400")}>{formatNotificationTime(notification.createdAt)}</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function Header({ theme = 'light', title }: HeaderProps) {
@@ -19,6 +48,38 @@ export function Header({ theme = 'light', title }: HeaderProps) {
   const userDisplayName = getUserDisplayName(state.user);
   const profileStatusLabel = getProfileStatusLabel(state.user?.profile_status);
   const userInitial = getUserInitial(state.user);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<SystemNotification[]>(() => getSystemNotifications());
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
+
+  useEffect(() => subscribeSystemNotifications(() => setNotifications(getSystemNotifications())), []);
+
+  useEffect(() => {
+    if (!showNotifications) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || !notificationsRef.current?.contains(target)) {
+        setShowNotifications(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowNotifications(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [showNotifications]);
 
   const handleLogoClick = () => {
     if (location.pathname !== APP_PATHS.home) {
@@ -52,14 +113,53 @@ export function Header({ theme = 'light', title }: HeaderProps) {
       </div>
       
       <div className="flex -translate-y-[clamp(6px,0.55vw,12px)] items-center gap-[clamp(10px,1vw,24px)]">
-        <button className={cn("relative p-[clamp(5px,0.4vw,10px)] transition-colors", isDark ? "text-white/70 hover:text-white" : "text-slate-500 hover:text-primary-600")}>
-          <Bell className="h-[clamp(18px,1.35vw,30px)] w-[clamp(18px,1.35vw,30px)]" />
-          <span className="sr-only">消息</span>
-        </button>
+        <div ref={notificationsRef} className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              const nextOpen = !showNotifications;
+              setShowNotifications(nextOpen);
+              if (nextOpen) markSystemNotificationsRead();
+            }}
+            className={cn("relative rounded-xl p-[clamp(5px,0.4vw,10px)] transition-colors", isDark ? "text-white/70 hover:bg-white/10 hover:text-white" : "text-slate-500 hover:bg-white/70 hover:text-primary-600")}
+            aria-expanded={showNotifications}
+            aria-label="打开系统消息中心"
+          >
+            <Bell className="h-[clamp(18px,1.35vw,30px)] w-[clamp(18px,1.35vw,30px)]" />
+            {unreadCount > 0 ? <span className="absolute right-[clamp(3px,0.2vw,5px)] top-[clamp(3px,0.2vw,5px)] h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.85)]" /> : null}
+          </button>
+
+          <AnimatePresence>
+            {showNotifications ? (
+              <motion.div
+                initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -5, scale: 0.98 }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+                className={cn("absolute right-0 top-full z-[120] mt-2 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-2xl border p-3 shadow-[0_22px_48px_rgba(15,23,42,0.24)] backdrop-blur-xl", isDark ? "border-white/20 bg-slate-950/90" : "border-white/80 bg-white/94")}
+              >
+                <div className={cn("flex items-center justify-between border-b px-1 pb-2.5", isDark ? "border-white/10" : "border-slate-100")}>
+                  <div>
+                    <p className={cn("text-sm font-semibold", isDark ? "text-white" : "text-slate-800")}>系统消息</p>
+                  </div>
+                  <span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", isDark ? "bg-white/10 text-white/70" : "bg-slate-100 text-slate-500")}>{notifications.length} 条</span>
+                </div>
+                <div className="mt-2.5 max-h-72 space-y-2 overflow-y-auto pr-0.5">
+                  {notifications.length ? notifications.map((notification) => <NotificationItem key={notification.id} notification={notification} isDark={isDark} />) : (
+                    <div className={cn("rounded-xl border border-dashed px-3 py-6 text-center text-xs", isDark ? "border-white/15 text-white/45" : "border-slate-200 text-slate-400")}>暂无运行异常消息</div>
+                  )}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
         
         <button
           type="button"
-          onClick={(event) => showProfileModal(event.currentTarget)}
+          onClick={(event) => {
+            setShowNotifications(false);
+            showProfileModal(event.currentTarget);
+          }}
           className="group flex cursor-pointer items-center gap-[clamp(7px,0.6vw,14px)] rounded-full p-[clamp(4px,0.35vw,8px)] transition-colors hover:bg-white/10 md:pr-[clamp(10px,0.9vw,20px)]"
         >
           <div

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { reportSystemError } from "./systemNotifications";
 
 export type ToastTone = "success" | "warning" | "error";
 
@@ -50,6 +51,9 @@ export function useTimedToast(durations?: ToastDurations) {
       }
 
       setToast({ message, tone });
+      if (tone === "error") {
+        reportSystemError(message);
+      }
       const durationMs =
         options?.durationMs ?? resolvedDurations[tone] ?? resolvedDurations.success;
       timerRef.current = window.setTimeout(() => {
