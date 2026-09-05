@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#566b51" />
+  <title>最好的你｜现代诗沉浸朗读</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main id="experience" aria-label="现代诗沉浸朗读">
+    <video id="background-video" class="video-backdrop" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+      <source src="./assets/pastoral-background.mp4?v=web-optimized" type="video/mp4" />
+    </video>
+    <div class="video-shade" aria-hidden="true"></div>
+
+    <header class="top-bar">
+      <div class="brand"><span class="brand-mark">诗</span><span>向着自己的方向生长</span></div>
+      <div class="controls" role="group" aria-label="播放控制">
+        <button id="sound-button" class="icon-button" type="button" aria-label="静音" title="静音（M）">音</button>
+        <button id="play-button" class="icon-button" type="button" aria-label="暂停" title="暂停或继续（空格）">停</button>
+        <button id="exit-button" class="text-button" type="button" title="退出（Esc）">退出</button>
+      </div>
+    </header>
+
+    <section class="poem-panel" aria-live="polite">
+      <div class="poem-kicker">现代诗朗读</div>
+      <h1>最好的你</h1>
+      <div id="scroll-viewport" class="scroll-viewport" aria-label="朗读文本滚轴">
+        <div id="scroll-track" class="scroll-track"></div>
+        <div class="focus-line" aria-hidden="true"></div>
+      </div>
+    </section>
+
+
+    <section id="start-overlay" class="overlay is-visible" aria-labelledby="start-title">
+      <div class="opening-copy">
+        <div id="start-title" class="opening-title">最好的你</div>
+        <p>在田园的风声里，听一首写给自己的诗。</p>
+        <button id="start-button" class="start-button" type="button">开始聆听</button>
+        <span>约 1 分钟 · 可随时暂停或退出</span>
+      </div>
+    </section>
+
+    <section id="end-overlay" class="overlay end-overlay" aria-labelledby="end-title">
+      <div class="opening-copy">
+        <div id="end-title" class="opening-title">做一个最好的你</div>
+        <div class="end-actions"><button id="replay-button" class="start-button" type="button">再听一次</button><button id="end-exit-button" class="text-button" type="button">返回</button></div>
+      </div>
+    </section>
+    <div id="pause-hint" class="pause-hint" role="status"></div>
+  </main>
+
+  <audio id="recitation-audio" preload="auto" src="./audio/pastoral-recitation.wav"></audio>
+  <audio id="music-audio" preload="auto" loop src="./audio/pastoral-background.mp3"></audio>
+  <script src="./js/modern-poetry.js?v=poetry-selection-v7"></script>
+  <script src="./js/app.js?v=poetry-selection-v7"></script>
+</body>
+</html>

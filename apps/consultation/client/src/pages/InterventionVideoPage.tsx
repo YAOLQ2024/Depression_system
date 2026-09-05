@@ -59,6 +59,13 @@ function toAssetUri(path: string) {
   return encodeURI(path);
 }
 
+function getLoopedAudioTime(audio: HTMLAudioElement, videoTime: number) {
+  if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+    return 0;
+  }
+  return Math.max(0, videoTime % audio.duration);
+}
+
 function formatDuration(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return "00:00";
@@ -115,6 +122,7 @@ export default function InterventionVideoPage() {
   });
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
   const lastNonZeroVolumeRef = useRef(1);
 
   const [activeProgram, setActiveProgram] = useState<InterventionVideoProgram | null>(null);
@@ -143,6 +151,7 @@ export default function InterventionVideoPage() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       document.removeEventListener("webkitfullscreenchange", handleFullscreenChange as EventListener);
       videoRef.current?.pause();
+      backgroundAudioRef.current?.pause();
     };
   }, []);
 
@@ -178,6 +187,8 @@ export default function InterventionVideoPage() {
     }
 
     const videoSrc = toAssetUri(program.videoSrc);
+    const backgroundAudio = backgroundAudioRef.current;
+    const backgroundMusicSrc = program.backgroundMusicSrc ? toAssetUri(program.backgroundMusicSrc) : null;
 
     if (video.getAttribute("src") !== videoSrc) {
       setIsVideoReady(false);
@@ -193,8 +204,26 @@ export default function InterventionVideoPage() {
     }
 
     video.volume = volume;
-    video.muted = volume === 0;
+    video.muted = Boolean(backgroundMusicSrc) || volume === 0;
     video.loop = false;
+
+    if (backgroundAudio) {
+      backgroundAudio.pause();
+      if (backgroundMusicSrc) {
+        if (backgroundAudio.getAttribute("src") !== backgroundMusicSrc) {
+          backgroundAudio.setAttribute("src", backgroundMusicSrc);
+          backgroundAudio.load();
+        }
+        if (options.restart) {
+          backgroundAudio.currentTime = 0;
+        }
+        backgroundAudio.volume = volume;
+        backgroundAudio.muted = volume === 0;
+        backgroundAudio.loop = true;
+      } else {
+        backgroundAudio.loop = false;
+      }
+    }
 
     if (options.enterFullscreen) {
       void requestPlayerFullscreen(playerShellRef.current).catch(() => {
@@ -203,7 +232,12 @@ export default function InterventionVideoPage() {
     }
 
     try {
-      await video.play();
+      const videoPlayPromise = video.play();
+      const backgroundAudioPlayPromise = backgroundMusicSrc && backgroundAudio
+        ? backgroundAudio.play().catch(() => undefined)
+        : null;
+      await videoPlayPromise;
+      await backgroundAudioPlayPromise;
       setIsPlaying(true);
       setPlaybackError("");
     } catch {
@@ -236,6 +270,7 @@ export default function InterventionVideoPage() {
 
     if (isPlaying) {
       video.pause();
+      backgroundAudioRef.current?.pause();
       setIsPlaying(false);
       return;
     }
@@ -278,6 +313,9 @@ export default function InterventionVideoPage() {
 
     const nextValue = Math.min(Math.max(seekValue, 0), duration || 0);
     video.currentTime = nextValue;
+    if (activeProgram?.backgroundMusicSrc && backgroundAudioRef.current) {
+      backgroundAudioRef.current.currentTime = getLoopedAudioTime(backgroundAudioRef.current, nextValue);
+    }
     setCurrentTime(nextValue);
     setSeekValue(nextValue);
   };
@@ -298,7 +336,11 @@ export default function InterventionVideoPage() {
     }
 
     video.volume = nextVolume;
-    video.muted = nextVolume === 0;
+    video.muted = Boolean(activeProgram?.backgroundMusicSrc) || nextVolume === 0;
+    if (backgroundAudioRef.current) {
+      backgroundAudioRef.current.volume = nextVolume;
+      backgroundAudioRef.current.muted = nextVolume === 0;
+    }
     setVolume(nextVolume);
 
     if (nextVolume > 0) {
@@ -334,21 +376,30 @@ export default function InterventionVideoPage() {
       return;
     }
 
+    if (activeProgram?.backgroundMusicSrc && backgroundAudioRef.current) {
+      const backgroundAudio = backgroundAudioRef.current;
+      const expectedAudioTime = getLoopedAudioTime(backgroundAudio, video.currentTime);
+      if (Math.abs(backgroundAudio.currentTime - expectedAudioTime) > 0.35) {
+        backgroundAudio.currentTime = expectedAudioTime;
+      }
+    }
+
     setCurrentTime(video.currentTime);
     setSeekValue(video.currentTime);
   };
 
   const handleVideoEnded = () => {
+    backgroundAudioRef.current?.pause();
     setCurrentTime(duration);
     setSeekValue(duration);
     setIsPlaying(false);
   };
 
   return (
-    <ConsultationLayout backgroundImage="/bg.webp" title={COPY.pageTitle}>
-      <div className="relative flex h-full w-full overflow-hidden bg-[radial-gradient(circle_at_top,rgba(130,181,255,0.18),transparent_42%),linear-gradient(180deg,rgba(10,16,31,0.18),rgba(10,16,31,0.78))]">
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-6 px-5 pb-6 pt-6 md:px-8 lg:flex-row">
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-white/14 bg-slate-950/38 p-4 shadow-[0_24px_60px_rgba(2,6,23,0.45)] backdrop-blur-xl md:p-6">
+    <ConsultationLayout backgroundImage="/intervention/video/theater-background.png" title={COPY.pageTitle}>
+      <div className="relative h-full w-full overflow-hidden bg-black/20">
+        <div className="absolute inset-x-[20.5%] bottom-[27%] top-[8%] flex min-h-0 overflow-hidden rounded-md border border-black/55 bg-black/48 shadow-[0_18px_50px_rgba(0,0,0,0.48)] backdrop-blur-[2px]">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-white/12 p-4 text-white md:p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/70">Video Regulation</p>
@@ -368,6 +419,7 @@ export default function InterventionVideoPage() {
               ref={playerShellRef}
               className="relative mt-5 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-black/60"
             >
+              <audio ref={backgroundAudioRef} preload="auto" />
               <video
                 ref={videoRef}
                 className="h-full w-full object-cover"
@@ -380,7 +432,10 @@ export default function InterventionVideoPage() {
                 onCanPlay={() => setIsVideoReady(true)}
                 onTimeUpdate={handleVideoTimeUpdate}
                 onEnded={handleVideoEnded}
-                onPause={() => setIsPlaying(false)}
+                onPause={() => {
+                  backgroundAudioRef.current?.pause();
+                  setIsPlaying(false);
+                }}
                 onPlay={() => {
                   setIsPlaying(true);
                   setIsVideoReady(true);
@@ -510,7 +565,7 @@ export default function InterventionVideoPage() {
               ) : null}
             </div>
 
-            <div className="mt-5 flex flex-col gap-4 rounded-[28px] border border-white/10 bg-black/18 px-4 py-4 text-white/90 md:flex-row md:items-center md:justify-between md:px-5">
+            <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-white/10 bg-black/28 px-4 py-3 text-white/90 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/45">{COPY.playbackCardLabel}</p>
                 <p className="mt-2 truncate text-lg font-medium text-white">{activeProgram?.title ?? COPY.emptyProgram}</p>
@@ -552,12 +607,12 @@ export default function InterventionVideoPage() {
             ) : null}
           </section>
 
-          <aside className="w-full rounded-[32px] border border-white/14 bg-white/8 p-5 shadow-[0_20px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl lg:w-[380px]">
-            <p className="text-xs uppercase tracking-[0.35em] text-cyan-100/65">Program Selection</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-[0.06em] text-white">{COPY.selectionTitle}</h2>
-            <p className="mt-3 text-sm leading-6 text-white/68">{COPY.selectionHint}</p>
+          <aside className="flex w-[38%] min-w-[230px] flex-col overflow-y-auto bg-black/32 p-4 text-white backdrop-blur-sm md:p-5">
+            <p className="text-xs uppercase tracking-[0.28em] text-cyan-100/75">Program Selection</p>
+            <h2 className="mt-2 text-xl font-semibold tracking-[0.06em] text-white">{COPY.selectionTitle}</h2>
+            <p className="mt-2 text-sm leading-5 text-white/75">选择一段画面，开始影院体验。</p>
 
-            <div className="mt-6 flex flex-col gap-3">
+            <div className="mt-4 flex flex-col gap-2.5">
               {INTERVENTION_VIDEO_PROGRAMS.map((program) => {
                 const isActive = activeProgram?.id === program.id;
 
@@ -566,19 +621,14 @@ export default function InterventionVideoPage() {
                     key={program.id}
                     type="button"
                     onClick={() => void handleSelectProgram(program)}
-                    className={`rounded-[24px] border px-4 py-4 text-left transition ${
+                    className={`rounded-2xl border px-4 py-3 text-left transition ${
                       isActive
-                        ? "border-cyan-300/70 bg-cyan-300/18 text-white shadow-[0_12px_32px_rgba(45,212,191,0.15)]"
-                        : "border-white/12 bg-slate-950/26 text-white/88 hover:border-white/28 hover:bg-white/10"
+                        ? "border-amber-200/80 bg-amber-100/22 text-white shadow-[0_10px_26px_rgba(245,158,11,0.18)]"
+                        : "border-white/18 bg-black/38 text-white/92 hover:border-amber-100/55 hover:bg-white/12"
                     }`}
                   >
-                    <img
-                      src={toAssetUri(program.posterSrc)}
-                      alt={program.title}
-                      className="h-28 w-full rounded-[18px] object-cover"
-                    />
-                    <p className="text-base font-medium tracking-[0.02em]">{program.title}</p>
-                    <p className="mt-2 text-sm leading-6 text-white/62">{program.subtitle}</p>
+                    <p className="text-base font-semibold tracking-[0.08em]">{program.title}</p>
+                    <p className="mt-1 text-sm leading-5 text-white/72">{program.subtitle}</p>
                   </button>
                 );
               })}

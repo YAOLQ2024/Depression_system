@@ -9,6 +9,12 @@ import type { RecordInterventionEventPayload } from "../services/api/contracts";
 
 const INTERVENTION_ENTRY_VIDEO_URI = "/digital-human/intervention-v1/intervention-entry-001.webm";
 
+function requestBrowserFullscreen() {
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+    void document.documentElement.requestFullscreen().catch(() => undefined);
+  }
+}
+
 const buttonVariants = {
   initial: { y: 0 },
   float: {
@@ -52,7 +58,7 @@ function ActionButton({ text, delay, onClick, disabled = false }: ActionButtonPr
       whileTap={disabled ? undefined : "tap"}
       onClick={disabled ? undefined : onClick}
       style={{ animationDelay: `${delay}s` }}
-      className={`group relative flex h-[52px] w-[220px] items-center justify-center overflow-visible rounded-[24px] outline-none md:h-[60px] md:w-[260px] ${
+      className={`group relative flex h-[64px] w-[280px] items-center justify-center overflow-visible rounded-[30px] outline-none md:h-[76px] md:w-[340px] ${
         disabled ? "cursor-not-allowed opacity-70" : ""
       }`}
     >
@@ -63,14 +69,14 @@ function ActionButton({ text, delay, onClick, disabled = false }: ActionButtonPr
         <div className="absolute bottom-[10%] right-[10%] h-1 w-1 animate-[pulse_1.8s_ease-in-out_infinite_0.5s] rounded-full bg-purple-100 shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
       </div>
 
-      <div className="pointer-events-none absolute inset-0 z-10 rounded-[24px] bg-gradient-to-r from-blue-300 via-indigo-200 to-purple-300 opacity-0 blur-xl transition-opacity duration-500 group-hover:opacity-40" />
+      <div className="pointer-events-none absolute inset-0 z-10 rounded-[30px] bg-gradient-to-r from-blue-300 via-indigo-200 to-purple-300 opacity-0 blur-xl transition-opacity duration-500 group-hover:opacity-40" />
 
-      <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden rounded-[24px] border border-white/30 bg-white/10 shadow-[0_8px_32px_rgba(31,38,135,0.1),inset_0_4px_24px_rgba(255,255,255,0.2)] backdrop-blur-xl">
+      <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden rounded-[30px] border border-white/30 bg-white/10 shadow-[0_8px_32px_rgba(31,38,135,0.1),inset_0_4px_24px_rgba(255,255,255,0.2)] backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 -translate-x-full skew-x-12 bg-gradient-to-r from-transparent via-white/40 to-transparent group-hover:animate-[shimmer_1.5s_infinite]" />
         <div className="absolute inset-x-4 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-white/20 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
-        <span className="text-lg font-medium tracking-[0.2em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] md:text-xl">
+        <span className="text-xl font-semibold tracking-[0.2em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] md:text-2xl">
           {text}
         </span>
       </div>
@@ -118,7 +124,7 @@ export default function InterventionPage() {
 
   return (
     <ConsultationLayout backgroundImage="/TKbg.png" title="调节干预">
-      <div className="relative flex h-full w-full flex-col items-center justify-end overflow-hidden pb-4 md:pb-6">
+      <div className="relative flex h-full w-full flex-col items-center justify-end overflow-hidden pb-6 md:pb-9">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40" />
 
         <div className="absolute inset-x-0 bottom-0 top-16 flex items-end justify-center">
@@ -131,13 +137,13 @@ export default function InterventionPage() {
           />
         </div>
 
-        <div className="relative z-10 mb-5 w-full max-w-3xl px-6 text-center text-white">
-          <p className="text-xs uppercase tracking-[0.45em] text-white/65">Intervention</p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-[0.12em] md:text-4xl">选择一种调节方式</h1>
-          {sessionError ? <p className="mt-3 text-sm text-amber-200/90">{sessionError}</p> : null}
+        <div className="relative z-10 mb-7 w-full max-w-4xl px-6 text-center text-white">
+          <p className="text-sm uppercase tracking-[0.45em] text-white/75">Intervention</p>
+          <h1 className="mt-4 text-4xl font-semibold tracking-[0.12em] md:text-5xl">选择一种调节方式</h1>
+          {sessionError ? <p className="mt-4 text-base text-amber-200/90">{sessionError}</p> : null}
         </div>
 
-        <div className="perspective-[1000px] relative z-10 flex w-full max-w-5xl flex-col items-center justify-center gap-6 px-6 md:flex-row md:gap-10">
+        <div className="perspective-[1000px] relative z-10 flex w-full max-w-6xl flex-col items-center justify-center gap-7 px-6 md:flex-row md:gap-14">
           <ActionButton
             text="看一段视频"
             delay={0}
@@ -152,30 +158,18 @@ export default function InterventionPage() {
             }
           />
           <ActionButton
-            text="玩一个小游戏"
+            text="听一段诗歌"
             delay={0.2}
-            onClick={() =>
-              void handleSelectExperience(APP_PATHS.interventionGame, {
-                event_type: "experience_selected",
-                program_id: "mindbloom-word-garden",
-                program_title: "心灵花园词语游戏",
-                delivery_mode: "game",
-                payload: { destination: "game" },
-              })
-            }
-          />
-          <ActionButton
-            text="听一段故事"
-            delay={0.4}
-            onClick={() =>
+            onClick={() => {
+              requestBrowserFullscreen();
               void handleSelectExperience(APP_PATHS.interventionStory, {
                 event_type: "experience_selected",
-                program_id: "deer-forest-story",
-                program_title: "小鹿和森林故事",
-                delivery_mode: "story",
-                payload: { destination: "story" },
-              })
-            }
+                program_id: "poetry-experience",
+                program_title: "诗歌沉浸朗读",
+                delivery_mode: "poetry",
+                payload: { destination: "poetry" },
+              });
+            }}
           />
         </div>
       </div>

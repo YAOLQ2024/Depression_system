@@ -4,9 +4,17 @@ export type InterventionVideoProgram = {
   subtitle: string;
   videoSrc: string;
   posterSrc: string;
+  backgroundMusicSrc?: string;
 };
 
 export const INTERVENTION_VIDEO_PROGRAMS: InterventionVideoProgram[] = [
+  {
+    id: "ocean",
+    title: "海洋",
+    subtitle: "聆听海浪声，跟随海面舒缓呼吸。",
+    videoSrc: "/intervention/video/ocean-h264.mp4",
+    posterSrc: "/intervention/video/posters/ocean-001-poster.jpg",
+  },
   {
     id: "town-001",
     title: "\u5c0f\u9547",
@@ -20,12 +28,6 @@ export const INTERVENTION_VIDEO_PROGRAMS: InterventionVideoProgram[] = [
     subtitle: "\u753b\u9762\u66f4\u5f00\u9614\uff0c\u9002\u5408\u6c89\u6d78\u5f0f\u5730\u770b\u4e00\u6bb5\uff0c\u987a\u7740\u753b\u9762\u6162\u6162\u653e\u677e\u3002",
     videoSrc: "/intervention/video/starry-sky-001.mp4",
     posterSrc: "/intervention/video/posters/starry-sky-001-poster.jpg",
-  },
-  {
-    id: "ocean",
-    title: "海洋",
-    subtitle: "聆听海浪声，跟随海面舒缓呼吸。",
-    videoSrc: "/intervention/video/ocean-h264.mp4",
-    posterSrc: "/intervention/video/posters/ocean-001-poster.jpg",
+    backgroundMusicSrc: "/intervention/video/audio/starry-sky-background.mp3",
   },
 ];

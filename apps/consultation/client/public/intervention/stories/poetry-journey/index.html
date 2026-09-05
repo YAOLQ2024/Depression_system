@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#d8e0d6" />
+  <title>山水诗境｜古诗词沉浸朗读</title>
+  <link rel="stylesheet" href="./mountain.css?v=dingfengbo-v7" />
+</head>
+<body>
+  <main id="experience" aria-label="山水古诗词沉浸朗读">
+    <video id="background-video" class="video-backdrop" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="./assets/mountain-background.mp4?v=web-optimized" type="video/mp4" /></video>
+    <header class="top-bar"><div class="brand"><span class="brand-seal">诗</span><span>山水诗境</span></div><div class="controls" role="group" aria-label="播放控制"><button id="sound-button" class="icon-button" type="button" aria-label="静音" title="静音（M）">音</button><button id="play-button" class="icon-button" type="button" aria-label="暂停" title="暂停或继续（空格）">停</button><button id="exit-button" class="text-button" type="button" title="退出（Esc）">退出</button></div></header>
+    <section id="poem-stage" class="poem-stage" aria-live="polite"><div class="poem-meta"><div id="poem-title" class="poem-title"></div><div id="poem-author" class="poem-author"></div></div><div id="poem-lines" class="poem-lines" aria-label="当前诗词"></div></section>
+    <section id="start-overlay" class="overlay is-visible" aria-labelledby="start-title"><div class="opening-copy"><div id="start-title" class="opening-title">山水诗境</div><p>随山水静下来，听三首短诗。</p><button id="start-button" class="start-button" type="button">开始聆听</button><span>约 1 分钟 · 可随时暂停或退出</span></div></section>
+    <section id="end-overlay" class="overlay end-overlay" aria-labelledby="end-title" hidden><div class="opening-copy"><div id="end-title" class="opening-title">心随境远</div><div class="end-actions"><button id="replay-button" class="start-button" type="button">再听一次</button><button id="end-exit-button" class="text-button" type="button">返回</button></div></div></section>
+    <div id="pause-hint" class="pause-hint" role="status"></div>
+  </main>
+  <audio id="recitation-audio" preload="auto" src="./audio/mountain-recitation.wav"></audio>
+  <audio id="music-audio" preload="auto" loop src="./audio/mountain-background.mp3"></audio>
+  <script src="./js/mountain-poetry.js?v=poetry-selection-v7"></script><script src="./js/mountain-app.js?v=poetry-selection-v7"></script>
+</body>
+</html>
