@@ -41,6 +41,7 @@ eeg-bridge.exe
 
 **/test/
 **/tests/
+!apps/consultation/client/tests/
 !services/multimodal-service/tests/
 !tools/eeg-tools/tests/
 !tools/eeg-tools/tests/*.py
