@@ -27,16 +27,14 @@ export function reportSystemError(message: string) {
   if (latest?.message === normalizedMessage && now - latest.createdAt < 3_000) {
     notifications = [{ ...latest, createdAt: now, read: false }, ...notifications.slice(1)];
   } else {
-    notifications = [
-      {
-        id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
-        message: normalizedMessage,
-        tone: "error",
-        createdAt: now,
-        read: false,
-      },
-      ...notifications,
-    ].slice(0, 50);
+    const notification: SystemNotification = {
+      id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+      message: normalizedMessage,
+      tone: "error",
+      createdAt: now,
+      read: false,
+    };
+    notifications = [notification, ...notifications].slice(0, 50);
   }
   emitChange();
 }
@@ -53,5 +51,7 @@ export function markSystemNotificationsRead() {
 
 export function subscribeSystemNotifications(listener: NotificationListener) {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }

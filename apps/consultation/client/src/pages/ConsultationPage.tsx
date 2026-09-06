@@ -124,6 +124,7 @@ export default function ConsultationPage() {
 
   const playerRef = useRef<SeamlessVideoPlayerHandle | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const subtitleDragBoundsRef = useRef<HTMLDivElement | null>(null);
   const lastRecordingUrlRef = useRef<string | null>(null);
   const answerWindowPromptKeyRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
@@ -849,6 +850,7 @@ export default function ConsultationPage() {
       <AppToast toast={toast} />
 
       <div
+        ref={subtitleDragBoundsRef}
         style={
           {
             "--results-panel-reserve": "min(45vw, 650px)",
@@ -978,7 +980,11 @@ export default function ConsultationPage() {
           </div>
 
           <div className="absolute left-[5%] lg:left-[10%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
-            <DraggableMessagePanel title="字幕状态" lines={subtitlePanelLines} />
+            <DraggableMessagePanel
+              title="字幕状态"
+              lines={subtitlePanelLines}
+              dragConstraintsRef={subtitleDragBoundsRef}
+            />
           </div>
         </div>
 
@@ -1051,6 +1057,7 @@ export default function ConsultationPage() {
             errorText={cameraError}
             statusTone={cameraFeedback.tone}
             audioStatusText={microphoneFeedback.title}
+            showFooter={false}
           />
         </div>
       </div>

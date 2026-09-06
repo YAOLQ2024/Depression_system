@@ -144,7 +144,13 @@ export function Header({ theme = 'light', title }: HeaderProps) {
                   </div>
                   <span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", isDark ? "bg-white/10 text-white/70" : "bg-slate-100 text-slate-500")}>{notifications.length} 条</span>
                 </div>
-                <div className="mt-2.5 max-h-72 space-y-2 overflow-y-auto pr-0.5">
+                <div
+                  className="notification-list mt-2.5 max-h-[min(18rem,calc(100dvh-10rem))] space-y-2 overflow-x-hidden overflow-y-scroll overscroll-y-contain pr-2"
+                  data-theme={isDark ? "dark" : "light"}
+                  role="region"
+                  aria-label="系统消息列表"
+                  tabIndex={0}
+                >
                   {notifications.length ? notifications.map((notification) => <NotificationItem key={notification.id} notification={notification} isDark={isDark} />) : (
                     <div className={cn("rounded-xl border border-dashed px-3 py-6 text-center text-xs", isDark ? "border-white/15 text-white/45" : "border-slate-200 text-slate-400")}>暂无运行异常消息</div>
                   )}

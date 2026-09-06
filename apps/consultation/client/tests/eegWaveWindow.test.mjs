@@ -90,6 +90,23 @@ test("range and gain changes preserve retained path geometry", () => {
   assert.deepEqual(stream.takeSegmentChanges(), { clear: false, changed: [], removed: [] });
 });
 
+test("horizontal zoom changes the visible time window and its automatic amplitude range", () => {
+  const stream = new EegWaveWindow(10);
+  stream.reset(Array.from({ length: 41 }, (_, index) => (index === 5 ? 100 : index === 35 ? 5 : 0)));
+  stream.takeSegmentChanges();
+  assert.equal(stream.visibleSampleSpan, 40);
+  assert.deepEqual(stream.bounds, boundsFromExtrema(0, 100));
+
+  stream.setVisibleSampleSpan(20);
+  assert.equal(stream.visibleSampleSpan, 20);
+  assert.deepEqual(stream.bounds, boundsFromExtrema(0, 5));
+  assert.equal(stream.sampleCount, 41, "zoom must retain the default window for a later zoom-out");
+  assert.deepEqual(stream.takeSegmentChanges(), { clear: false, changed: [], removed: [] });
+
+  stream.setVisibleSampleSpan(40);
+  assert.deepEqual(stream.bounds, boundsFromExtrema(0, 100));
+});
+
 test("append touches only the current segment and new segments, preserving boundary connections", () => {
   const stream = new EegWaveWindow(256);
   stream.reset(Array(1025).fill(1));

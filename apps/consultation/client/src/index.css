@@ -132,6 +132,37 @@ button {
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-300;
   }
+
+  .notification-list {
+    --notification-scroll-thumb: #94a3b8;
+    --notification-scroll-track: #f1f5f9;
+    scrollbar-gutter: stable;
+    scrollbar-color: var(--notification-scroll-thumb) var(--notification-scroll-track);
+    scrollbar-width: auto;
+  }
+
+  .notification-list[data-theme="dark"] {
+    --notification-scroll-thumb: #64748b;
+    --notification-scroll-track: #1e293b;
+  }
+
+  .notification-list::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .notification-list::-webkit-scrollbar-track {
+    background: var(--notification-scroll-track);
+    border-radius: 999px;
+  }
+
+  .notification-list::-webkit-scrollbar-thumb {
+    background: var(--notification-scroll-thumb);
+    border-radius: 999px;
+  }
+
+  .notification-list::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
 }
 
 /* Scale selection page: selected-item entrance animation */

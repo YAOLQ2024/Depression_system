@@ -32,7 +32,7 @@ const COPY = {
   playbackCardLabel: "\u5f53\u524d\u64ad\u653e",
   emptyProgram: "\u8bf7\u9009\u62e9\u4e00\u4e2a\u89c6\u9891\u5f00\u59cb\u64ad\u653e",
   emptyHint:
-    "\u9009\u62e9\u89c6\u9891\u540e\u5c06\u81ea\u52a8\u8fdb\u5165\u5168\u5c4f\u3002\u70b9\u51fb\u753b\u9762\u53ef\u6682\u505c\u6216\u7ee7\u7eed\u64ad\u653e\uff0c\u53f3\u4e0a\u89d2\u53ef\u5c55\u5f00\u66f4\u591a\u63a7\u5236\u3002",
+    "\u9009\u62e9\u89c6\u9891\u540e\u5c06\u94fa\u6ee1\u5f71\u9662\u94f6\u5e55\u64ad\u653e\u3002\u9700\u8981\u5168\u5c4f\u65f6\uff0c\u8bf7\u70b9\u51fb\u53f3\u4e0a\u89d2\u7684\u5168\u5c4f\u6309\u94ae\u3002",
   panelTitle: "\u63a7\u5236\u9762\u677f",
   progressLabel: "\u64ad\u653e\u8fdb\u5ea6",
   volumeLabel: "\u97f3\u91cf",
@@ -47,7 +47,8 @@ const COPY = {
   mute: "\u9759\u97f3",
   selectionTitle: "\u9009\u62e9\u4e00\u4e2a\u89c6\u9891",
   selectionHint:
-    "\u9009\u62e9\u4efb\u610f\u4e00\u4e2a\u89c6\u9891\u540e\uff0c\u4f1a\u81ea\u52a8\u8fdb\u5165\u5168\u5c4f\u64ad\u653e\u3002\u89c6\u9891\u81ea\u5e26\u58f0\u97f3\uff0c\u4f60\u53ef\u4ee5\u6309\u9700\u6682\u505c\u3001\u62d6\u52a8\u8fdb\u5ea6\u3001\u8c03\u6574\u97f3\u91cf\u6216\u5207\u6362\u5168\u5c4f\u3002",
+    "\u9009\u62e9\u4efb\u610f\u4e00\u4e2a\u89c6\u9891\u540e\uff0c\u89c6\u9891\u4f1a\u94fa\u6ee1\u5f71\u9662\u94f6\u5e55\u64ad\u653e\u3002\u53ef\u4ee5\u6309\u9700\u6682\u505c\u3001\u62d6\u52a8\u8fdb\u5ea6\u3001\u8c03\u6574\u97f3\u91cf\uff0c\u6216\u70b9\u51fb\u5168\u5c4f\u6309\u94ae\u3002",
+  changeProgram: "\u5207\u6362\u89c6\u9891",
   cannotFullscreen: "\u672a\u80fd\u8fdb\u5165\u5168\u5c4f\uff0c\u4f46\u89c6\u9891\u5df2\u7ecf\u5f00\u59cb\u64ad\u653e\u3002",
   playbackBlocked: "\u6d4f\u89c8\u5668\u62e6\u622a\u4e86\u64ad\u653e\uff0c\u8bf7\u70b9\u51fb\u7ee7\u7eed\u64ad\u653e\u91cd\u8bd5\u3002",
   cannotReenterFullscreen: "\u5f53\u524d\u6d4f\u89c8\u5668\u672a\u80fd\u518d\u6b21\u8fdb\u5165\u5168\u5c4f\u3002",
@@ -179,7 +180,7 @@ export default function InterventionVideoPage() {
 
   const syncAndPlay = async (
     program: InterventionVideoProgram,
-    options: { restart: boolean; enterFullscreen?: boolean },
+    options: { restart: boolean },
   ) => {
     const video = videoRef.current;
     if (!video) {
@@ -225,12 +226,6 @@ export default function InterventionVideoPage() {
       }
     }
 
-    if (options.enterFullscreen) {
-      void requestPlayerFullscreen(playerShellRef.current).catch(() => {
-        setPlaybackError(COPY.cannotFullscreen);
-      });
-    }
-
     try {
       const videoPlayPromise = video.play();
       const backgroundAudioPlayPromise = backgroundMusicSrc && backgroundAudio
@@ -259,7 +254,15 @@ export default function InterventionVideoPage() {
         poster_src: program.posterSrc,
       },
     });
-    await syncAndPlay(program, { restart: true, enterFullscreen: true });
+    await syncAndPlay(program, { restart: true });
+  };
+
+  const handleChangeProgram = () => {
+    videoRef.current?.pause();
+    backgroundAudioRef.current?.pause();
+    setIsPlaying(false);
+    setIsControlPanelOpen(false);
+    setActiveProgram(null);
   };
 
   const handleTogglePlayback = async () => {
@@ -398,8 +401,12 @@ export default function InterventionVideoPage() {
   return (
     <ConsultationLayout backgroundImage="/intervention/video/theater-background.png" title={COPY.pageTitle}>
       <div className="relative h-full w-full overflow-hidden bg-black/20">
-        <div className="absolute inset-x-[20.5%] bottom-[27%] top-[8%] flex min-h-0 overflow-hidden rounded-md border border-black/55 bg-black/48 shadow-[0_18px_50px_rgba(0,0,0,0.48)] backdrop-blur-[2px]">
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-white/12 p-4 text-white md:p-5">
+        <div className="absolute inset-x-[20.5%] bottom-[24.5%] top-[2%] flex min-h-0 overflow-hidden rounded-md border border-black/55 bg-black/48 shadow-[0_18px_50px_rgba(0,0,0,0.48)] backdrop-blur-[2px]">
+          <section
+            className={`flex min-h-0 min-w-0 flex-1 flex-col border-r border-white/12 p-4 text-white md:p-5 ${
+              activeProgram ? "overflow-visible" : "overflow-hidden"
+            }`}
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/70">Video Regulation</p>
@@ -417,7 +424,11 @@ export default function InterventionVideoPage() {
 
             <div
               ref={playerShellRef}
-              className="relative mt-5 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-black/60"
+              className={`overflow-hidden bg-black/60 ${
+                activeProgram
+                  ? "absolute inset-0 z-20 rounded-none border-0"
+                  : "relative mt-5 flex-1 rounded-[28px] border border-white/10"
+              }`}
             >
               <audio ref={backgroundAudioRef} preload="auto" />
               <video
@@ -440,7 +451,6 @@ export default function InterventionVideoPage() {
                   setIsPlaying(true);
                   setIsVideoReady(true);
                 }}
-                onDoubleClick={() => void handleFullscreenToggle()}
               />
 
               {activeProgram ? (
@@ -453,6 +463,16 @@ export default function InterventionVideoPage() {
                     }`}
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/16" />
+
+                  <div className="absolute left-4 top-4 z-10">
+                    <button
+                      type="button"
+                      onClick={handleChangeProgram}
+                      className="rounded-full border border-white/12 bg-black/48 px-4 py-2 text-sm text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                    >
+                      {COPY.changeProgram}
+                    </button>
+                  </div>
 
                   <div className="absolute right-4 top-4 z-10 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
                     <button
@@ -607,7 +627,12 @@ export default function InterventionVideoPage() {
             ) : null}
           </section>
 
-          <aside className="flex w-[38%] min-w-[230px] flex-col overflow-y-auto bg-black/32 p-4 text-white backdrop-blur-sm md:p-5">
+          <aside
+            aria-hidden={activeProgram ? true : undefined}
+            className={`flex w-[38%] min-w-[230px] flex-col overflow-y-auto bg-black/32 p-4 text-white backdrop-blur-sm md:p-5 ${
+              activeProgram ? "pointer-events-none opacity-0" : ""
+            }`}
+          >
             <p className="text-xs uppercase tracking-[0.28em] text-cyan-100/75">Program Selection</p>
             <h2 className="mt-2 text-xl font-semibold tracking-[0.06em] text-white">{COPY.selectionTitle}</h2>
             <p className="mt-2 text-sm leading-5 text-white/75">选择一段画面，开始影院体验。</p>

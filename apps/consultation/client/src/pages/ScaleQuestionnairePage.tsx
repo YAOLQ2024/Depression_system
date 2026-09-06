@@ -271,6 +271,7 @@ export default function ScaleQuestionnairePage() {
 
   const playerRef = useRef<SeamlessVideoPlayerHandle | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const subtitleDragBoundsRef = useRef<HTMLDivElement | null>(null);
   const lastRecordingUrlRef = useRef<string | null>(null);
   const liveRefreshInFlightRef = useRef(false);
   const videoCompletionTimerRef = useRef<number | null>(null);
@@ -421,7 +422,7 @@ export default function ScaleQuestionnairePage() {
   const currentPromptText = currentVideoNode?.displayText || currentQuestionText;
   const currentVideoAssetId = currentVideoNode?.videoAssetId || currentQuestionKey;
   const currentVideoUri = currentVideoNode?.videoUri || null;
-  const displayedPromptText = isAnswerReminderActive ? ANSWER_OPTION_REMINDER_LABEL : currentPromptText;
+  const displayedSubtitleText = isAnswerReminderActive ? ANSWER_OPTION_REMINDER_LABEL : currentPromptText;
   const playableVideoUri = playerCurrentClip?.src ?? null;
   const currentTurnId = currentQuestionKey;
   const isAssessmentCompleted = assessment?.status === "completed";
@@ -946,11 +947,11 @@ export default function ScaleQuestionnairePage() {
     if (isAssessmentCompleted) {
       return ["系统：量表阶段已经完成，可以进入结果页查看评估结果。"];
     }
-    if (!assessment || !displayedPromptText) {
+    if (!assessment || !displayedSubtitleText) {
       return ["数字人：量表会话尚未加载。"];
     }
 
-    const lines = [`数字人：${displayedPromptText}`];
+    const lines = [`数字人：${displayedSubtitleText}`];
 
     if (subtitleUserTranscript?.trim()) {
       lines.push(`用户：${subtitleUserTranscript.trim()}`);
@@ -978,7 +979,7 @@ export default function ScaleQuestionnairePage() {
   }, [
     activeAcceptedLabel,
     assessment,
-    displayedPromptText,
+    displayedSubtitleText,
     isCurrentVideoStageIntro,
     isAdvancingAfterConfirmation,
     isAssessmentCompleted,
@@ -1174,6 +1175,7 @@ export default function ScaleQuestionnairePage() {
       <AppToast toast={toast} />
 
       <div
+        ref={subtitleDragBoundsRef}
         style={{
           "--scale-panel-width": "clamp(260px, 22vw, 340px)",
           "--scale-panel-left": "clamp(12px, 2vw, 32px)",
@@ -1288,7 +1290,11 @@ export default function ScaleQuestionnairePage() {
 
         {/* Subtitle — outside flex-1 so NOT affected by marginLeft/Right shift */}
         <div className="absolute left-[5%] lg:left-[10%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
-          <DraggableMessagePanel title="量表字幕" lines={assistantLines} />
+          <DraggableMessagePanel
+            title="量表字幕"
+            lines={assistantLines}
+            dragConstraintsRef={subtitleDragBoundsRef}
+          />
         </div>
 
         {/* Left side: Scale questionnaire panel toggle */}
@@ -1346,7 +1352,7 @@ export default function ScaleQuestionnairePage() {
                       isCurrentVideoStageIntro ? "text-[1rem] leading-8" : "text-[1.22rem] font-semibold leading-10",
                     )}
                   >
-                    {displayedPromptText || "题目加载中..."}
+                    {currentPromptText || "题目加载中..."}
                   </p>
                 </div>
               )}
@@ -1475,6 +1481,7 @@ export default function ScaleQuestionnairePage() {
             errorText={cameraError}
             statusTone={cameraFeedback.tone}
             audioStatusText={microphoneStatusTitle}
+            showFooter={false}
           />
         </div>
       </div>

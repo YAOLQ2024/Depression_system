@@ -1,12 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { motion, useDragControls } from "motion/react";
 
 interface DraggableMessagePanelProps {
   lines: string[];
   title?: string;
+  dragConstraintsRef?: RefObject<HTMLElement | null>;
 }
 
-export function DraggableMessagePanel({ lines, title = "AI 数字人医生" }: DraggableMessagePanelProps) {
+export function DraggableMessagePanel({
+  lines,
+  title = "AI 数字人医生",
+  dragConstraintsRef,
+}: DraggableMessagePanelProps) {
   const dragControls = useDragControls();
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -21,6 +26,8 @@ export function DraggableMessagePanel({ lines, title = "AI 数字人医生" }: D
     <motion.div 
       drag
       dragControls={dragControls}
+      dragConstraints={dragConstraintsRef}
+      dragElastic={0}
       dragListener={false}
       dragMomentum={false}
       style={{ x: 0, y: 0 }}

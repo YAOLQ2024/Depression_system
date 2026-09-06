@@ -17,7 +17,7 @@ export function ConsultationProgress({
   const resolvedCurrentStep = currentStageOrder ?? currentStep ?? 1;
 
   return (
-    <div className="z-10 mx-auto mt-0 flex w-full max-w-[1080px] items-center justify-between px-[clamp(12px,1.25vw,28px)] py-[clamp(4px,0.4vw,10px)]">
+    <div className="z-10 mx-auto mt-0 flex w-fit max-w-full items-center justify-center overflow-x-auto px-[clamp(12px,1.25vw,28px)] py-[clamp(4px,0.4vw,10px)]">
       {steps.map((step, idx) => {
         const stepNum = idx + 1;
         const isCompleted = stepNum < resolvedCurrentStep;
@@ -25,7 +25,7 @@ export function ConsultationProgress({
         const isFuture = stepNum > resolvedCurrentStep;
 
         return (
-          <div key={step} className="flex items-center flex-1 last:flex-none">
+          <div key={step} className="flex shrink-0 items-center">
             <div className={cn(
               "flex shrink-0 items-center gap-[clamp(6px,0.55vw,14px)] transition-colors",
               isActive ? "text-primary-600" : isFuture ? "text-slate-400" : "text-slate-700"
@@ -39,7 +39,7 @@ export function ConsultationProgress({
               <span className="whitespace-nowrap text-[clamp(11px,0.9vw,20px)] font-bold tracking-wide drop-shadow-sm">{step}</span>
             </div>
             {idx < steps.length - 1 && (
-              <div className="mx-[clamp(6px,1vw,24px)] flex-1 border-t-[clamp(1.5px,0.12vw,3px)] border-dashed border-slate-300/80"></div>
+              <div className="mx-[clamp(6px,1vw,24px)] w-[clamp(28px,5vw,96px)] shrink-0 border-t-[clamp(1.5px,0.12vw,3px)] border-dashed border-slate-300/80"></div>
             )}
           </div>
         );

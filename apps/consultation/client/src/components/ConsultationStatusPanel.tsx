@@ -14,7 +14,13 @@ import type {
 import { CameraPreview } from "./CameraPreview";
 import { EegEmotionImagePanel } from "./eeg/EegEmotionImagePanel";
 import { EegWaveChannelPlot } from "./eeg/EegWaveChannelPlot";
-import { EEG_WINDOW_SECONDS, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX } from "./eeg/eegWaveWindow";
+import {
+  EEG_HORIZONTAL_GAIN_MAX,
+  EEG_HORIZONTAL_GAIN_MIN,
+  EEG_WINDOW_SECONDS,
+  EEG_VERTICAL_GAIN_MIN,
+  EEG_VERTICAL_GAIN_MAX,
+} from "./eeg/eegWaveWindow";
 import { normalizeEegEmotionDistribution } from "./eeg/eegEmotionPresentation";
 
 const EEG_CHANNEL_COLORS = ["#60a5fa", "#34d399", "#f59e0b"];
@@ -159,6 +165,7 @@ const EegWavePreview = memo(function EegWavePreview({
   samples,
   samplingRate,
 }: EegWavePreviewProps) {
+  const [horizontalGain, setHorizontalGain] = useState(1);
   const [verticalGain, setVerticalGain] = useState(1);
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchDistanceRef = useRef<number | null>(null);
@@ -182,6 +189,10 @@ const EegWavePreview = memo(function EegWavePreview({
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault();
     const zoomFactor = Math.exp(-event.deltaY * 0.0025);
+    if (event.shiftKey) {
+      setHorizontalGain((currentGain) => clampNumber(currentGain * zoomFactor, EEG_HORIZONTAL_GAIN_MIN, EEG_HORIZONTAL_GAIN_MAX));
+      return;
+    }
     setVerticalGain((currentGain) => clampNumber(currentGain * zoomFactor, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX));
   };
 
@@ -229,7 +240,10 @@ const EegWavePreview = memo(function EegWavePreview({
     <div
       className="relative grid h-full min-h-0 gap-1 pt-10 pb-6 touch-none"
       style={{ gridTemplateRows: `repeat(${Math.max(1, visibleChannelNames.length)}, minmax(0, 1fr))` }}
-      onDoubleClick={() => setVerticalGain(1)}
+      onDoubleClick={() => {
+        setVerticalGain(1);
+        setHorizontalGain(1);
+      }}
       onPointerCancel={handlePointerEnd}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -250,6 +264,7 @@ const EegWavePreview = memo(function EegWavePreview({
             label={channelName}
             reset={reset}
             samplingRate={samplingRate}
+            horizontalGain={horizontalGain}
             verticalGain={verticalGain}
           />
         </div>
@@ -259,34 +274,29 @@ const EegWavePreview = memo(function EegWavePreview({
         onPointerDown={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <button
-          type="button"
-          aria-label="减小脑电波形增益"
-          className="rounded p-1 transition hover:bg-white/10"
-          onClick={() => setVerticalGain((currentGain) => clampNumber(currentGain / 1.35, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX))}
-        >
+        <span className="ml-0.5 text-[9px] text-slate-400">纵向</span>
+        <button type="button" aria-label="减小脑电波形纵向增益" className="rounded p-1 transition hover:bg-white/10" onClick={() => setVerticalGain((currentGain) => clampNumber(currentGain / 1.35, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX))}>
           <Minus className="h-3 w-3" />
         </button>
-        <span className="min-w-14 text-center font-medium tabular-nums">增益 ×{verticalGain.toFixed(1)}</span>
-        <button
-          type="button"
-          aria-label="增大脑电波形增益"
-          className="rounded p-1 transition hover:bg-white/10"
-          onClick={() => setVerticalGain((currentGain) => clampNumber(currentGain * 1.35, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX))}
-        >
+        <span className="min-w-9 text-center font-medium tabular-nums">×{verticalGain.toFixed(1)}</span>
+        <button type="button" aria-label="增大脑电波形纵向增益" className="rounded p-1 transition hover:bg-white/10" onClick={() => setVerticalGain((currentGain) => clampNumber(currentGain * 1.35, EEG_VERTICAL_GAIN_MIN, EEG_VERTICAL_GAIN_MAX))}>
           <Plus className="h-3 w-3" />
         </button>
-        <button
-          type="button"
-          aria-label="恢复脑电自动尺度"
-          className="ml-0.5 inline-flex items-center gap-1 rounded border border-white/10 px-1.5 py-1 text-[9px] transition hover:bg-white/10"
-          onClick={() => setVerticalGain(1)}
-        >
-          <RotateCcw className="h-2.5 w-2.5" /> 自动
+        <span className="mx-0.5 h-4 w-px bg-white/15" />
+        <span className="text-[9px] text-slate-400">横向</span>
+        <button type="button" aria-label="减小脑电波形横向增益" className="rounded p-1 transition hover:bg-white/10" onClick={() => setHorizontalGain((currentGain) => clampNumber(currentGain / 1.35, EEG_HORIZONTAL_GAIN_MIN, EEG_HORIZONTAL_GAIN_MAX))}>
+          <Minus className="h-3 w-3" />
+        </button>
+        <span className="min-w-9 text-center font-medium tabular-nums">×{horizontalGain.toFixed(1)}</span>
+        <button type="button" aria-label="增大脑电波形横向增益" className="rounded p-1 transition hover:bg-white/10" onClick={() => setHorizontalGain((currentGain) => clampNumber(currentGain * 1.35, EEG_HORIZONTAL_GAIN_MIN, EEG_HORIZONTAL_GAIN_MAX))}>
+          <Plus className="h-3 w-3" />
+        </button>
+        <button type="button" aria-label="恢复脑电自动尺度" className="ml-0.5 inline-flex items-center justify-center gap-1 rounded border border-white/10 px-1.5 py-1 text-[9px] transition hover:bg-white/10" onClick={() => { setVerticalGain(1); setHorizontalGain(1); }}>
+          <RotateCcw className="h-2.5 w-2.5" /> 复位
         </button>
       </div>
       <div className="pointer-events-none absolute bottom-1 right-2 z-10 rounded bg-slate-950/65 px-1.5 py-0.5 text-[9px] text-slate-400">
-        最近 {EEG_WINDOW_SECONDS} 秒 · 滚轮 / 双指缩放 · 双击复位
+        最近 {(EEG_WINDOW_SECONDS / horizontalGain).toFixed(horizontalGain === 1 ? 0 : 1)} 秒 · 滚轮纵向 / Shift + 滚轮横向 · 双击复位
       </div>
     </div>
   );

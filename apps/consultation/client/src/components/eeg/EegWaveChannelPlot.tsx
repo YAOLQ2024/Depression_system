@@ -1,6 +1,13 @@
 import { useEffect, useRef } from "react";
 
-import { applyVerticalGain, EEG_WINDOW_SECONDS, EegWaveWindow, formatWaveAxisValue } from "./eegWaveWindow";
+import {
+  applyVerticalGain,
+  EEG_HORIZONTAL_GAIN_MAX,
+  EEG_HORIZONTAL_GAIN_MIN,
+  EEG_WINDOW_SECONDS,
+  EegWaveWindow,
+  formatWaveAxisValue,
+} from "./eegWaveWindow";
 
 type SampleMeta = { length: number; lastSeq: number | null; lastCapturedAtMs: number | null };
 type Props = {
@@ -12,6 +19,7 @@ type Props = {
   label: string;
   reset: boolean;
   samplingRate: number;
+  horizontalGain: number;
   verticalGain: number;
 };
 
@@ -43,6 +51,7 @@ export function EegWaveChannelPlot(props: Props) {
     let fullMeta: SampleMeta | null = null;
     let appendMeta: SampleMeta | null = null;
     let lastReset = false;
+    let horizontalGain = 1;
     let gain = 1;
     let width = 1;
     let plotHeight = 1;
@@ -70,7 +79,7 @@ export function EegWaveChannelPlot(props: Props) {
       }
       const bounds = applyVerticalGain(stream.bounds, gain);
       const span = bounds.upperBound - bounds.lowerBound;
-      const xScale = width / stream.sampleSpan;
+      const xScale = width / stream.visibleSampleSpan;
       const yScale = plotHeight / span;
       paths.setAttribute("transform", `matrix(${xScale} 0 0 ${-yScale} ${-stream.start * xScale} ${bounds.upperBound * yScale})`);
       // Both labels and the transform are committed together, before the browser paints.
@@ -100,7 +109,12 @@ export function EegWaveChannelPlot(props: Props) {
       update(next) {
         const fullChanged = !sameMeta(fullMeta, next.fullMeta);
         const resetChanged = next.reset && !lastReset;
-        let changed = gain !== next.verticalGain;
+        const nextHorizontalGain = Math.min(
+          EEG_HORIZONTAL_GAIN_MAX,
+          Math.max(EEG_HORIZONTAL_GAIN_MIN, next.horizontalGain),
+        );
+        const horizontalChanged = horizontalGain !== nextHorizontalGain;
+        let changed = gain !== next.verticalGain || horizontalChanged;
         if (fullChanged || resetChanged) {
           stream.reset(next.fullValues);
           fullMeta = next.fullMeta;
@@ -115,6 +129,8 @@ export function EegWaveChannelPlot(props: Props) {
         }
         lastReset = next.reset;
         gain = next.verticalGain;
+        horizontalGain = nextHorizontalGain;
+        stream.setVisibleSampleSpan(stream.sampleSpan / horizontalGain);
         if (changed) schedule();
       },
     };

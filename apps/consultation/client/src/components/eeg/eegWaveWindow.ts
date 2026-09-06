@@ -1,6 +1,8 @@
 export const EEG_WINDOW_SECONDS = 4;
 export const EEG_VERTICAL_GAIN_MIN = 0.25;
 export const EEG_VERTICAL_GAIN_MAX = 32;
+export const EEG_HORIZONTAL_GAIN_MIN = 1;
+export const EEG_HORIZONTAL_GAIN_MAX = 8;
 const SEGMENT_SAMPLES = 64;
 const MAX_PENDING_SECONDS = 0.5;
 const MIN_SPAN_UV = 0.1;
@@ -65,6 +67,7 @@ class ExtremeQueue {
 export class EegWaveWindow {
   readonly sampleSpan: number;
   private readonly maxPendingSamples: number;
+  private viewSampleSpan: number;
   private samples = new Map<number, number>();
   private segments = new Map<number, WaveSegment>();
   private changedSegments = new Map<number, WaveSegment>();
@@ -78,14 +81,24 @@ export class EegWaveWindow {
 
   constructor(readonly samplingRate: number) {
     this.sampleSpan = Math.max(1, Math.round(samplingRate * EEG_WINDOW_SECONDS));
+    this.viewSampleSpan = this.sampleSpan;
     this.maxPendingSamples = Math.max(1, Math.round(samplingRate * MAX_PENDING_SECONDS));
   }
 
   get end() { return this.cursor; }
-  get start() { return this.cursor - this.sampleSpan; }
+  get start() { return this.cursor - this.viewSampleSpan; }
+  get visibleSampleSpan() { return this.viewSampleSpan; }
   get pending() { return this.cursor < this.nextIndex - 1; }
   get sampleCount() { return this.samples.size; }
   get segmentCount() { return this.segments.size; }
+
+  /** Horizontal zoom changes the actual visible time window, so extrema must follow it too. */
+  setVisibleSampleSpan(sampleSpan: number) {
+    const nextSpan = Math.min(this.sampleSpan, Math.max(1, Math.round(sampleSpan)));
+    if (nextSpan === this.viewSampleSpan) return;
+    this.viewSampleSpan = nextSpan;
+    this.rebuildExtrema();
+  }
 
   reset(values: number[]) {
     this.samples.clear();
@@ -157,17 +170,33 @@ export class EegWaveWindow {
     this.scannedThrough = last;
     this.minimum.expire(first);
     this.maximum.expire(first);
-    // Keep the left interpolation endpoint; future points remain bounded by maxPendingSamples.
+    // Retain the full default window so horizontal zoom can return to four seconds without history.
+    const retainedStart = Math.floor(this.cursor - this.sampleSpan);
     for (const index of this.samples.keys()) {
-      if (index >= Math.floor(this.start)) break;
+      if (index >= retainedStart) break;
       this.samples.delete(index);
     }
     for (const [id, segment] of this.segments) {
-      if (segment.end >= Math.floor(this.start)) break;
+      if (segment.end >= retainedStart) break;
       this.segments.delete(id);
       this.changedSegments.delete(id);
       this.removedSegments.add(id);
     }
+  }
+
+  private rebuildExtrema() {
+    this.minimum = new ExtremeQueue(true);
+    this.maximum = new ExtremeQueue(false);
+    const first = Math.ceil(this.start);
+    const last = Math.floor(this.end);
+    for (let index = Math.max(0, first); index <= last; index++) {
+      const value = this.samples.get(index);
+      if (value !== undefined && Number.isFinite(value)) {
+        this.minimum.push(index, value);
+        this.maximum.push(index, value);
+      }
+    }
+    this.scannedThrough = last;
   }
 
   private valueAt(position: number) {
