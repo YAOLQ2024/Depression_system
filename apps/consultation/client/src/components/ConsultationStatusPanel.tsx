@@ -541,11 +541,40 @@ export function ConsultationStatusPanel({
   const snapshot = resolveLiveData(consultation);
   const currentTurnFaceBundle = readBundleFaceSummary(consultation.current_turn_bundle);
   const currentTurnPoseBundle = readBundlePoseSummary(consultation.current_turn_bundle);
-  const liveFacePrimaryLabel = snapshot.face.primary_label || currentTurnFaceBundle.primary_label;
-  const liveFacePrimaryScore = snapshot.face.primary_score ?? currentTurnFaceBundle.primary_score;
+  const displayedFaceBundleRef = useRef<{
+    turnId: string;
+    summary: ReturnType<typeof readBundleFaceSummary>;
+  } | null>(null);
+  const currentTurnId = consultation.current_turn_bundle?.turn_id || null;
+  const currentFaceSampleCount =
+    currentTurnFaceBundle.valid_sample_count ?? currentTurnFaceBundle.sample_count ?? 0;
+  let displayedFaceBundle = currentTurnFaceBundle;
+  let isUsingPreviousFaceBundle = false;
+
+  if (currentTurnId) {
+    const previous = displayedFaceBundleRef.current;
+    if (!previous || previous.turnId === currentTurnId || currentFaceSampleCount >= 3) {
+      displayedFaceBundleRef.current = {
+        turnId: currentTurnId,
+        summary: currentTurnFaceBundle,
+      };
+    } else {
+      // Keep the completed previous-turn distribution visible until the new
+      // turn has enough frames to form a meaningful distribution.
+      displayedFaceBundle = previous.summary;
+      isUsingPreviousFaceBundle = true;
+    }
+  } else if (displayedFaceBundleRef.current) {
+    displayedFaceBundle = displayedFaceBundleRef.current.summary;
+    isUsingPreviousFaceBundle = true;
+  }
+
+  const liveFacePrimaryLabel = isUsingPreviousFaceBundle
+    ? displayedFaceBundle.primary_label
+    : snapshot.face.primary_label || displayedFaceBundle.primary_label;
   const faceLabels =
-    currentTurnFaceBundle.label_distribution.length > 0
-      ? currentTurnFaceBundle.label_distribution
+    displayedFaceBundle.label_distribution.length > 0
+      ? displayedFaceBundle.label_distribution
       : getTopLabels(snapshot.face.top_3_labels);
   const eegLatestResult = snapshot.eeg_live.latest_result;
   const eegDistribution = normalizeEegEmotionDistribution(eegLatestResult?.top_3_labels);
@@ -592,7 +621,7 @@ export function ConsultationStatusPanel({
                 audioActive={isRecording}
                 title={cameraStatusTitle}
                 headlineText={cameraStatusTitle}
-                detailText={getFaceDetail(snapshot.face, currentTurnFaceBundle)}
+                detailText={getFaceDetail(snapshot.face, displayedFaceBundle)}
                 errorText={cameraError}
                 statusTone={cameraStatusTone}
                 audioStatusText={microphoneStatusText}
@@ -607,9 +636,6 @@ export function ConsultationStatusPanel({
                 <div>
                   <div className="text-[23px] font-bold leading-none text-emerald-400">
                     {getPrimaryLabel(liveFacePrimaryLabel, snapshot.face.status)}
-                  </div>
-                  <div className="mt-1 text-[14px] font-medium text-slate-200">
-                    {formatPercent(liveFacePrimaryScore)} 置信度
                   </div>
                 </div>
               </div>

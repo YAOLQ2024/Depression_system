@@ -118,8 +118,20 @@ export function useConsultationApp() {
   const currentScaleMeta = assessmentCatalog.find((item) => item.slug === assessment?.current_scale_slug) || null;
 
   function mergeConsultationWithCurrentTurnBundle(nextConsultation: ConsultationSession) {
-    const currentBundle = consultation?.current_turn_bundle || null;
-    const currentVisualPipeline = consultation?.visual_pipeline || null;
+    const isSameSession = consultation?.session_id === nextConsultation.session_id;
+    const currentBundle = isSameSession ? consultation?.current_turn_bundle || null : null;
+    const currentVisualPipeline = isSameSession ? consultation?.visual_pipeline || null : null;
+    // The turn-submit endpoint deliberately returns an empty live object: its
+    // response describes the workflow state, while the dashboard is fed by the
+    // live stream.  Merge it with the browser's current snapshot so advancing
+    // a consultation question does not reset EEG or visual detection to
+    // pending before the next stream update arrives.
+    const multimodalLive = isSameSession
+      ? mergeConsultationMultimodalLive(consultation?.multimodal_live, nextConsultation.multimodal_live)
+      : mergeConsultationMultimodalLive(null, nextConsultation.multimodal_live);
+    const multimodalLiveUpdatedAt = isSameSession
+      ? nextConsultation.multimodal_live_updated_at || consultation?.multimodal_live_updated_at || null
+      : nextConsultation.multimodal_live_updated_at || null;
     if (
       currentBundle &&
       currentBundle.turn_id &&
@@ -128,12 +140,16 @@ export function useConsultationApp() {
     ) {
       return {
         ...nextConsultation,
+        multimodal_live: multimodalLive,
+        multimodal_live_updated_at: multimodalLiveUpdatedAt,
         current_turn_bundle: currentBundle,
         visual_pipeline: currentVisualPipeline,
       };
     }
     return {
       ...nextConsultation,
+      multimodal_live: multimodalLive,
+      multimodal_live_updated_at: multimodalLiveUpdatedAt,
       current_turn_bundle: null,
       visual_pipeline: currentVisualPipeline,
     };

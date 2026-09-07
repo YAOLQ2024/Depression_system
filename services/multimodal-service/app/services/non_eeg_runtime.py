@@ -36,6 +36,9 @@ class _TensorRTSession:
         if self._engine is None:
             raise RuntimeError(f"Cannot deserialize TensorRT engine: {plan_path}")
         self._context = self._engine.create_execution_context()
+        # An IExecutionContext owns mutable activation and shape state.  It must
+        # not be used by concurrent request threads; serialize one cached context.
+        self._execution_lock = threading.Lock()
         self._input_names = [
             self._engine.get_tensor_name(index)
             for index in range(self._engine.num_io_tensors)
@@ -54,29 +57,30 @@ class _TensorRTSession:
         return [_TensorMetadata(name) for name in self._output_names]
 
     def run(self, output_names, input_feed):
-        tensors = {}
-        for name in self._input_names:
-            if name not in input_feed:
-                raise ValueError(f"TensorRT input missing: {name}")
-            expected_dtype = np.dtype(trt.nptype(self._engine.get_tensor_dtype(name)))
-            value = np.ascontiguousarray(input_feed[name], dtype=expected_dtype)
-            if not self._context.set_input_shape(name, tuple(value.shape)):
-                raise ValueError(f"TensorRT shape is outside the optimization profile: {name}={value.shape}")
-            tensors[name] = torch.as_tensor(value, device="cuda")
-        for name in self._output_names:
-            shape = tuple(self._context.get_tensor_shape(name))
-            if any(dim < 0 for dim in shape):
-                raise RuntimeError(f"TensorRT unresolved output shape: {name}={shape}")
-            tensors[name] = torch.empty(shape, dtype=_torch_dtype(self._engine.get_tensor_dtype(name)), device="cuda")
-        for name, tensor in tensors.items():
-            if not self._context.set_tensor_address(name, tensor.data_ptr()):
-                raise RuntimeError(f"TensorRT cannot bind tensor: {name}")
-        stream = torch.cuda.current_stream()
-        if not self._context.execute_async_v3(stream.cuda_stream):
-            raise RuntimeError("TensorRT execution failed")
-        stream.synchronize()
-        selected = self._output_names if output_names is None else output_names
-        return [tensors[name].detach().cpu().numpy() for name in selected]
+        with self._execution_lock:
+            tensors = {}
+            for name in self._input_names:
+                if name not in input_feed:
+                    raise ValueError(f"TensorRT input missing: {name}")
+                expected_dtype = np.dtype(trt.nptype(self._engine.get_tensor_dtype(name)))
+                value = np.ascontiguousarray(input_feed[name], dtype=expected_dtype)
+                if not self._context.set_input_shape(name, tuple(value.shape)):
+                    raise ValueError(f"TensorRT shape is outside the optimization profile: {name}={value.shape}")
+                tensors[name] = torch.as_tensor(value, device="cuda")
+            for name in self._output_names:
+                shape = tuple(self._context.get_tensor_shape(name))
+                if any(dim < 0 for dim in shape):
+                    raise RuntimeError(f"TensorRT unresolved output shape: {name}={shape}")
+                tensors[name] = torch.empty(shape, dtype=_torch_dtype(self._engine.get_tensor_dtype(name)), device="cuda")
+            for name, tensor in tensors.items():
+                if not self._context.set_tensor_address(name, tensor.data_ptr()):
+                    raise RuntimeError(f"TensorRT cannot bind tensor: {name}")
+            stream = torch.cuda.current_stream()
+            if not self._context.execute_async_v3(stream.cuda_stream):
+                raise RuntimeError("TensorRT execution failed")
+            stream.synchronize()
+            selected = self._output_names if output_names is None else output_names
+            return [tensors[name].detach().cpu().numpy() for name in selected]
 
 
 _ORIGINAL_INFERENCE_SESSION = ort.InferenceSession

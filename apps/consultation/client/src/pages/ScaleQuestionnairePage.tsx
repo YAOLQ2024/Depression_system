@@ -618,7 +618,9 @@ export default function ScaleQuestionnairePage() {
     setSubtitleUserTranscript(null);
     setPendingAcceptedAnswer(null);
     setCurrentTurnBundle(null);
-    setMultimodalLive(null);
+    // The bundle is scoped to one question, while the live dashboard belongs
+    // to the full assessment session.  Keep it visible while the next turn
+    // starts so EEG and visual labels do not flash back to their pending state.
     setVisualPipeline(null);
     setAnswerReminderVisible(false);
     resetCaptureCount();

@@ -160,6 +160,10 @@ def get_settings() -> dict:
             os.getenv("ASR_SYNC_TIMEOUT_MS"),
             15000,
         ),
+        "audio_inference_timeout_seconds": _as_int(
+            os.getenv("AUDIO_INFERENCE_TIMEOUT_SECONDS"),
+            20,
+        ),
         "asr_preview_max_duration_ms": _as_int(
             os.getenv("ASR_PREVIEW_MAX_DURATION_MS"),
             10000,

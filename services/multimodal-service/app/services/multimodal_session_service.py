@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -1740,27 +1740,30 @@ def warmup_multimodal_session(
     payload: WarmupMultimodalSessionRequest,
     acting_user_id: str | None = None,
 ) -> dict[str, Any]:
-    from app.services.non_eeg_runtime import runtime_store
-
     with get_db_session() as db_session:
         session = db_session.get(MultimodalSession, session_id)
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
 
-        modalities = _normalize_modalities(payload.modalities)
-        if "text" in modalities:
-            runtime_store.get_text_engine()
-        if "audio" in modalities:
-            runtime_store.get_audio_engine()
-            get_asr_runtime().warmup()
-        if "face" in modalities:
-            runtime_store.get_face_engine()
-        if "pose" in modalities:
-            runtime_store.get_pose_engine()
-        if "eeg" in modalities:
-            eeg_runtime_service.warmup_model()
+    modalities = _normalize_modalities(payload.modalities)
+    if "text" in modalities:
+        runtime_store.get_text_engine()
+    if "audio" in modalities:
+        runtime_store.get_audio_engine()
+        get_asr_runtime().warmup()
+    if "face" in modalities:
+        runtime_store.get_face_engine()
+    if "pose" in modalities:
+        runtime_store.get_pose_engine()
+    if "eeg" in modalities:
+        eeg_runtime_service.warmup_model()
 
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
         now = _utcnow()
         session.status = "warm"
         session.warmed_up_at = now
@@ -2527,6 +2530,11 @@ def submit_audio_turn(
             captured_at=captured_at,
         )
 
+        # Audio inference runs in a worker and can take substantially longer than
+        # database work.  Persist the capture before waiting so the session row is
+        # never kept in an open transaction while the model is running.
+        db_session.commit()
+
         try:
             if effective_audio_emotion_wav_path is not None:
                 speech_future = _AUDIO_TURN_EXECUTOR.submit(
@@ -2544,7 +2552,17 @@ def submit_audio_turn(
                     audio_format=resolved_audio_format or "wav",
                     sampling_rate=resolved_sampling_rate,
                 )
-            speech_raw_result = speech_future.result()
+            try:
+                speech_raw_result = speech_future.result(
+                    timeout=get_settings()["audio_inference_timeout_seconds"],
+                )
+            except FutureTimeoutError as exc:
+                speech_future.cancel()
+                raise MultimodalServiceError(
+                    "audio emotion inference timed out",
+                    5033,
+                    503,
+                ) from exc
             if provided_transcript_text is not None:
                 asr_payload = {
                     "transcript_text": provided_transcript_text,
