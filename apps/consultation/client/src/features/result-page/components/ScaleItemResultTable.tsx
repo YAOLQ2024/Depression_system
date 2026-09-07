@@ -34,6 +34,35 @@ function getScoreBadgeClass(
   }
 }
 
+function getAnswerMethod(source: ResultScaleItem["answerSource"]) {
+  if (source === "voice") {
+    return {
+      label: "语音作答",
+      darkClassName: "border-sky-300/35 bg-sky-400/14 text-sky-100",
+      lightClassName: "border-sky-200 bg-sky-50 text-sky-700",
+    };
+  }
+  if (source === "click" || source === "click_selection") {
+    return {
+      label: "点击选项",
+      darkClassName: "border-violet-300/35 bg-violet-400/14 text-violet-100",
+      lightClassName: "border-violet-200 bg-violet-50 text-violet-700",
+    };
+  }
+  if (!source) {
+    return {
+      label: "未记录",
+      darkClassName: "border-white/15 bg-white/[0.06] text-white/60",
+      lightClassName: "border-slate-200 bg-slate-50 text-slate-500",
+    };
+  }
+  return {
+    label: "其他作答",
+    darkClassName: "border-slate-300/30 bg-slate-400/12 text-slate-100",
+    lightClassName: "border-slate-200 bg-slate-50 text-slate-500",
+  };
+}
+
 export function ScaleItemResultTable({ items, className, notice }: ScaleItemResultTableProps) {
   const theme = useResultTheme();
   const isDark = theme === "dark";
@@ -50,7 +79,7 @@ export function ScaleItemResultTable({ items, className, notice }: ScaleItemResu
       </div>
       <GlassCard className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left">
+          <table className="w-full min-w-[840px] border-collapse text-left">
             <thead>
               <tr
                 className={cn(
@@ -60,6 +89,7 @@ export function ScaleItemResultTable({ items, className, notice }: ScaleItemResu
               >
                 <th className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-white/80" : "text-slate-600")}>详细作答</th>
                 <th className={cn("w-[240px] px-4 py-3 text-left text-sm font-medium", isDark ? "text-white/80" : "text-slate-600")}>用户选择</th>
+                <th className={cn("w-[140px] px-4 py-3 text-left text-sm font-medium", isDark ? "text-white/80" : "text-slate-600")}>作答方式</th>
                 <th className={cn("w-[180px] px-4 py-3 text-left text-sm font-medium", isDark ? "text-white/80" : "text-slate-600")}>计分标签</th>
               </tr>
             </thead>
@@ -94,16 +124,17 @@ export function ScaleItemResultTable({ items, className, notice }: ScaleItemResu
                       >
                         {item.answerLabel || "未作答"}
                       </span>
-                      {item.answerSource ? (
-                        <span className={cn("text-xs", isDark ? "text-white/55" : "text-slate-400")}>
-                          {item.answerSource === "voice"
-                            ? "语音作答"
-                            : item.answerSource === "click"
-                              ? "点击作答"
-                              : item.answerSource}
-                        </span>
-                      ) : null}
                     </div>
+                  </td>
+                  <td className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full border px-3 py-1 text-sm font-medium",
+                        isDark ? getAnswerMethod(item.answerSource).darkClassName : getAnswerMethod(item.answerSource).lightClassName,
+                      )}
+                    >
+                      {getAnswerMethod(item.answerSource).label}
+                    </span>
                   </td>
                   <td className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
                     {item.effectiveScoreLabel ? (

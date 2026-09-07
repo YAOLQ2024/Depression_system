@@ -130,6 +130,21 @@ function buildProfilePayload(formData: PreparationFormData): UpdateUserProfilePa
 function validateAndBuildProfilePayload(
   formData: PreparationFormData,
 ): { payload: UpdateUserProfilePayload | null; error: string | null } {
+  const requiredFields = [
+    formData.full_name,
+    formData.gender,
+    formData.age,
+    formData.height_cm,
+    formData.weight_kg,
+    formData.marital_status,
+    formData.parents_marital_status,
+    formData.parents_occupation,
+    formData.prior_psychiatric_visit,
+  ];
+  if (requiredFields.some((value) => !value.trim())) {
+    return { payload: null, error: "请填写全部 9 项基础信息。" };
+  }
+
   const payload: UpdateUserProfilePayload = {
     full_name: formData.full_name.trim(),
   };
@@ -269,11 +284,12 @@ export default function PreparationPage() {
     doctorPersonas.find((persona) => persona.persona_id === selectedDoctorPersonaId) || null;
   const displayedDoctorPersona = selectedDoctorPersona || doctorPersonas[0] || null;
   const hasSavedProfile = Boolean(profile.full_name.trim());
+  const isProfileComplete = state.user?.profile_status === "completed";
   const isDeviceAuth = Boolean(deviceAccess?.all_required_ready);
   const isDataAuth = Boolean(dataConsentConfirmedAt);
   const isDoctorSelected = Boolean(selectedDoctorPersonaId);
-  const isReady = hasSavedProfile && isDeviceAuth && isDataAuth && isDoctorSelected;
-  const readyCount = [hasSavedProfile, isDeviceAuth, isDataAuth, isDoctorSelected].filter(Boolean).length;
+  const isReady = isProfileComplete && isDeviceAuth && isDataAuth && isDoctorSelected;
+  const readyCount = [isProfileComplete, isDeviceAuth, isDataAuth, isDoctorSelected].filter(Boolean).length;
   const resumableConsultationId =
     state.consultation && state.consultation.status !== "handoff_ready"
       ? state.consultation.session_id

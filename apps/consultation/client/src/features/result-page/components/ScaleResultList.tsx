@@ -28,7 +28,6 @@ export function ScaleResultList({ scales, selectedScaleId, onScaleSelect }: Scal
 
   return (
     <GlassCard className="p-3">
-      <h3 className={cn("mb-3 text-base font-semibold", t.title[theme])}>量表结果</h3>
       <div className="flex flex-col gap-2">
         {scales.map((scale, index) => {
           const tone = getScaleTone(index);

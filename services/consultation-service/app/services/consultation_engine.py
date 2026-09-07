@@ -271,6 +271,12 @@ def create_consultation_session(
             code=4031,
             status_code=403,
         )
+    if payload.participant_profile_snapshot.get("profile_status") != "completed":
+        raise ConsultationServiceError(
+            "complete your profile before creating a consultation",
+            code=4033,
+            status_code=403,
+        )
     bundle = get_workflow_loader().load_bundle()
     persona_id = (
         payload.assigned_doctor_persona

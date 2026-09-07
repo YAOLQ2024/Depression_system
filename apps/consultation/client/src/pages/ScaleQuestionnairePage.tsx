@@ -1393,9 +1393,6 @@ export default function ScaleQuestionnairePage() {
                           <span className="text-[1.08rem] font-semibold leading-8">
                             {option.label || "选项" + (optionIndex + 1)}
                           </span>
-                          {option.score != null && (
-                            <span className="ml-2 text-sm font-medium text-white/55">({option.score}分)</span>
-                          )}
                         </div>
                       </div>
                     </button>

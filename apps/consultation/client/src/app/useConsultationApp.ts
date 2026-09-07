@@ -305,21 +305,17 @@ export function useConsultationApp() {
     setBootstrap(bootstrapData);
     setAssessmentCatalog(catalogData);
 
-    if (currentUser.profile_status === "completed") {
-      const existingConsultation = await fetchExistingConsultation(currentUser.id);
-      setConsultation(existingConsultation ? mergeConsultationWithCurrentTurnBundle(existingConsultation) : existingConsultation);
+    // A session selected from history is still resumable even when the user has
+    // not completed their profile. Profile completion gates *new* consultations,
+    // not access to a consultation that already exists.
+    const existingConsultation = await fetchExistingConsultation(currentUser.id);
+    setConsultation(existingConsultation ? mergeConsultationWithCurrentTurnBundle(existingConsultation) : existingConsultation);
 
-      if (existingConsultation?.status === "handoff_ready" || !existingConsultation) {
-        const existingAssessment = await fetchExistingAssessment(currentUser.id);
-        setAssessment(existingAssessment);
-      } else {
-        clearAssessmentSessionId(currentUser.id);
-        setAssessment(null);
-      }
+    if (existingConsultation?.status === "handoff_ready" || !existingConsultation) {
+      const existingAssessment = await fetchExistingAssessment(currentUser.id);
+      setAssessment(existingAssessment);
     } else {
-      clearConsultationSessionId(currentUser.id);
       clearAssessmentSessionId(currentUser.id);
-      setConsultation(null);
       setAssessment(null);
     }
   }

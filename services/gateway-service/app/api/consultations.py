@@ -78,6 +78,25 @@ def _proxy_error(upstream: dict) -> HTTPException:
     )
 
 
+def _profile_is_complete(user: dict) -> bool:
+    profile = user.get("profile") or {}
+    required_values = (
+        user.get("full_name"),
+        profile.get("gender"),
+        profile.get("age"),
+        profile.get("height_cm"),
+        profile.get("weight_kg"),
+        profile.get("marital_status"),
+        profile.get("parents_marital_status"),
+        profile.get("parents_occupation"),
+        profile.get("prior_psychiatric_visit"),
+    )
+    return all(
+        value is not None and (not isinstance(value, str) or bool(value.strip()))
+        for value in required_values
+    )
+
+
 @router.post("/consultations")
 def create_consultation(
     payload: CreateConsultationRequest,
@@ -85,6 +104,15 @@ def create_consultation(
     authorization: str | None = Header(default=None),
 ):
     _, user = _require_current_user(mcs_session, authorization)
+    if user.get("profile_status") != "completed" or not _profile_is_complete(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": 4032,
+                "message": "请先完整填写个人资料，再创建问诊会话。",
+                "data": {},
+            },
+        )
     consultation_payload = {
         "user_id": user["id"],
         "participant_profile_snapshot": {

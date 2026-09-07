@@ -261,7 +261,7 @@ export default function ResultPage() {
               </div>
 
               <div className="min-w-0 flex-1 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)]">
-                <div className="relative h-full overflow-hidden rounded-[10px] border border-white/16 bg-[linear-gradient(180deg,rgba(8,16,32,0.74),rgba(8,16,32,0.52))] shadow-[0_24px_60px_rgba(15,23,42,0.26)] backdrop-blur-[20px]">
+        <div className="relative h-full overflow-hidden rounded-[10px] border border-white/16 bg-[linear-gradient(180deg,#070d1b_0%,#0b1325_100%)] shadow-[0_24px_60px_rgba(15,23,42,0.26)]">
                   <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent_18%,transparent_82%,rgba(255,255,255,0.03))]" />
                   <div className="relative z-10 flex h-full min-h-0 flex-col p-4 md:p-5">
                     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -292,7 +292,7 @@ export default function ResultPage() {
                         )}
                       >
                         <FileText className="h-5 w-5" />
-                        查看量表详情
+                        查看量表明细
                       </button>
 
                       <button

@@ -20,7 +20,8 @@
   let activeIndex = -2;
   let completionSent = false;
 
-  music.volume = .14;
+  // Keep the recitation in front while making the pastoral music clearly audible.
+  music.volume = .30;
 
   poem.lines.forEach((line, index) => {
     const node = document.createElement("p");

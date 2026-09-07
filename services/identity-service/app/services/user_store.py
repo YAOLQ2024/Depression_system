@@ -13,6 +13,17 @@ from app.database import get_db_session
 from app.models import SessionToken, User
 
 ROLE_CHOICES = ["admin", "researcher", "participant"]
+PROFILE_COMPLETION_FIELDS = (
+    "full_name",
+    "gender",
+    "age",
+    "height_cm",
+    "weight_kg",
+    "marital_status",
+    "parents_marital_status",
+    "parents_occupation",
+    "prior_psychiatric_visit",
+)
 
 
 def _now() -> datetime:
@@ -40,7 +51,10 @@ def _public_user(user: User) -> dict:
         "email": user.email,
         "full_name": user.full_name,
         "role": user.role,
-        "profile_status": user.profile_status,
+        # Older rows may have been marked completed after only one field was
+        # saved. Derive the public status from the actual profile so they are
+        # subject to the same creation rule before their next profile update.
+        "profile_status": "completed" if _profile_is_complete(user) else "draft",
         "profile": {
             "gender": user.gender,
             "age": user.age,
@@ -55,6 +69,14 @@ def _public_user(user: User) -> dict:
         "created_at": user.created_at.isoformat(),
         "updated_at": user.updated_at.isoformat(),
     }
+
+
+def _profile_is_complete(user: User) -> bool:
+    for field in PROFILE_COMPLETION_FIELDS:
+        value = getattr(user, field)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return False
+    return True
 
 
 def ensure_seed_users() -> None:
@@ -189,7 +211,7 @@ def update_profile(user_id: str, payload: dict) -> dict:
         for key, value in updates.items():
             setattr(user, key, value)
 
-        user.profile_status = "completed" if any(value not in (None, "") for value in updates.values()) else "draft"
+        user.profile_status = "completed" if _profile_is_complete(user) else "draft"
         user.updated_at = _now()
         session.flush()
         session.refresh(user)

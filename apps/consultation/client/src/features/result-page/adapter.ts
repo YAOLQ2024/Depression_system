@@ -931,7 +931,7 @@ function buildAssessmentModuleDescription(
   riskSummary: Record<string, unknown> | null,
 ) {
   if (!scaleCount) {
-    return "量表会话结果待接入。";
+    return "量表结果待接入。";
   }
 
   if (riskSummary) {
@@ -975,7 +975,7 @@ function buildAssessmentModuleDescription(
   riskSummary: Record<string, unknown> | null,
 ) {
   if (!scaleCount) {
-    return "量表会话结果待接入。";
+    return "量表结果待接入。";
   }
 
   if (riskSummary) {
@@ -1008,7 +1008,7 @@ function buildMultimodalModuleDescription(
   }
 
   return multimodalSessionId
-    ? "多模态会话已完成绑定，综合结果待补充。"
+    ? "多模态观察已完成绑定，综合结果待补充。"
     : "多模态综合结果待接入。";
 }
 
@@ -1034,21 +1034,21 @@ function buildModules({
   return [
     {
       id: "consultation-summary",
-      name: "咨询会话",
-      description: consultationSummary ? "点击查看本轮咨询摘要与阶段总结。" : "咨询摘要报告待接入。",
+      name: "问诊总结",
+      description: consultationSummary ? "本轮主诉、症状与风险表达已纳入综合评估。" : "问诊摘要待接入。",
       actionLabel: consultationSummary ? "查看详情" : null,
       tone: "blue",
     },
     {
       id: "assessment-session",
-      name: "量表会话",
+      name: "量表结果",
       value: assessmentModuleValue,
       description: buildAssessmentModuleDescription(scaleCount, flattenedRiskFlags, riskSummary),
       tone: "indigo",
     },
     {
       id: "multimodal-session",
-      name: "多模态会话",
+      name: "多模态观察",
       value: multimodalModuleValue,
       description: buildMultimodalModuleDescription(assessment, consultation, riskSummary),
       tone: "emerald",

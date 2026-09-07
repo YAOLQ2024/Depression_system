@@ -37,6 +37,7 @@ from app.schemas import (
 )
 from app.services.asr_runtime import DolphinAsrError, get_asr_runtime
 from app.services.eeg_runtime import eeg_runtime_service
+from app.services.eeg_live_state_store import read_eeg_live_payload
 from app.services.non_eeg_inference import (
     infer_audio_emotion,
     infer_audio_emotion_from_wav_path,
@@ -181,7 +182,17 @@ def _build_multimodal_live_response(
         dict(session.live_state_payload or {}),
         redis_live_payload,
     )
-    resolved_eeg_payload = eeg_payload or eeg_runtime_service.get_session_live_payload(session.id)
+    # Live snapshots are built while visual/audio capture requests may still
+    # hold a database transaction.  Never acquire the EEG runtime lock here:
+    # its ingest thread persists a window to the same session row while holding
+    # that lock, which would otherwise create a DB-lock <-> EEG-lock deadlock.
+    # The runtime writes this Redis payload before it notifies the live stream,
+    # so it is the current source for the dashboard as well.
+    resolved_eeg_payload = (
+        eeg_payload
+        or read_eeg_live_payload(session.id)
+        or _build_pending_eeg_live()
+    )
     eeg_live = dict(resolved_eeg_payload.get("eeg_live") or _build_pending_eeg_live())
     eeg_waves = dict(resolved_eeg_payload.get("eeg_waves") or _build_pending_eeg_waves())
     updated_at = (
@@ -1779,26 +1790,39 @@ def start_eeg_turn(
     payload: StartEegTurnRequest,
     acting_user_id: str | None = None,
 ) -> dict[str, Any]:
+    # Do not hold the session-row transaction while acquiring the EEG runtime
+    # lock.  The EEG callback persists a window while holding that lock; the
+    # opposite ordering deadlocks the answer submit path.
     with get_db_session() as db_session:
         session = db_session.get(MultimodalSession, session_id)
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
-        result = eeg_runtime_service.begin_turn(
-            session_id=session.id,
-            turn_id=payload.turn_id,
-            flow_run_id=payload.flow_run_id or session.flow_run_id,
-            stage_id=payload.stage_id,
-            question_key=payload.question_key,
-        )
+        resolved_session_id = session.id
+        fallback_flow_run_id = session.flow_run_id
+
+    result = eeg_runtime_service.begin_turn(
+        session_id=resolved_session_id,
+        turn_id=payload.turn_id,
+        flow_run_id=payload.flow_run_id or fallback_flow_run_id,
+        stage_id=payload.stage_id,
+        question_key=payload.question_key,
+    )
+
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, resolved_session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
         session.updated_at = _utcnow()
         db_session.add(session)
         db_session.flush()
-        _publish_multimodal_live_snapshot(
-            session,
-            redis_live_payload=read_visual_live_payload(session.id),
-        )
-        return result
+
+    _publish_multimodal_live_snapshot(
+        session,
+        redis_live_payload=read_visual_live_payload(session.id),
+    )
+    return result
 
 
 def finish_eeg_turn(
@@ -1807,24 +1831,35 @@ def finish_eeg_turn(
     payload: FinishEegTurnRequest,
     acting_user_id: str | None = None,
 ) -> dict[str, Any]:
+    # See start_eeg_turn: committing the database update before publishing the
+    # snapshot prevents a database-row-lock <-> EEG-runtime-lock deadlock.
     with get_db_session() as db_session:
         session = db_session.get(MultimodalSession, session_id)
         if session is None:
             raise MultimodalServiceError("multimodal session not found", 4041, 404)
         _ensure_session_access(session, acting_user_id)
-        result = eeg_runtime_service.finish_turn(
-            session_id=session.id,
-            turn_id=turn_id,
-            reason=str(payload.reason or "completed"),
-        )
+        resolved_session_id = session.id
+
+    result = eeg_runtime_service.finish_turn(
+        session_id=resolved_session_id,
+        turn_id=turn_id,
+        reason=str(payload.reason or "completed"),
+    )
+
+    with get_db_session() as db_session:
+        session = db_session.get(MultimodalSession, resolved_session_id)
+        if session is None:
+            raise MultimodalServiceError("multimodal session not found", 4041, 404)
+        _ensure_session_access(session, acting_user_id)
         session.updated_at = _utcnow()
         db_session.add(session)
         db_session.flush()
-        _publish_multimodal_live_snapshot(
-            session,
-            redis_live_payload=read_visual_live_payload(session.id),
-        )
-        return result
+
+    _publish_multimodal_live_snapshot(
+        session,
+        redis_live_payload=read_visual_live_payload(session.id),
+    )
+    return result
 
 
 def get_eeg_turn_results(
