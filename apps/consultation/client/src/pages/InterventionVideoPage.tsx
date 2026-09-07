@@ -401,13 +401,19 @@ export default function InterventionVideoPage() {
   return (
     <ConsultationLayout backgroundImage="/intervention/video/theater-background.png" title={COPY.pageTitle}>
       <div className="relative h-full w-full overflow-hidden bg-black/20">
-        <div className="absolute inset-x-[20.5%] bottom-[24.5%] top-[2%] flex min-h-0 overflow-hidden rounded-md border border-black/55 bg-black/48 shadow-[0_18px_50px_rgba(0,0,0,0.48)] backdrop-blur-[2px]">
+        <div
+          className={
+            activeProgram
+              ? "absolute inset-0"
+              : "absolute inset-x-[20.5%] bottom-[24.5%] top-[2%] flex min-h-0 overflow-hidden rounded-md border border-black/55 bg-black/48 shadow-[0_18px_50px_rgba(0,0,0,0.48)] backdrop-blur-[2px]"
+          }
+        >
           <section
-            className={`flex min-h-0 min-w-0 flex-1 flex-col border-r border-white/12 p-4 text-white md:p-5 ${
-              activeProgram ? "overflow-visible" : "overflow-hidden"
+            className={`flex min-h-0 min-w-0 flex-1 flex-col p-4 text-white md:p-5 ${
+              activeProgram ? "overflow-visible" : "overflow-hidden border-r border-white/12"
             }`}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className={activeProgram ? "hidden" : "flex items-center justify-between gap-3"}>
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/70">Video Regulation</p>
                 <h1 className="mt-3 text-2xl font-semibold tracking-[0.08em] text-white md:text-3xl">{COPY.heroTitle}</h1>
@@ -420,13 +426,19 @@ export default function InterventionVideoPage() {
                 {COPY.backHome}
               </button>
             </div>
-            {sessionError ? <p className="mt-3 text-sm text-amber-200/90">{sessionError}</p> : null}
+            {!activeProgram && sessionError ? <p className="mt-3 text-sm text-amber-200/90">{sessionError}</p> : null}
 
+            {/*
+              The artwork is rendered with object-cover. These measurements map the
+              theater screen and its lower black apron in the 1672 × 941 source
+              image, so the playback view leaves a narrow black stage edge before
+              the seats.
+            */}
             <div
               ref={playerShellRef}
               className={`overflow-hidden bg-black/60 ${
                 activeProgram
-                  ? "absolute inset-0 z-20 rounded-none border-0"
+                  ? "fixed left-1/2 top-[calc(50vh_-_max(19.65vw,34.91vh))] z-20 h-[calc(max(33.31vw,59.19vh)_-_20px)] w-[max(58.37vw,103.72vh)] -translate-x-1/2 rounded-none border-0"
                   : "relative mt-5 flex-1 rounded-[28px] border border-white/10"
               }`}
             >
@@ -585,7 +597,7 @@ export default function InterventionVideoPage() {
               ) : null}
             </div>
 
-            <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-white/10 bg-black/28 px-4 py-3 text-white/90 md:flex-row md:items-center md:justify-between">
+            <div className={activeProgram ? "hidden" : "mt-3 flex flex-col gap-3 rounded-2xl border border-white/10 bg-black/28 px-4 py-3 text-white/90 md:flex-row md:items-center md:justify-between"}>
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/45">{COPY.playbackCardLabel}</p>
                 <p className="mt-2 truncate text-lg font-medium text-white">{activeProgram?.title ?? COPY.emptyProgram}</p>
@@ -620,19 +632,14 @@ export default function InterventionVideoPage() {
               </div>
             </div>
 
-            {playbackError ? (
+            {!activeProgram && playbackError ? (
               <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-100/10 px-4 py-3 text-sm text-amber-100">
                 {playbackError}
               </div>
             ) : null}
           </section>
 
-          <aside
-            aria-hidden={activeProgram ? true : undefined}
-            className={`flex w-[38%] min-w-[230px] flex-col overflow-y-auto bg-black/32 p-4 text-white backdrop-blur-sm md:p-5 ${
-              activeProgram ? "pointer-events-none opacity-0" : ""
-            }`}
-          >
+          <aside className={activeProgram ? "hidden" : "flex w-[38%] min-w-[230px] flex-col overflow-y-auto bg-black/32 p-4 text-white backdrop-blur-sm md:p-5"}>
             <p className="text-xs uppercase tracking-[0.28em] text-cyan-100/75">Program Selection</p>
             <h2 className="mt-2 text-xl font-semibold tracking-[0.06em] text-white">{COPY.selectionTitle}</h2>
             <p className="mt-2 text-sm leading-5 text-white/75">选择一段画面，开始影院体验。</p>

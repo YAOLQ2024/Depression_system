@@ -180,7 +180,7 @@ export default function InterventionStoryPage() {
       >
         <source src="/intervention/poetry-selection/cover.mp4?v=web-optimized" type="video/mp4" />
       </video>
-      <div className="relative z-10 m-auto w-full max-w-5xl">
+      <div className="relative z-10 mx-auto mb-auto mt-[clamp(2rem,6vh,6rem)] w-full max-w-5xl">
         <button
           type="button"
           onClick={() => returnToLanding("return_button")}
