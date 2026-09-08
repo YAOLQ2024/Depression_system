@@ -31,6 +31,7 @@ refer/
 
 tmp/
 .codex-tmp/
+LOCAL_PROTECTED_RELEASE_PLAN.md
 tools/eeg-tools/.env
 tools/eeg-tools/data/
 tools/eeg-tools/tmp/
