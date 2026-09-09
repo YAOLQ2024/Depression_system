@@ -58,7 +58,7 @@
     stage.dataset.chapter = chapter.id;
     stage.classList.toggle("has-many-lines", chapter.lines.length > 6);
     stage.classList.toggle("has-long-lines", chapter.lines.some((line) => line.text.length > 14));
-    title.textContent = `《${chapter.title}》`;
+    title.textContent = chapter.title;
     author.textContent = chapter.author;
     lines.replaceChildren(...chapter.lines.map((line) => {
       const element = document.createElement("p");

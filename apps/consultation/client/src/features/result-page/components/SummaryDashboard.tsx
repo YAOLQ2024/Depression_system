@@ -50,11 +50,6 @@ function InfoTooltip({ children, content }: { children: ReactNode; content: read
 }
 
 const TOOLTIP_CONTENT = {
-  overall: [
-    "综合评分范围为 0–100 分。",
-    "默认由量表评分占 80%、多模态评分占 20% 加权得到。",
-    "缺少某类数据时，系统会按可用数据重新计算权重。",
-  ],
   severity: [
     "抑郁程度按综合评分划分。",
     "0–24.99 分：无或极轻度抑郁倾向。",
@@ -122,15 +117,13 @@ function DashboardInner({
 
         <div className={cn("grid gap-4", compact ? "grid-cols-3" : "md:grid-cols-[minmax(150px,0.7fr)_minmax(0,0.85fr)_minmax(0,1.1fr)] md:items-center")}>
           <div className={cn("flex justify-center", compact ? "items-start" : "md:justify-start")}>
-            <InfoTooltip content={TOOLTIP_CONTENT.overall}>
-              <RingChart
-                score={overallScore ?? 0}
-                label={overallScoreLabel || "综合评分"}
-                size={compact ? 112 : 138}
-                strokeWidth={compact ? 11 : 13}
-                valueLabel={overallScore === null ? "--" : undefined}
-              />
-            </InfoTooltip>
+            <RingChart
+              score={overallScore ?? 0}
+              label={overallScoreLabel || "综合评分"}
+              size={compact ? 112 : 138}
+              strokeWidth={compact ? 11 : 13}
+              valueLabel={overallScore === null ? "--" : undefined}
+            />
           </div>
 
           <div className={cn("flex flex-col", compact ? "items-start" : "items-center text-center md:items-start md:text-left")}>

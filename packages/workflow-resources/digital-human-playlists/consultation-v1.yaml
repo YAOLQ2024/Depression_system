@@ -114,7 +114,7 @@ stages:
         order: 3
         node_id: ask-suicide-farewell-behavior
         video_asset_id: risk-screening-review-002
-        video_uri: /digital-human/consultation-v1/risk-screening-review-002.webm
+        video_uri: /digital-human/consultation-v1/risk-screening-review-002.webm?v=20260908-alpha#t=0,6.000
         question_text: 最近有没有道别，整理物品，写遗书，交代后事的想法？
         subtitle_text: null
         response_required: true

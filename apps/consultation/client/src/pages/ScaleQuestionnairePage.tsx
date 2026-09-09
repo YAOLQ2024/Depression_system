@@ -1275,7 +1275,7 @@ export default function ScaleQuestionnairePage() {
             }}
           >
             {responseWindowStatusText ? (
-              <div className="pointer-events-none rounded-full border border-white/18 bg-slate-950/28 px-4 py-2 text-xs text-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.24)] backdrop-blur-md">
+              <div className="pointer-events-none rounded-full border border-white/18 bg-slate-950/28 px-6 py-3 text-lg font-bold text-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.24)] backdrop-blur-md sm:text-xl">
                 {responseWindowStatusText}
               </div>
             ) : null}

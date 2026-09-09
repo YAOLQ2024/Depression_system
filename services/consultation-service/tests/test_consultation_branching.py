@@ -166,6 +166,41 @@ def test_high_risk_review_requires_two_positive_answers() -> None:
     assert branch_name == "human_intervention_required"
 
 
+def test_direct_suicidal_statement_enters_review_branch() -> None:
+    bundle = _load_bundle()
+    question_node = bundle.stage_scripts[
+        "stage-04-high-risk-screening"
+    ].nodes["ask-suicidal-ideation"]
+    decision_node = bundle.stage_scripts[
+        "stage-04-high-risk-screening"
+    ].nodes["evaluate-after-suicidal-ideation"]
+    session_record = _build_session(
+        current_stage_id="stage-04-high-risk-screening",
+        current_node_id="ask-suicidal-ideation",
+    )
+
+    extracted = _apply_extraction(session_record, question_node, "我想自杀")
+    branch_name = _evaluate_decision(session_record, decision_node)
+
+    assert extracted["suicidal_ideation"] == "positive"
+    assert branch_name == "enter-review-branch"
+
+
+def test_negated_suicidal_statement_stays_negative() -> None:
+    bundle = _load_bundle()
+    question_node = bundle.stage_scripts[
+        "stage-04-high-risk-screening"
+    ].nodes["ask-suicidal-ideation"]
+    session_record = _build_session(
+        current_stage_id="stage-04-high-risk-screening",
+        current_node_id="ask-suicidal-ideation",
+    )
+
+    extracted = _apply_extraction(session_record, question_node, "我不想自杀")
+
+    assert extracted["suicidal_ideation"] == "negative"
+
+
 def test_high_risk_false_positive_is_downgraded_after_review() -> None:
     session_record = _build_session(
         slot_values={

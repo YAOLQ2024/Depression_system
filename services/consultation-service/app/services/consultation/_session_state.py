@@ -172,6 +172,12 @@ HIGH_RISK_NEGATIVE_HINTS = (
 )
 
 HIGH_RISK_POSITIVE_HINTS = (
+    "自杀",
+    "想死",
+    "轻生",
+    "结束生命",
+    "自残",
+    "伤害自己",
     "有",
     "有过",
     "想过",
