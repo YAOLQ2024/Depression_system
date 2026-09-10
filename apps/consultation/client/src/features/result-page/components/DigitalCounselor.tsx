@@ -15,7 +15,23 @@ interface DigitalCounselorProps {
   overallSeverity?: string | null;
 }
 
-const RESULT_VIDEO_WAIT_MS = 5000;
+// Result clips are 30 fps. Keep both player layers visible for two frames
+// when the intro hands off to the severity clip, so the counselor never
+// briefly disappears while the next clip presents its first frame.
+const RESULT_VIDEO_LAYER_OVERLAP_MS = 67;
+const RESULT_SEVERITY_VISIBLE_END_SECONDS = {
+  // Each result clip is 30 fps. Stop several visible frames before its
+  // transparent/empty tail so the browser holds the counselor on screen.
+  none: 4.333,
+  mild: 8.967,
+  moderate: 9.0,
+  severe: 7.1,
+} as const;
+
+function withVisibleEnding(src: string, endTimeSeconds: number) {
+  return `${src}#t=0,${endTimeSeconds.toFixed(3)}`;
+}
+
 const RESULT_INTRO_CLIP: SeamlessVideoClip = {
   clipKey: "result-intro-001",
   src: "/digital-human/result-v1/result-intro-001.webm",
@@ -25,22 +41,34 @@ const RESULT_INTRO_CLIP: SeamlessVideoClip = {
 const RESULT_SEVERITY_CLIPS: Record<"none" | "mild" | "moderate" | "severe", SeamlessVideoClip> = {
   none: {
     clipKey: "result-severity-none-001",
-    src: "/digital-human/result-v1/result-severity-none-001.webm",
+    src: withVisibleEnding(
+      "/digital-human/result-v1/result-severity-none-001.webm",
+      RESULT_SEVERITY_VISIBLE_END_SECONDS.none,
+    ),
     label: "您的报告结果显示为无抑郁",
   },
   mild: {
     clipKey: "result-severity-mild-001",
-    src: "/digital-human/result-v1/result-severity-mild-001.webm",
+    src: withVisibleEnding(
+      "/digital-human/result-v1/result-severity-mild-001.webm",
+      RESULT_SEVERITY_VISIBLE_END_SECONDS.mild,
+    ),
     label: "您的报告结果显示为轻度抑郁",
   },
   moderate: {
     clipKey: "result-severity-moderate-001",
-    src: "/digital-human/result-v1/result-severity-moderate-001.webm",
+    src: withVisibleEnding(
+      "/digital-human/result-v1/result-severity-moderate-001.webm",
+      RESULT_SEVERITY_VISIBLE_END_SECONDS.moderate,
+    ),
     label: "您的报告结果显示为中度抑郁",
   },
   severe: {
     clipKey: "result-severity-severe-001",
-    src: "/digital-human/result-v1/result-severity-severe-001.webm",
+    src: withVisibleEnding(
+      "/digital-human/result-v1/result-severity-severe-001.webm",
+      RESULT_SEVERITY_VISIBLE_END_SECONDS.severe,
+    ),
     label: "您的报告结果显示为重度抑郁",
   },
 };
@@ -94,7 +122,6 @@ export function DigitalCounselor({
   overallSeverity,
 }: DigitalCounselorProps) {
   const playerRef = useRef<SeamlessVideoPlayerHandle | null>(null);
-  const waitTimerRef = useRef<number | null>(null);
   const [sequenceStep, setSequenceStep] = useState<"intro" | "severity">("intro");
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [videoError, setVideoError] = useState(false);
@@ -106,35 +133,18 @@ export function DigitalCounselor({
   const currentClip = sequenceStep === "severity" ? severityClip : RESULT_INTRO_CLIP;
   const preloadClip = sequenceStep === "intro" ? severityClip : null;
 
-  const clearWaitTimer = () => {
-    if (waitTimerRef.current !== null) {
-      window.clearTimeout(waitTimerRef.current);
-      waitTimerRef.current = null;
-    }
-  };
-
   useEffect(() => {
-    clearWaitTimer();
     setSequenceStep("intro");
     setPlaybackBlocked(false);
     setVideoError(false);
   }, [overallSeverity]);
-
-  useEffect(() => {
-    return () => {
-      clearWaitTimer();
-    };
-  }, []);
 
   const handleVideoEnded = useEffectEvent((clip: SeamlessVideoClip) => {
     if (clip.clipKey !== RESULT_INTRO_CLIP.clipKey || !severityClip) {
       return;
     }
 
-    clearWaitTimer();
-    waitTimerRef.current = window.setTimeout(() => {
-      setSequenceStep("severity");
-    }, RESULT_VIDEO_WAIT_MS);
+    setSequenceStep("severity");
   });
 
   async function handleResumePlayback() {
@@ -172,7 +182,7 @@ export function DigitalCounselor({
           currentClip={currentClip}
           preloadClip={preloadClip}
           className="h-full w-full"
-          transitionDurationMs={0}
+          transitionDurationMs={RESULT_VIDEO_LAYER_OVERLAP_MS}
           videoClassName={RESULT_VIDEO_CLASS_NAME}
           muted={false}
           playsInline

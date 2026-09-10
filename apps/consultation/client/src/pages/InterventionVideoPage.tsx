@@ -258,9 +258,22 @@ export default function InterventionVideoPage() {
   };
 
   const handleChangeProgram = () => {
-    videoRef.current?.pause();
-    backgroundAudioRef.current?.pause();
+    const video = videoRef.current;
+    const backgroundAudio = backgroundAudioRef.current;
+
+    video?.pause();
+    video?.removeAttribute("src");
+    video?.load();
+    backgroundAudio?.pause();
+    backgroundAudio?.removeAttribute("src");
+    backgroundAudio?.load();
     setIsPlaying(false);
+    setIsVideoReady(false);
+    setIsSeeking(false);
+    setDuration(0);
+    setCurrentTime(0);
+    setSeekValue(0);
+    setPlaybackError("");
     setIsControlPanelOpen(false);
     setActiveProgram(null);
   };
@@ -436,21 +449,24 @@ export default function InterventionVideoPage() {
             */}
             <div
               ref={playerShellRef}
-              className={`overflow-hidden bg-black/60 ${
+              className={`overflow-hidden ${
                 activeProgram
                   ? isFullscreen
-                    ? "fixed inset-0 z-20 h-screen w-screen max-w-none translate-x-0 rounded-none border-0"
-                    : "fixed left-1/2 top-[calc(50vh_-_max(19.65vw,34.91vh))] z-20 h-[calc(max(33.31vw,59.19vh)_-_20px)] w-[max(58.37vw,103.72vh)] -translate-x-1/2 rounded-none border-0"
-                  : "relative mt-5 flex-1 rounded-[28px] border border-white/10"
+                    ? "fixed inset-0 z-20 h-screen w-screen max-w-none translate-x-0 rounded-none border-0 bg-black/60"
+                    : "fixed left-1/2 top-[calc(50vh_-_max(19.65vw,34.91vh))] z-20 h-[calc(max(33.31vw,59.19vh)_-_20px)] w-[max(58.37vw,103.72vh)] -translate-x-1/2 rounded-none border-0 bg-black/60"
+                  : "relative mt-5 flex-1 rounded-[28px] border border-white/10 bg-transparent"
               }`}
             >
               <audio ref={backgroundAudioRef} preload="auto" />
+              {/* Playback is controlled exclusively by the custom controls below.
+                  Keep the native video layer from swallowing their pointer events,
+                  especially after playback has been paused. */}
               <video
                 ref={videoRef}
-                className="h-full w-full object-cover"
+                className="pointer-events-none h-full w-full object-cover"
                 playsInline
                 controls={false}
-                poster={activeProgram ? toAssetUri(activeProgram.posterSrc) : "/cover-background-v2.png"}
+                poster={activeProgram ? toAssetUri(activeProgram.posterSrc) : undefined}
                 preload="metadata"
                 onLoadedMetadata={handleVideoLoadedMetadata}
                 onLoadedData={() => setIsVideoReady(true)}
@@ -478,17 +494,19 @@ export default function InterventionVideoPage() {
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/16" />
 
-                  <div className="absolute left-4 top-4 z-10">
-                    <button
-                      type="button"
-                      onClick={handleChangeProgram}
-                      className="rounded-full border border-white/12 bg-black/48 px-4 py-2 text-sm text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
-                    >
-                      {COPY.changeProgram}
-                    </button>
-                  </div>
+                  {!isFullscreen ? (
+                    <div className="pointer-events-auto absolute left-4 top-4 z-30">
+                      <button
+                        type="button"
+                        onClick={handleChangeProgram}
+                        className="rounded-full border border-white/12 bg-black/48 px-4 py-2 text-sm text-white shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:bg-black/62"
+                      >
+                        {COPY.changeProgram}
+                      </button>
+                    </div>
+                  ) : null}
 
-                  <div className="absolute right-4 top-4 z-10 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                  <div className="pointer-events-auto absolute right-4 top-4 z-30 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
                     <button
                       type="button"
                       aria-label={isPlaying ? COPY.pause : COPY.resume}
