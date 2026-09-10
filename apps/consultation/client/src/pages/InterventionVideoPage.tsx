@@ -438,7 +438,9 @@ export default function InterventionVideoPage() {
               ref={playerShellRef}
               className={`overflow-hidden bg-black/60 ${
                 activeProgram
-                  ? "fixed left-1/2 top-[calc(50vh_-_max(19.65vw,34.91vh))] z-20 h-[calc(max(33.31vw,59.19vh)_-_20px)] w-[max(58.37vw,103.72vh)] -translate-x-1/2 rounded-none border-0"
+                  ? isFullscreen
+                    ? "fixed inset-0 z-20 h-screen w-screen max-w-none translate-x-0 rounded-none border-0"
+                    : "fixed left-1/2 top-[calc(50vh_-_max(19.65vw,34.91vh))] z-20 h-[calc(max(33.31vw,59.19vh)_-_20px)] w-[max(58.37vw,103.72vh)] -translate-x-1/2 rounded-none border-0"
                   : "relative mt-5 flex-1 rounded-[28px] border border-white/10"
               }`}
             >
