@@ -10,6 +10,7 @@ import onnxruntime as ort
 
 STANDARD_LABELS = ["angry", "disgust", "fear", "happy", "sad", "surprised", "neutral"]
 RAW_TO_STANDARD = {
+    "anger": "angry",
     "angry": "angry",
     "disgust": "disgust",
     "fear": "fear",
@@ -51,13 +52,14 @@ def softmax(x: np.ndarray) -> np.ndarray:
     return ex / np.sum(ex)
 
 
-def preprocess_gray_face(face_gray: np.ndarray) -> np.ndarray:
-    face = cv2.resize(face_gray, (48, 48), interpolation=cv2.INTER_LINEAR)
+def preprocess_color_face(face_bgr: np.ndarray) -> np.ndarray:
+    """Convert an OpenCV crop to the ViT RGB 224x224 input contract."""
+    face = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
+    face = cv2.resize(face, (224, 224), interpolation=cv2.INTER_LINEAR)
     face = face.astype(np.float32) / 255.0
-    face = np.expand_dims(face, axis=0)
     face = (face - 0.5) / 0.5
-    face = np.expand_dims(face, axis=0)
-    return face.astype(np.float32)
+    face = np.transpose(face, (2, 0, 1))
+    return np.expand_dims(face, axis=0).astype(np.float32)
 
 
 def choose_primary_face(faces, prev_center: Optional[Tuple[float, float]]):
@@ -159,7 +161,7 @@ def infer_image(engine: FaceRuntimeEngine, frame: np.ndarray):
     y1 = max(0, y - pad)
     x2 = min(gray.shape[1], x + w + pad)
     y2 = min(gray.shape[0], y + h + pad)
-    roi = gray[y1:y2, x1:x2]
+    roi = frame[y1:y2, x1:x2]
     if roi.size == 0:
         return {
             "status": "error",
@@ -170,13 +172,13 @@ def infer_image(engine: FaceRuntimeEngine, frame: np.ndarray):
             "scores": {},
         }
 
-    model_input = preprocess_gray_face(roi)
+    model_input = preprocess_color_face(roi)
     t0 = time.perf_counter()
     logits = engine.session.run([engine.output_name], {engine.input_name: model_input})[0][0]
     latency_ms = (time.perf_counter() - t0) * 1000.0
     probs = softmax(logits)
 
-    raw_labels = ["angry", "disgust", "fear", "happy", "sad", "surprise", "neutral"]
+    raw_labels = ["anger", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
     raw_emotion = raw_labels[int(np.argmax(probs))]
     scores = build_scores(probs, raw_labels)
     return build_ok_result(scores, raw_emotion=raw_emotion, latency_ms=latency_ms, faces_detected=len(faces))

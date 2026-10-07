@@ -6,6 +6,9 @@ services/multimodal-service/runtime-assets/asr/**/*.bin filter=lfs diff=lfs merg
 services/multimodal-service/runtime-assets/asr/**/*.onnx filter=lfs diff=lfs merge=lfs -text
 services/multimodal-service/runtime-assets/asr/**/*.ckpt filter=lfs diff=lfs merge=lfs -text
 services/multimodal-service/runtime-assets/asr/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
+deliverables/four_modal_onnx_upgrade_v1_20261003/**/*.onnx filter=lfs diff=lfs merge=lfs -text
+deliverables/four_modal_onnx_upgrade_v1_20261003/**/*.onnx.data filter=lfs diff=lfs merge=lfs -text
+deliverables/four_modal_onnx_upgrade_v1_20261003/**/*.pt filter=lfs diff=lfs merge=lfs -text
 *.webm filter=lfs diff=lfs merge=lfs -text
 apps/consultation/client/public/intervention/audio/*.mp3 filter=lfs diff=lfs merge=lfs -text
 apps/consultation/client/public/intervention/video/*.mp4 filter=lfs diff=lfs merge=lfs -text

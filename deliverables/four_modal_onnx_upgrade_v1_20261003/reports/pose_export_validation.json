@@ -1,0 +1,72 @@
+{
+  "artifact": "D:\\LQ\\pythonProject\\depression-system\\deliverables\\four_modal_onnx_upgrade_v1_20261003\\pose\\model.onnx",
+  "source_checkpoint": "D:\\LQ\\pythonProject\\depression-system\\deliverables\\four_modal_onnx_upgrade_v1_20261003\\pose\\source_best_model_seed72.pt",
+  "source_model_code": "D:\\LQ\\pythonProject\\depression-system\\deliverables\\four_modal_onnx_upgrade_v1_20261003\\reference\\pose\\agcn_model_and_dataset.py",
+  "opset": 17,
+  "label2id": {
+    "ang": 0,
+    "sad": 1,
+    "neu": 2,
+    "hap": 3
+  },
+  "training_contract": {
+    "seq_len": 96,
+    "num_joints": 21,
+    "in_channels": 4
+  },
+  "runtime_contract": {
+    "layout": "[batch, time, 21, 4]",
+    "output": "four-class probabilities",
+    "dynamic_time": true
+  },
+  "validation": {
+    "inputs": [
+      {
+        "name": "sequence",
+        "type": "tensor(float)",
+        "shape": [
+          "batch",
+          "time",
+          21,
+          4
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "probs",
+        "type": "tensor(float)",
+        "shape": [
+          "batch",
+          4
+        ]
+      }
+    ],
+    "providers": [
+      "CPUExecutionProvider"
+    ],
+    "cases": [
+      {
+        "frames": 96,
+        "shape": [
+          1,
+          4
+        ],
+        "max_abs_error": 1.2304311611726287e-23,
+        "probability_sum_error": 0.0,
+        "passed": true
+      },
+      {
+        "frames": 8,
+        "shape": [
+          1,
+          4
+        ],
+        "max_abs_error": 6.006776132701889e-36,
+        "probability_sum_error": 0.0,
+        "passed": true
+      }
+    ],
+    "passed": true
+  }
+}

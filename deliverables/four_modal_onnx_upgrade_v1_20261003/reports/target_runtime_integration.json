@@ -1,0 +1,45 @@
+{
+  "target_runtime_module": "services/multimodal-service/app/services/non_eeg_runtime.py",
+  "selection_profile": "legacy_text_plus_v4_audio_face_pose",
+  "environment": {
+    "python": "3.10.20",
+    "onnxruntime": "1.23.2",
+    "mediapipe": "0.10.14",
+    "provider": "CPUExecutionProvider"
+  },
+  "checks": {
+    "text": {
+      "deployment_action": "retained",
+      "engine_loaded": true,
+      "input_names": ["input_ids", "attention_mask"],
+      "output_shape": [1, 2],
+      "tensor_rt_plan_retained": true
+    },
+    "audio": {
+      "deployment_action": "replaced",
+      "engine_loaded": true,
+      "input_names": ["input_values"],
+      "native_class_count": 9,
+      "old_tensor_rt_plan_removed": true
+    },
+    "face": {
+      "deployment_action": "replaced",
+      "engine_loaded": true,
+      "input_names": ["input"],
+      "input_contract": "[batch,3,224,224]",
+      "old_tensor_rt_plan_removed": true
+    },
+    "pose": {
+      "deployment_action": "replaced",
+      "engine_loaded": true,
+      "input_names": ["sequence"],
+      "sequence_frames": 96,
+      "joint_count": 21,
+      "channel_count": 4,
+      "old_tensor_rt_plan_removed": true
+    }
+  },
+  "passed": true,
+  "target_runtime_assets_modified": true,
+  "jetson_gpu_acceptance_completed": false
+}

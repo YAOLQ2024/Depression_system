@@ -1,0 +1,64 @@
+{
+  "artifact": "D:\\LQ\\pythonProject\\depression-system\\deliverables\\four_modal_onnx_upgrade_v1_20261003\\audio\\model.onnx",
+  "source_model_dir": "D:\\LQ\\pythonProject\\抑郁症项目\\deliverables\\jetson_four_modal_v1_20261003\\audio\\model",
+  "opset": 17,
+  "sample_rate_hz": 16000,
+  "native_labels": [
+    "生气/angry",
+    "厌恶/disgusted",
+    "恐惧/fearful",
+    "开心/happy",
+    "中立/neutral",
+    "其他/other",
+    "难过/sad",
+    "吃惊/surprised",
+    "<unk>"
+  ],
+  "normalize_waveform": true,
+  "inputs": [
+    {
+      "name": "input_values",
+      "type": "tensor(float)",
+      "shape": [
+        "batch",
+        "audio_len"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "logits",
+      "type": "tensor(float)",
+      "shape": [
+        "batch",
+        9
+      ]
+    }
+  ],
+  "validation": {
+    "cases": [
+      {
+        "sample_count": 8000,
+        "max_abs_error": 1.52587890625e-05,
+        "argmax_torch": 4,
+        "argmax_onnx": 4,
+        "passed": true
+      },
+      {
+        "sample_count": 16000,
+        "max_abs_error": 4.076957702636719e-05,
+        "argmax_torch": 4,
+        "argmax_onnx": 4,
+        "passed": true
+      },
+      {
+        "sample_count": 32000,
+        "max_abs_error": 2.8848648071289062e-05,
+        "argmax_torch": 6,
+        "argmax_onnx": 6,
+        "passed": true
+      }
+    ],
+    "passed": true
+  }
+}

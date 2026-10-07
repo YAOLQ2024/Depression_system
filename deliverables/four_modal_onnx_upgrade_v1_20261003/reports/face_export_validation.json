@@ -1,0 +1,42 @@
+{
+  "artifact": "D:\\LQ\\pythonProject\\depression-system\\deliverables\\four_modal_onnx_upgrade_v1_20261003\\face\\model.onnx",
+  "source_model_dir": "D:\\LQ\\pythonProject\\抑郁症项目\\deliverables\\jetson_four_modal_v1_20261003\\face\\primary_standard\\model",
+  "opset": 17,
+  "id2label": {
+    "0": "anger",
+    "1": "disgust",
+    "2": "fear",
+    "3": "happy",
+    "4": "neutral",
+    "5": "sad",
+    "6": "surprise"
+  },
+  "inputs": [
+    {
+      "name": "input",
+      "type": "tensor(float)",
+      "shape": [
+        "batch",
+        3,
+        224,
+        224
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output",
+      "type": "tensor(float)",
+      "shape": [
+        "batch",
+        7
+      ]
+    }
+  ],
+  "validation": {
+    "max_abs_error": 1.996755599975586e-06,
+    "argmax_torch": 5,
+    "argmax_onnx": 5,
+    "passed": true
+  }
+}

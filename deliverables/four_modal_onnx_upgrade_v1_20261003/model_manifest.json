@@ -1,0 +1,83 @@
+{
+  "bundle": {
+    "name": "four_modal_onnx_upgrade_v1_20261003",
+    "created_date": "2026-10-03",
+    "updated_date": "2026-10-07",
+    "target_project": "D:/LQ/pythonProject/depression-system",
+    "selection_profile": "legacy_text_plus_v4_audio_face_pose",
+    "status": "installed_in_worktree_pending_jetson_acceptance",
+    "runtime": "ONNX Runtime with optional target-built TensorRT",
+    "opset": 17
+  },
+  "modalities": {
+    "text": {
+      "source_model": "existing target binary text classifier",
+      "deployment_action": "retain_existing_directory",
+      "target_directory": "services/multimodal-service/runtime-assets/models/text_emotion",
+      "input": "input_ids:int64[batch,seq], attention_mask:int64[batch,seq]",
+      "output": "logits:float[batch,2]",
+      "runtime_labels": ["negative", "positive"],
+      "files": [
+        {
+          "path": "services/multimodal-service/runtime-assets/models/text_emotion/model.onnx",
+          "size_bytes": 409293552,
+          "sha256": "79D059FB850B17118D443B988C533E26FFB59291C8A8C358E461BC8FB9C559D9",
+          "included_in_overlay": false
+        }
+      ]
+    },
+    "audio": {
+      "source_model": "iic/emotion2vec_plus_large",
+      "deployment_action": "replace",
+      "target_directory": "services/multimodal-service/runtime-assets/models/audio_emotion",
+      "input": "input_values:float[batch,audio_len]",
+      "output": "logits:float[batch,9]",
+      "sample_rate_hz": 16000,
+      "files": [
+        {
+          "path": "audio/model.onnx",
+          "size_bytes": 648988390,
+          "sha256": "250D51BBB75E5EF8B64E15D69B18D864B5DDCDFD67C275112147608C329A3C7B"
+        }
+      ],
+      "validation_report": "reports/audio_export_validation.json"
+    },
+    "face": {
+      "source_model": "mo-thecreator/vit-Facial-Expression-Recognition",
+      "deployment_action": "replace",
+      "target_directory": "services/multimodal-service/runtime-assets/models/face_emotion",
+      "input": "input:float[batch,3,224,224]",
+      "output": "output:float[batch,7]",
+      "files": [
+        {
+          "path": "face/model.onnx",
+          "size_bytes": 343494605,
+          "sha256": "6C9D4A184F1C3C8B545D3C106426401E9CC2034DAB13F98B6E04F4A541AE2094"
+        }
+      ],
+      "validation_report": "reports/face_export_validation.json"
+    },
+    "pose": {
+      "source_model": "AGCN seed72 engineering checkpoint",
+      "deployment_action": "replace",
+      "target_directory": "services/multimodal-service/runtime-assets/models/pose_emotion",
+      "input": "sequence:float[batch,time,21,4]",
+      "output": "probs:float[batch,4]",
+      "training_sequence_length": 96,
+      "files": [
+        {
+          "path": "pose/model.onnx",
+          "size_bytes": 14033670,
+          "sha256": "4CAF9BF2C84D22DE39EE4462033A54586DD93642A87C74DECC9E7BB285A484FC"
+        },
+        {
+          "path": "pose/source_best_model_seed72.pt",
+          "size_bytes": 14002526,
+          "sha256": "5ABB1E24D1A2786776228E9998DE2187D3870E49F1602B268DF4CBE68A83E151",
+          "runtime_required": false
+        }
+      ],
+      "validation_report": "reports/pose_export_validation.json"
+    }
+  }
+}

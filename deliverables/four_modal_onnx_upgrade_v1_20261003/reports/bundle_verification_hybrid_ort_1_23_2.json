@@ -1,0 +1,215 @@
+{
+  "selection_profile": "legacy_text_plus_v4_audio_face_pose",
+  "onnxruntime_version": "1.23.2",
+  "bundle_hashes": {
+    "audio/model.onnx": {
+      "expected": "250D51BBB75E5EF8B64E15D69B18D864B5DDCDFD67C275112147608C329A3C7B",
+      "actual": "250D51BBB75E5EF8B64E15D69B18D864B5DDCDFD67C275112147608C329A3C7B",
+      "passed": true
+    },
+    "face/model.onnx": {
+      "expected": "6C9D4A184F1C3C8B545D3C106426401E9CC2034DAB13F98B6E04F4A541AE2094",
+      "actual": "6C9D4A184F1C3C8B545D3C106426401E9CC2034DAB13F98B6E04F4A541AE2094",
+      "passed": true
+    },
+    "pose/model.onnx": {
+      "expected": "4CAF9BF2C84D22DE39EE4462033A54586DD93642A87C74DECC9E7BB285A484FC",
+      "actual": "4CAF9BF2C84D22DE39EE4462033A54586DD93642A87C74DECC9E7BB285A484FC",
+      "passed": true
+    },
+    "pose/source_best_model_seed72.pt": {
+      "expected": "5ABB1E24D1A2786776228E9998DE2187D3870E49F1602B268DF4CBE68A83E151",
+      "actual": "5ABB1E24D1A2786776228E9998DE2187D3870E49F1602B268DF4CBE68A83E151",
+      "passed": true
+    }
+  },
+  "target_hashes": {
+    "text_emotion/model.onnx": {
+      "expected": "79D059FB850B17118D443B988C533E26FFB59291C8A8C358E461BC8FB9C559D9",
+      "actual": "79D059FB850B17118D443B988C533E26FFB59291C8A8C358E461BC8FB9C559D9",
+      "passed": true
+    },
+    "audio_emotion/model.onnx": {
+      "expected": "250D51BBB75E5EF8B64E15D69B18D864B5DDCDFD67C275112147608C329A3C7B",
+      "actual": "250D51BBB75E5EF8B64E15D69B18D864B5DDCDFD67C275112147608C329A3C7B",
+      "passed": true
+    },
+    "face_emotion/model.onnx": {
+      "expected": "6C9D4A184F1C3C8B545D3C106426401E9CC2034DAB13F98B6E04F4A541AE2094",
+      "actual": "6C9D4A184F1C3C8B545D3C106426401E9CC2034DAB13F98B6E04F4A541AE2094",
+      "passed": true
+    },
+    "pose_emotion/model.onnx": {
+      "expected": "4CAF9BF2C84D22DE39EE4462033A54586DD93642A87C74DECC9E7BB285A484FC",
+      "actual": "4CAF9BF2C84D22DE39EE4462033A54586DD93642A87C74DECC9E7BB285A484FC",
+      "passed": true
+    }
+  },
+  "inference": {
+    "text": {
+      "selection": "retained_existing",
+      "inputs": [
+        {
+          "name": "input_ids",
+          "type": "tensor(int64)",
+          "shape": [
+            "batch",
+            "seq"
+          ]
+        },
+        {
+          "name": "attention_mask",
+          "type": "tensor(int64)",
+          "shape": [
+            "batch",
+            "seq"
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "logits",
+          "type": "tensor(float)",
+          "shape": [
+            "batch",
+            2
+          ]
+        }
+      ],
+      "result_shape": [
+        1,
+        2
+      ],
+      "passed": true
+    },
+    "audio": {
+      "selection": "upgraded",
+      "inputs": [
+        {
+          "name": "input_values",
+          "type": "tensor(float)",
+          "shape": [
+            "batch",
+            "audio_len"
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "logits",
+          "type": "tensor(float)",
+          "shape": [
+            "batch",
+            9
+          ]
+        }
+      ],
+      "cases": [
+        {
+          "sample_count": 8000,
+          "shape": [
+            1,
+            9
+          ]
+        },
+        {
+          "sample_count": 16000,
+          "shape": [
+            1,
+            9
+          ]
+        },
+        {
+          "sample_count": 32000,
+          "shape": [
+            1,
+            9
+          ]
+        }
+      ],
+      "passed": true
+    },
+    "face": {
+      "selection": "upgraded",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "tensor(float)",
+          "shape": [
+            "batch",
+            3,
+            224,
+            224
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "tensor(float)",
+          "shape": [
+            "batch",
+            7
+          ]
+        }
+      ],
+      "result_shape": [
+        1,
+        7
+      ],
+      "passed": true
+    },
+    "pose": {
+      "selection": "upgraded",
+      "inputs": [
+        {
+          "name": "sequence",
+          "type": "tensor(float)",
+          "shape": [
+            "batch",
+            "time",
+            21,
+            4
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "probs",
+          "type": "tensor(float)",
+          "shape": [
+            "batch",
+            4
+          ]
+        }
+      ],
+      "cases": [
+        {
+          "frames": 8,
+          "shape": [
+            1,
+            4
+          ],
+          "probability_sum": 1.0
+        },
+        {
+          "frames": 96,
+          "shape": [
+            1,
+            4
+          ],
+          "probability_sum": 1.0
+        }
+      ],
+      "passed": true
+    }
+  },
+  "tensor_rt_plans_present": {
+    "text_emotion": true,
+    "audio_emotion": false,
+    "face_emotion": false,
+    "pose_emotion": false
+  },
+  "tensor_rt_plan_state_passed": true,
+  "passed": true
+}

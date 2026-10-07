@@ -1,0 +1,19 @@
+{
+  "label2id": {
+    "ang": 0,
+    "sad": 1,
+    "neu": 2,
+    "hap": 3
+  },
+  "system_label_mapping": {
+    "ang": "angry",
+    "sad": "sad",
+    "neu": "neutral",
+    "hap": "happy"
+  },
+  "input_contract": {
+    "seq_len": 96,
+    "num_joints": 21,
+    "in_channels": 4
+  }
+}
