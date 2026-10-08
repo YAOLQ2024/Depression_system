@@ -13,7 +13,7 @@ function resolveConsultationVideoUri(
   candidate?: string | null,
 ) {
   const videoUri = normalizeVideoNodeUri(candidate);
-  if (videoAssetId === TRANSPARENT_RISK_VIDEO_ASSET_ID) {
+  if (videoUri && videoAssetId === TRANSPARENT_RISK_VIDEO_ASSET_ID) {
     const sourcePath = videoUri.split(/[?#]/, 1)[0];
     if (sourcePath === TRANSPARENT_RISK_VIDEO_URI) {
       return `${TRANSPARENT_RISK_VIDEO_URI}?v=${TRANSPARENT_RISK_VIDEO_VERSION}#t=0,${TRANSPARENT_RISK_VIDEO_END_TIME_SECONDS}`;

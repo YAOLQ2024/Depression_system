@@ -1,0 +1,45 @@
+{
+  auto_https off
+}
+
+:80 {
+  handle /local-ca.crt {
+    root * /certs
+    rewrite * /jetson-local-ca.pem
+    header Content-Type application/x-x509-ca-cert
+    header Content-Disposition "attachment; filename=mcs-jetson-local-ca.crt"
+    file_server
+  }
+  handle {
+    redir https://{host}{uri} 308
+  }
+}
+
+http://:3000 {
+  redir https://{host}{uri} 308
+}
+
+http://:3001 {
+  redir https://{host}:8443{uri} 308
+}
+
+:443 {
+  tls /certs/lan-cert.pem /certs/lan-key.pem
+  handle /local-ca.crt {
+    root * /certs
+    rewrite * /jetson-local-ca.pem
+    header Content-Type application/x-x509-ca-cert
+    header Content-Disposition "attachment; filename=mcs-jetson-local-ca.crt"
+    file_server
+  }
+  @api path /api/v1*
+  reverse_proxy @api gateway-service:8000
+  reverse_proxy consultation:8000
+}
+
+:8443 {
+  tls /certs/lan-cert.pem /certs/lan-key.pem
+  @api path /api/v1*
+  reverse_proxy @api gateway-service:8000
+  reverse_proxy operations-console:8000
+}

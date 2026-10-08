@@ -72,3 +72,12 @@
 - `captures/face` / `captures/pose` 能持续收帧并回写细粒度结果
 - `audio-turns` 后能补齐 `speech_emotion` / `text_emotion`
 - face / pose 的 turn 级汇总和 session 级汇总可持续更新
+
+## 2026-10-07 Jetson 四模态升级
+
+- 保留文本 ONNX；音频九类、人脸 RGB 224×224 七类、姿态 8～96 帧四类按交付契约运行。
+- 基础 Jetson Compose 默认 CPU，不依赖预先存在的 plan；GPU 挂载使用独立覆盖配置。
+- 本板引擎验证通过后创建本地启用标记。GPU 启动前核对 ONNX 与 plan 哈希，避免后续模型更新继续使用旧引擎。
+- `MCS_TENSORRT_ENABLED=false ./scripts/jetson-stack.sh up -d --no-deps multimodal-service` 可切回 CPU。
+- 新姿态模型的 96 帧 FP16 引擎出现 NaN，板端构建改用 FP32 并关闭 TF32；以完整窗口有限值及 CPU 对比为验收条件。
+- 本板 plan 独立挂载至 `/app/board-engines`，不写入 ONNX 运行目录；超出引擎输入范围时使用原始 ONNX 路径回退。

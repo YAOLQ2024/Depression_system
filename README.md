@@ -186,4 +186,5 @@ docker compose -f infra/compose/docker-compose.dev.yml build multimodal-service
 | 服务开发者 | [服务文档总览](./docs/services/README.md) |
 | 前端开发者 | [应用文档总览](./docs/apps/README.md) |
 | 运维与环境 | [Phase B 运维手册](./docs/operations/phase-b-runbook.md) |
+| Jetson Orin Nano 8 GB | [板端部署与验收](./docs/operations/jetson-orin-nano-deployment.md) |
 | 局域网设备联调 | [LAN HTTPS 测试方案](./docs/architecture/lan-https-testing-plan.md) |

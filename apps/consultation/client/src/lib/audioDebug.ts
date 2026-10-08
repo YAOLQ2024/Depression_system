@@ -26,8 +26,4 @@ export function logAudioDebug(scope: string, detail?: unknown) {
     }
     window.__mcsAudioDebug = nextEntries;
   }
-
-  if (typeof console !== "undefined") {
-    console.info(`[mcs-audio] ${scope}`, detail ?? "");
-  }
 }

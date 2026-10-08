@@ -348,6 +348,7 @@ const EMOTION_LABELS_ZH: Record<string, string> = {
   neg: "消极",
   neu: "中性",
   neutral: "中性",
+  other: "其他",
   positive: "积极",
   pos: "积极",
   sad: "悲伤",
@@ -355,6 +356,7 @@ const EMOTION_LABELS_ZH: Record<string, string> = {
   surprise: "惊讶",
   surprised: "惊讶",
   unhappy: "不悦",
+  unknown: "未知",
 };
 
 function localizeEmotionLabel(label: string) {

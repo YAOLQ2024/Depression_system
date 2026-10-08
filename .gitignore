@@ -1,5 +1,6 @@
 .DS_Store
 .env
+infra/certs/*.pem
 **/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/
@@ -44,6 +45,7 @@ eeg-bridge.exe
 **/tests/
 !apps/consultation/client/tests/
 !services/multimodal-service/tests/
+!services/risk-service/tests/
 !tools/eeg-tools/tests/
 !tools/eeg-tools/tests/*.py
 !services/consultation-service/tests/

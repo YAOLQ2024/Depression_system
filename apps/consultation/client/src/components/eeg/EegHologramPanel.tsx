@@ -112,6 +112,7 @@ function EegLeadNodes({
             cx={node.point.x}
             cy={node.point.y}
             r={node.radius * 3.2}
+            initial={{ r: node.radius * 3.2 }}
             fill={withAlpha(accentColor, glowOpacity * 0.24 * node.emphasis)}
             animate={{
               r: [node.radius * 2.2, node.radius * 3.5 * pulseRadius, node.radius * 2.2],
@@ -128,6 +129,7 @@ function EegLeadNodes({
             cx={node.point.x}
             cy={node.point.y}
             r={node.radius * 1.7}
+            initial={{ r: node.radius * 1.7 }}
             stroke={withAlpha(highlightColor, 0.92)}
             strokeWidth={1}
             fill="none"
@@ -196,6 +198,7 @@ function EegPedestalOverlay({
         cx={160}
         cy={386}
         r={6}
+        initial={{ r: 6 }}
         fill={withAlpha(accentColor, pedestalOpacity * 1.24)}
         animate={{ opacity: [0.36, 1, 0.36], r: [4.8, 7.8, 4.8] }}
         transition={{ duration: pulseDuration * 0.94, repeat: Infinity, ease: "easeInOut" }}

@@ -1,0 +1,102 @@
+name: mcs-jetson
+
+x-jetson-build: &jetson-build
+  network: host
+  args:
+    HTTP_PROXY: ${MCS_BUILD_PROXY:-http://127.0.0.1:17897}
+    HTTPS_PROXY: ${MCS_BUILD_PROXY:-http://127.0.0.1:17897}
+    NO_PROXY: localhost,127.0.0.1,::1
+
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !override ["127.0.0.1:5432:5432"]
+  redis:
+    restart: unless-stopped
+    ports: !override ["127.0.0.1:6379:6379"]
+  minio:
+    image: mcs-minio:RELEASE.2025-10-15T17-29-55Z
+    build:
+      <<: *jetson-build
+      context: ../minio
+    restart: unless-stopped
+    volumes:
+      - minio_data:/data
+    ports: !override ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+  identity-service:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override ["127.0.0.1:8011:8000"]
+  consultation-service:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override ["127.0.0.1:8012:8000"]
+  assessment-service:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override ["127.0.0.1:8013:8000"]
+  risk-service:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override ["127.0.0.1:8014:8000"]
+  intervention-service:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override ["127.0.0.1:8015:8000"]
+  followup-service:
+    restart: unless-stopped
+    build: *jetson-build
+    volumes:
+      - followup_reports:/app/data/reports
+    ports: !override ["127.0.0.1:8016:8000"]
+  multimodal-service:
+    restart: unless-stopped
+    build:
+      <<: *jetson-build
+      dockerfile: Dockerfile.jetson-host-runtime
+    runtime: nvidia
+    environment:
+      ASR_DEVICE: cuda
+      MCS_TENSORRT_ENABLED: "false"
+      MODEL_PROVIDERS: CPUExecutionProvider
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      EEG_REQUIRE_TRANSPORT_FOR_READY: "false"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "2"
+      LD_LIBRARY_PATH: /usr/local/cuda-12.6/lib64:/opt/jetson/local-lib:/opt/jetson/lib/openblas-pthread:/opt/jetson/lib/nvidia:/opt/jetson/lib
+    volumes:
+      - /usr/local/lib/python3.10/dist-packages:/opt/jetson/python:ro
+      - ${JETSON_USER_PYTHON_DIR:-/home/jetson/.local/lib/python3.10/site-packages}:/opt/jetson/user-python:ro
+      - /usr/lib/python3.10/dist-packages:/opt/jetson/system-python:ro
+      - /usr/lib/aarch64-linux-gnu:/opt/jetson/lib:ro
+      - /usr/local/lib:/opt/jetson/local-lib:ro
+      - /usr/local/cuda-12.6:/usr/local/cuda-12.6:ro
+    healthcheck:
+      interval: 30s
+      start_period: 120s
+      timeout: 10s
+    ports: !override ["127.0.0.1:18017:8000"]
+  gateway-service:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override ["127.0.0.1:18080:8000"]
+  consultation:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override []
+  operations-console:
+    restart: unless-stopped
+    build: *jetson-build
+    ports: !override []
+    volumes:
+      - ../caddy/operations-jetson-config.js:/app/client/config.js:ro
+  caddy:
+    ports: !override ["80:80", "443:443", "8443:8443", "3000:3000", "3001:3001"]
+    volumes:
+      - ../caddy/Caddyfile.jetson:/etc/caddy/Caddyfile:ro
+
+volumes:
+  minio_data:
+  followup_reports:

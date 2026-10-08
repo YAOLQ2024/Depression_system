@@ -1,0 +1,11 @@
+services:
+  multimodal-service:
+    environment:
+      MCS_TENSORRT_ENABLED: "true"
+      MCS_TENSORRT_ENGINE_DIR: /app/board-engines
+    volumes:
+      - type: bind
+        source: ../../.codex-tmp/tensorrt-upgrade-20261007
+        target: /app/board-engines
+        read_only: true
+        bind: {create_host_path: false}

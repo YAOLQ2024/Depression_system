@@ -1,0 +1,224 @@
+{
+  "report_date": "2026-10-08",
+  "timezone": "Asia/Shanghai",
+  "previous_commit": "a36ff6d847dc9a6b7f3585274fdff7fbef13dff6",
+  "current_model_commit": "11478db7ebc883ed93641e2eb4c5da6f2df77e80",
+  "scope": "four non-EEG emotion modalities",
+  "units": "MiB=1048576 bytes; GiB=1073741824 bytes",
+  "modalities": [
+    {
+      "modality": "text",
+      "old": {
+        "architecture": "BERT binary classifier",
+        "source_repository": "not recorded",
+        "onnx_bytes": 409293552,
+        "onnx_mib": 390.33,
+        "sha256": "79d059fb850b17118d443b988c533e26ffb59291c8a8c358e461bc8fb9c559d9",
+        "inputs": {
+          "input_ids": [
+            "B",
+            "L"
+          ],
+          "attention_mask": [
+            "B",
+            "L"
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "negative",
+          "positive"
+        ],
+        "board_plan_bytes": 207322780,
+        "plan_precision": "mixed-fp16"
+      },
+      "current": {
+        "architecture": "Retained BERT binary classifier",
+        "onnx_bytes": 409293552,
+        "onnx_mib": 390.33,
+        "sha256": "79d059fb850b17118d443b988c533e26ffb59291c8a8c358e461bc8fb9c559d9",
+        "inputs": {
+          "input_ids": [
+            "B",
+            "L"
+          ],
+          "attention_mask": [
+            "B",
+            "L"
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "negative",
+          "positive"
+        ],
+        "board_plan_bytes": 207322780,
+        "plan_precision": "mixed-fp16"
+      },
+      "onnx_delta_bytes": 0
+    },
+    {
+      "modality": "audio",
+      "old": {
+        "architecture": "Wav2Vec2 four-class classifier",
+        "source_repository": "not recorded",
+        "onnx_bytes": 378512173,
+        "onnx_mib": 360.98,
+        "sha256": "dd88dccd44a2514a5c44df32b2145738f2f8ccdc46682533903b23773593f752",
+        "inputs": {
+          "input_values": [
+            "batch",
+            "audio_len"
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "neu",
+          "hap",
+          "ang",
+          "sad"
+        ],
+        "board_plan_bytes": 192030252,
+        "plan_precision": "mixed-fp16"
+      },
+      "current": {
+        "architecture": "iic/emotion2vec_plus_large",
+        "onnx_bytes": 648988390,
+        "onnx_mib": 618.92,
+        "sha256": "250d51bbb75e5ef8b64e15d69b18d864b5ddcdfd67c275112147608c329a3c7b",
+        "inputs": {
+          "input_values": [
+            "B",
+            "N"
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "angry",
+          "disgust",
+          "fear",
+          "happy",
+          "neutral",
+          "other",
+          "sad",
+          "surprised",
+          "unknown"
+        ],
+        "board_plan_bytes": 328089108,
+        "plan_precision": "mixed-fp16"
+      },
+      "onnx_delta_bytes": 270476217
+    },
+    {
+      "modality": "face",
+      "old": {
+        "architecture": "Residual CNN / ResNet-style seven-class classifier",
+        "source_repository": "not recorded",
+        "onnx_bytes": 44675165,
+        "onnx_mib": 42.61,
+        "sha256": "a8f02ba2d943308529d589d00831e31edf300f2d6163526cf3aac0f8f0fec96d",
+        "inputs": {
+          "input": [
+            1,
+            1,
+            48,
+            48
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "angry",
+          "disgust",
+          "fear",
+          "happy",
+          "sad",
+          "surprise",
+          "neutral"
+        ],
+        "board_plan_bytes": 22638692,
+        "plan_precision": "mixed-fp16"
+      },
+      "current": {
+        "architecture": "mo-thecreator/vit-Facial-Expression-Recognition",
+        "onnx_bytes": 343494605,
+        "onnx_mib": 327.58,
+        "sha256": "6c9d4a184f1c3c8b545d3c106426401e9cc2034dab13f98b6e04f4a541ae2094",
+        "inputs": {
+          "input": [
+            "B",
+            3,
+            224,
+            224
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "anger",
+          "disgust",
+          "fear",
+          "happy",
+          "neutral",
+          "sad",
+          "surprise"
+        ],
+        "board_plan_bytes": 175712716,
+        "plan_precision": "mixed-fp16"
+      },
+      "onnx_delta_bytes": 298819440
+    },
+    {
+      "modality": "pose",
+      "old": {
+        "architecture": "BiLSTM + ST-GCN + learned Stacker four-class classifier",
+        "source_repository": "not recorded",
+        "onnx_bytes": 8876594,
+        "onnx_mib": 8.47,
+        "sha256": "a19dca10366214d946a378cdbacc6eefdecf25780310a933a6204a0c60e554d5",
+        "inputs": {
+          "sequence": [
+            "batch",
+            "time",
+            21,
+            4
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "ang",
+          "sad",
+          "neu",
+          "hap"
+        ],
+        "board_plan_bytes": 6465276,
+        "plan_precision": "mixed-fp16"
+      },
+      "current": {
+        "architecture": "AGCN seed72",
+        "onnx_bytes": 14033670,
+        "onnx_mib": 13.38,
+        "sha256": "4caf9bf2c84d22de39ee4462033a54586dd93642a87c74decc9e7bb285a484fc",
+        "inputs": {
+          "sequence": [
+            "B",
+            "T",
+            21,
+            4
+          ]
+        },
+        "raw_labels_by_output_index": [
+          "ang",
+          "sad",
+          "neu",
+          "hap"
+        ],
+        "board_plan_bytes": 16284852,
+        "plan_precision": "fp32-no-tf32"
+      },
+      "onnx_delta_bytes": 5157076
+    }
+  ],
+  "total_onnx_old_bytes": 841357484,
+  "total_onnx_current_bytes": 1415810217,
+  "visual_capture_interval_ms": 1500,
+  "pose_min_valid_frames": 8,
+  "pose_window": 96,
+  "open_questions": [
+    "Pose training-reference root/scale normalization and temporal resampling differ from current runtime; reconcile actual seed72 training contract before altering preprocessing.",
+    "Classifier confidence and per-turn label frequency are different measures.",
+    "Source repositories for legacy classifiers are not documented; architecture is inferred from actual graphs."
+  ],
+  "evidence": "Git LFS baseline pointers, locally cached old ONNX graphs, current artifacts, adapters and existing board acceptance report"
+}

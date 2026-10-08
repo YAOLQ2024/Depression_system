@@ -29,7 +29,7 @@ def _torch_dtype(dtype):
 
 
 class _TensorRTSession:
-    def __init__(self, plan_path: Path) -> None:
+    def __init__(self, plan_path: Path, onnx_path: Path | None = None) -> None:
         self._logger = trt.Logger(trt.Logger.ERROR)
         self._runtime = trt.Runtime(self._logger)
         self._engine = self._runtime.deserialize_cuda_engine(plan_path.read_bytes())
@@ -39,6 +39,8 @@ class _TensorRTSession:
         # An IExecutionContext owns mutable activation and shape state.  It must
         # not be used by concurrent request threads; serialize one cached context.
         self._execution_lock = threading.Lock()
+        self._cpu_fallback = None
+        self._onnx_path = onnx_path if onnx_path is not None else plan_path.with_suffix(".onnx")
         self._input_names = [
             self._engine.get_tensor_name(index)
             for index in range(self._engine.num_io_tensors)
@@ -65,7 +67,15 @@ class _TensorRTSession:
                 expected_dtype = np.dtype(trt.nptype(self._engine.get_tensor_dtype(name)))
                 value = np.ascontiguousarray(input_feed[name], dtype=expected_dtype)
                 if not self._context.set_input_shape(name, tuple(value.shape)):
-                    raise ValueError(f"TensorRT shape is outside the optimization profile: {name}={value.shape}")
+                    logger.warning(
+                        "Input exceeds the TensorRT profile; using ONNX CPU: %s=%s",
+                        name, value.shape,
+                    )
+                    if self._cpu_fallback is None:
+                        self._cpu_fallback = _ORIGINAL_INFERENCE_SESSION(
+                            str(self._onnx_path), providers=["CPUExecutionProvider"],
+                        )
+                    return self._cpu_fallback.run(output_names, input_feed)
                 tensors[name] = torch.as_tensor(value, device="cuda")
             for name in self._output_names:
                 shape = tuple(self._context.get_tensor_shape(name))
@@ -94,9 +104,15 @@ _TENSORRT_ENABLED = (
 
 def _inference_session(model_path, *args, **kwargs):
     plan_path = Path(model_path).with_suffix(".plan")
+    engine_dir = os.getenv("MCS_TENSORRT_ENGINE_DIR")
+    if engine_dir:
+        plan_path = Path(engine_dir) / Path(model_path).parent.name / "model.plan"
     if _TENSORRT_ENABLED and plan_path.is_file():
         logger.info("Using TensorRT GPU engine: %s", plan_path)
-        return _TensorRTSession(plan_path)
+        try:
+            return _TensorRTSession(plan_path, onnx_path=Path(model_path))
+        except RuntimeError as exc:
+            logger.warning("TensorRT engine is incompatible; using ONNX: %s", exc)
     return _ORIGINAL_INFERENCE_SESSION(model_path, *args, **kwargs)
 
 

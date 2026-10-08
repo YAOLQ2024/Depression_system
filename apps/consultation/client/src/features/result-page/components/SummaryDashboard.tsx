@@ -154,6 +154,7 @@ function DashboardInner({
         <div className={cn("grid gap-2", compact ? "grid-cols-3" : modules.length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2")}>
           {modules.map((module, index) => {
             const toneClasses = getToneClasses(module.tone || "blue");
+            const scoreTooltip = getModuleScoreTooltip(module.id);
             return (
               <GlassCard key={module.id} className={cn(compact ? "p-3" : "p-4")}>
                 <div className={cn("flex gap-3", compact ? "h-full flex-col" : "items-start justify-between")}>
@@ -165,8 +166,8 @@ function DashboardInner({
                       <div className={cn("mb-1 font-semibold tracking-[0.06em]", t.subtitle[theme], compact ? "text-[13px]" : "text-sm")}>{module.name}</div>
                       {module.value !== undefined && module.value !== null ? (
                         <>
-                          {getModuleScoreTooltip(module.id) ? (
-                            <InfoTooltip content={getModuleScoreTooltip(module.id)}>
+                          {scoreTooltip ? (
+                            <InfoTooltip content={scoreTooltip}>
                               <div className={cn("truncate font-bold leading-none", t.value[theme], compact ? "text-2xl" : "text-3xl")}>{module.value}</div>
                             </InfoTooltip>
                           ) : (

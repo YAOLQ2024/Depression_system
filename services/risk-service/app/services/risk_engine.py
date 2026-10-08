@@ -639,6 +639,11 @@ def _normalize_negative_label_sets(rule_set: dict[str, Any]) -> dict[str, set[st
             for label in _ensure_json_list(labels)
             if str(label).strip()
         }
+    # The upgraded audio model spells the existing anger category "angry".
+    # Preserve configured semantics for both legacy and current model outputs.
+    for labels in normalized_sets.values():
+        if labels.intersection({"ang", "angry"}):
+            labels.update({"ang", "angry"})
     return normalized_sets
 
 
