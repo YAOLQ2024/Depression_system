@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ReactElement } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 const AuthPage = lazy(() => import("./features/auth/AuthPage"));
 import { ProfileModal } from "./components/ProfileModal";
@@ -35,6 +35,7 @@ function RouteLoadingScreen() {
 
 function App() {
   const app = useConsultationApp();
+  const { pathname } = useLocation();
   const { state, actions } = app;
 
   const protectedElement = (element: ReactElement) =>
@@ -44,6 +45,7 @@ function App() {
 
   return (
     <ConsultationAppProvider value={app}>
+      <div data-app-route={pathname} className="app-route-scope">
       <Routes>
         <Route
           path={APP_PATHS.cover}
@@ -95,6 +97,7 @@ function App() {
         <Route path="*" element={<Navigate to={state.user ? state.resumePath : APP_PATHS.cover} replace />} />
       </Routes>
       <ProfileModal />
+      </div>
     </ConsultationAppProvider>
   );
 }

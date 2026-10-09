@@ -103,6 +103,32 @@ export default function HomePage() {
             <HomeOrbitalMenu items={menuItems} selectedIndex={selectedIndex} onSelectIndex={setSelectedIndex} />
           </div>
         </section>
+
+        <section className="portrait-home-nav" aria-label="竖屏首页功能入口">
+          <div className="portrait-home-welcome">
+            <p>你好，{userDisplayName}</p>
+            <h1>今天，先照顾好自己的感受。</h1>
+            <span>{hasActiveSession ? "可从上次进度继续评估" : "准备好时，我们一起开始评估"}</span>
+          </div>
+          <div className="portrait-home-actions">
+            {[menuItems[2], menuItems[1], menuItems[0], menuItems[3], menuItems[4]].map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={item.onAction}
+                disabled={state.loading && item.id === "new"}
+                className={index === 0 ? "portrait-home-action portrait-home-action-primary" : "portrait-home-action"}
+              >
+                <span className={`portrait-home-action-icon bg-gradient-to-br ${item.iconTone}`}>{item.icon}</span>
+                <span className="portrait-home-action-copy">
+                  <strong>{item.title}</strong>
+                  <small>{item.subtitle}</small>
+                </span>
+                <span className="portrait-home-action-meta">{item.estimatedTime}</span>
+              </button>
+            ))}
+          </div>
+        </section>
       </main>
     </div>
   );

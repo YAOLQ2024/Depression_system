@@ -242,7 +242,7 @@ export default function HistoryPage() {
 
       <div className="relative z-10 w-full px-6 pt-6 pb-10 md:px-10 lg:px-14">
         {/* ─── 统计卡片区 ─── */}
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="portrait-history-stats mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard
             icon={FileText}
             label="总就诊次数"

@@ -124,10 +124,10 @@ export default function InterventionPage() {
 
   return (
     <ConsultationLayout backgroundImage="/TKbg.png" title="调节干预">
-      <div className="relative flex h-full w-full flex-col items-center justify-end overflow-hidden pb-6 md:pb-9">
+      <div className="portrait-intervention-root relative flex h-full w-full flex-col items-center justify-end overflow-hidden pb-6 md:pb-9">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40" />
 
-        <div className="absolute inset-x-0 bottom-0 top-16 flex items-end justify-center">
+        <div className="portrait-intervention-avatar absolute inset-x-0 bottom-0 top-16 flex items-end justify-center">
           <video
             ref={videoRef}
             src={INTERVENTION_ENTRY_VIDEO_URI}
@@ -137,13 +137,13 @@ export default function InterventionPage() {
           />
         </div>
 
-        <div className="relative z-10 mb-7 w-full max-w-4xl px-6 text-center text-white">
+        <div className="portrait-intervention-heading relative z-10 mb-7 w-full max-w-4xl px-6 text-center text-white">
           <p className="text-sm uppercase tracking-[0.45em] text-white/75">Intervention</p>
           <h1 className="mt-4 text-4xl font-semibold tracking-[0.12em] md:text-5xl">选择一种调节方式</h1>
           {sessionError ? <p className="mt-4 text-base text-amber-200/90">{sessionError}</p> : null}
         </div>
 
-        <div className="perspective-[1000px] relative z-10 flex w-full max-w-6xl flex-col items-center justify-center gap-7 px-6 md:flex-row md:gap-14">
+        <div className="portrait-intervention-actions perspective-[1000px] relative z-10 flex w-full max-w-6xl flex-col items-center justify-center gap-7 px-6 md:flex-row md:gap-14">
           <ActionButton
             text="看一段视频"
             delay={0}
@@ -171,6 +171,21 @@ export default function InterventionPage() {
               });
             }}
           />
+          <div className="portrait-intervention-game-entry">
+            <ActionButton
+              text="体验心灵花园"
+              delay={0.4}
+              onClick={() =>
+                void handleSelectExperience(APP_PATHS.interventionGame, {
+                  event_type: "experience_selected",
+                  program_id: "mindbloom-word-garden",
+                  program_title: "心灵花园词语游戏",
+                  delivery_mode: "game",
+                  payload: { destination: "game" },
+                })
+              }
+            />
+          </div>
         </div>
       </div>
     </ConsultationLayout>

@@ -413,8 +413,9 @@ export default function InterventionVideoPage() {
 
   return (
     <ConsultationLayout backgroundImage="/intervention/video/theater-background.png" title={COPY.pageTitle}>
-      <div className="relative h-full w-full overflow-hidden bg-black/20">
+      <div className="portrait-video-root relative h-full w-full overflow-hidden bg-black/20" data-program-active={Boolean(activeProgram)}>
         <div
+          data-portrait-video-stage
           className={
             activeProgram
               ? "absolute inset-0"
@@ -422,6 +423,7 @@ export default function InterventionVideoPage() {
           }
         >
           <section
+            data-portrait-video-main
             className={`flex min-h-0 min-w-0 flex-1 flex-col p-4 text-white md:p-5 ${
               activeProgram ? "overflow-visible" : "overflow-hidden border-r border-white/12"
             }`}
@@ -449,6 +451,7 @@ export default function InterventionVideoPage() {
             */}
             <div
               ref={playerShellRef}
+              data-portrait-video-player
               className={`overflow-hidden ${
                 activeProgram
                   ? isFullscreen
@@ -659,7 +662,7 @@ export default function InterventionVideoPage() {
             ) : null}
           </section>
 
-          <aside className={activeProgram ? "hidden" : "flex w-[38%] min-w-[230px] flex-col overflow-y-auto bg-black/32 p-4 text-white backdrop-blur-sm md:p-5"}>
+          <aside data-portrait-video-programs className={activeProgram ? "hidden" : "flex w-[38%] min-w-[230px] flex-col overflow-y-auto bg-black/32 p-4 text-white backdrop-blur-sm md:p-5"}>
             <p className="text-xs uppercase tracking-[0.28em] text-cyan-100/75">Program Selection</p>
             <h2 className="mt-2 text-xl font-semibold tracking-[0.06em] text-white">{COPY.selectionTitle}</h2>
             <p className="mt-2 text-sm leading-5 text-white/75">选择一段画面，开始影院体验。</p>

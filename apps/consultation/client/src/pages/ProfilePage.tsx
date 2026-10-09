@@ -424,7 +424,7 @@ export default function ProfilePage() {
           </LightCard>
         </motion.div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_360px] xl:items-stretch">
+        <div className="portrait-profile-content mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_360px] xl:items-stretch">
           <div className="space-y-4">
             <Section
               icon={ClipboardList}

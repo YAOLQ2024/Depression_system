@@ -72,7 +72,7 @@ export function ScaleItemResultTable({ items, className, notice }: ScaleItemResu
   }
 
   return (
-    <div className={className}>
+    <div className={cn("portrait-scale-items", className)}>
       <div className="mb-3 flex items-center gap-2 px-1">
         <div className="h-2 w-2 rounded-full bg-primary-500" />
         <h3 className={cn("text-lg font-bold", isDark ? "text-white" : "text-slate-900")}>详细作答</h3>
@@ -109,10 +109,10 @@ export function ScaleItemResultTable({ items, className, notice }: ScaleItemResu
                         : "bg-slate-50/60",
                   )}
                 >
-                  <td className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
+                  <td data-label="题目" className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
                     {item.no}. {item.label}
                   </td>
-                  <td className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
+                  <td data-label="用户选择" className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={cn(
@@ -126,7 +126,7 @@ export function ScaleItemResultTable({ items, className, notice }: ScaleItemResu
                       </span>
                     </div>
                   </td>
-                  <td className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
+                  <td data-label="作答方式" className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
                     <span
                       className={cn(
                         "inline-flex rounded-full border px-3 py-1 text-sm font-medium",
@@ -136,7 +136,7 @@ export function ScaleItemResultTable({ items, className, notice }: ScaleItemResu
                       {getAnswerMethod(item.answerSource).label}
                     </span>
                   </td>
-                  <td className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
+                  <td data-label="计分标签" className={cn("px-4 py-3 text-sm", isDark ? "text-white" : "text-slate-700")}>
                     {item.effectiveScoreLabel ? (
                       <div className="flex flex-col gap-1.5">
                         <span

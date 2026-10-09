@@ -1,0 +1,997 @@
+/* Portrait layout for the patient client. Landscape rules remain in the original pages. */
+.app-route-scope {
+  display: contents;
+}
+
+.portrait-home-nav {
+  display: none;
+}
+
+.portrait-intervention-game-entry {
+  display: none;
+}
+
+@media (orientation: portrait) {
+  :root {
+    --portrait-gutter: clamp(20px, 4vw, 48px);
+    --portrait-reading-width: 940px;
+  }
+
+  .app-route-scope button,
+  .app-route-scope a,
+  .app-route-scope input,
+  .app-route-scope select,
+  .app-route-scope textarea {
+    touch-action: manipulation;
+  }
+
+  .app-route-scope button:focus-visible,
+  .app-route-scope a:focus-visible,
+  .app-route-scope input:focus-visible,
+  .app-route-scope select:focus-visible,
+  .app-route-scope textarea:focus-visible {
+    outline: 3px solid #60a5fa;
+    outline-offset: 3px;
+  }
+
+  .app-route-scope header {
+    min-height: 68px;
+    padding-inline: var(--portrait-gutter);
+  }
+
+  .app-route-scope header > div:first-child {
+    min-width: 0;
+  }
+
+  .app-route-scope header > div:first-child h1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-route-scope header button {
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  /* Entry */
+  .app-route-scope[data-app-route="/"] main > section {
+    align-items: center;
+    padding-inline: var(--portrait-gutter);
+    padding-bottom: 8rem;
+  }
+
+  .app-route-scope[data-app-route="/"] main h1 {
+    max-width: 14ch;
+    font-size: clamp(48px, 7.2vw, 82px);
+    line-height: 1.13;
+    letter-spacing: -0.055em;
+    white-space: normal;
+  }
+
+  .app-route-scope[data-app-route="/"] main a {
+    min-height: 64px;
+  }
+
+  .app-route-scope[data-app-route="/login"] main {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-route-scope[data-app-route="/login"] main > div.relative.z-10.flex {
+    min-height: 100dvh;
+    flex-direction: column;
+  }
+
+  .app-route-scope[data-app-route="/login"] main > div.relative.z-10.flex > section:first-child {
+    display: flex;
+    flex: none;
+    height: clamp(240px, 31dvh, 560px);
+    min-height: 0;
+  }
+
+  .app-route-scope[data-app-route="/login"] main > div.relative.z-10.flex > section:first-child > div:last-child > div {
+    width: min(44vw, 420px);
+    min-width: 0;
+  }
+
+  .app-route-scope[data-app-route="/login"] main > div.relative.z-10.flex > section:last-child {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    padding: clamp(28px, 4vh, 70px) var(--portrait-gutter);
+    background: rgba(255, 255, 255, 0.97);
+  }
+
+  .app-route-scope[data-app-route="/login"] main > div.relative.z-10.flex > section:last-child > div {
+    width: min(100%, 560px);
+    max-width: none;
+    padding: 0;
+  }
+
+  .app-route-scope[data-app-route="/login"] form input:not([type="checkbox"]) {
+    min-height: 56px;
+  }
+
+  .app-route-scope[data-app-route="/login"] form button[type="submit"] {
+    min-height: 60px;
+  }
+
+  .app-route-scope[data-app-route="/login"] form button[type="button"],
+  .app-route-scope[data-app-route="/login"] form a {
+    min-height: 48px;
+  }
+
+  /* Home: keep the existing orbital menu as the landscape presentation. */
+  .app-route-scope[data-app-route="/home"] > div {
+    height: 100dvh;
+  }
+
+  .app-route-scope[data-app-route="/home"] main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0 var(--portrait-gutter) 48px;
+  }
+
+  .app-route-scope[data-app-route="/home"] main > section:first-child {
+    display: flex;
+    flex: none;
+    width: 100%;
+    height: clamp(320px, 38dvh, 650px);
+    justify-content: center;
+  }
+
+  .app-route-scope[data-app-route="/home"] main > section:first-child > div {
+    justify-content: center;
+  }
+
+  .app-route-scope[data-app-route="/home"] main > section:first-child > div > div {
+    width: min(65vw, 600px);
+    min-width: 0;
+    margin: 0;
+  }
+
+  .app-route-scope[data-app-route="/home"] main > section:nth-child(2) {
+    display: none;
+  }
+
+  .app-route-scope[data-app-route="/home"] .portrait-home-nav {
+    z-index: 30;
+    display: block;
+    width: min(100%, var(--portrait-reading-width));
+    padding: 0 0 24px;
+  }
+
+  .portrait-home-welcome {
+    margin-bottom: 20px;
+    color: white;
+    text-shadow: 0 2px 18px rgba(15, 23, 42, 0.7);
+  }
+
+  .portrait-home-welcome p {
+    font-size: clamp(17px, 2.2vw, 22px);
+    font-weight: 600;
+  }
+
+  .portrait-home-welcome h1 {
+    margin-top: 6px;
+    font-size: clamp(28px, 3.6vw, 42px);
+    font-weight: 700;
+  }
+
+  .portrait-home-welcome span {
+    display: block;
+    margin-top: 8px;
+    font-size: clamp(16px, 2vw, 20px);
+  }
+
+  .portrait-home-actions {
+    display: grid;
+    gap: 12px;
+  }
+
+  .portrait-home-action {
+    display: flex;
+    min-height: 88px;
+    width: 100%;
+    align-items: center;
+    gap: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 24px;
+    background: rgba(245, 250, 255, 0.91);
+    padding: 15px 20px;
+    text-align: left;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.17);
+  }
+
+  .portrait-home-action-primary {
+    min-height: 110px;
+    border-color: rgba(147, 197, 253, 0.85);
+    background: linear-gradient(120deg, rgba(239, 246, 255, 0.98), rgba(224, 231, 255, 0.97));
+  }
+
+  .portrait-home-action-icon {
+    display: grid;
+    flex: none;
+    width: 52px;
+    height: 52px;
+    place-items: center;
+    border-radius: 16px;
+    color: #fff;
+  }
+
+  .portrait-home-action-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .portrait-home-action-copy strong {
+    color: #172554;
+    font-size: clamp(19px, 2.3vw, 25px);
+  }
+
+  .portrait-home-action-copy small {
+    color: #475569;
+    font-size: clamp(14px, 1.7vw, 18px);
+  }
+
+  .portrait-home-action-meta {
+    color: #475569;
+    font-size: 14px;
+  }
+
+  /* Profile and preparation */
+  .app-route-scope[data-app-route="/profile"] > div > div.relative.z-10.w-full {
+    padding-inline: var(--portrait-gutter);
+  }
+
+  .app-route-scope[data-app-route="/profile"] .portrait-profile-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-route-scope[data-app-route="/preparation"] > div {
+    height: 100dvh;
+  }
+
+  .app-route-scope[data-app-route="/preparation"] main {
+    overflow-y: auto;
+  }
+
+  .app-route-scope[data-app-route="/preparation"] main > div {
+    overflow: visible;
+    padding: 20px var(--portrait-gutter) 56px;
+  }
+
+  .app-route-scope[data-app-route="/preparation"] main > div > div:first-child {
+    display: flex;
+    max-width: var(--portrait-reading-width);
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .app-route-scope[data-app-route="/preparation"] main > div > div:first-child > div {
+    width: 100%;
+  }
+
+  .app-route-scope[data-app-route="/preparation"] main > div > div:last-of-type {
+    width: min(100%, var(--portrait-reading-width));
+    margin-top: 24px;
+    padding-top: 0;
+  }
+
+  .app-route-scope[data-app-route="/preparation"] main button {
+    min-height: 48px;
+  }
+
+  /* Selection */
+  .app-route-scope[data-app-route="/scale-selection"] > div {
+    height: 100dvh;
+  }
+
+  .app-route-scope[data-app-route="/scale-selection"] main > div {
+    width: min(100%, var(--portrait-reading-width));
+    padding: 36px var(--portrait-gutter) 80px;
+  }
+
+  .app-route-scope[data-app-route="/scale-selection"] main > div > div:nth-child(2) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-route-scope[data-app-route="/scale-selection"] main > div > div:first-child p {
+    width: auto;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .app-route-scope[data-app-route="/scale-selection"] main > div > div:nth-child(2) > div:last-child {
+    position: static;
+  }
+
+  .app-route-scope[data-app-route="/scale-selection"] main > div > div:nth-child(2) button {
+    min-height: 60px;
+  }
+
+  /* Consultation and assessment: the source order is preserved. */
+  .portrait-consultation-stage {
+    padding-top: 76px;
+  }
+
+  .portrait-consultation-stage > div:first-child {
+    margin-left: 0 !important;
+    transform: none !important;
+  }
+
+  .portrait-stage-visual {
+    position: absolute;
+    top: auto;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    width: 155vw;
+    height: 100%;
+    max-width: none;
+    margin: 0;
+    flex: none;
+    transform: translateX(-50%) !important;
+  }
+
+  .portrait-stage-video {
+    height: 100%;
+    width: 100%;
+    max-width: none;
+    overflow: visible;
+  }
+
+  .portrait-stage-visual > div {
+    width: 100%;
+    height: 100%;
+  }
+
+  .portrait-stage-video > div {
+    overflow: visible;
+  }
+
+  .portrait-stage-video video {
+    max-height: 100%;
+    max-width: 100%;
+    translate: 0 27% !important;
+    transform: none !important;
+    scale: 1.18 !important;
+    transform-origin: center bottom;
+  }
+
+  .portrait-stage-controls {
+    bottom: 20px;
+    transform: none !important;
+  }
+
+  .portrait-stage-controls > div:first-child {
+    max-width: calc(100vw - 2 * var(--portrait-gutter));
+    text-align: center;
+  }
+
+  .portrait-stage-subtitle {
+    top: clamp(28px, 4dvh, 84px);
+    bottom: auto;
+    left: clamp(24px, 4vw, 52px);
+    width: min(36vw, 400px);
+    z-index: 42;
+    transform: none;
+    translate: 0 0 !important;
+  }
+
+  .portrait-stage-subtitle > div {
+    width: 100%;
+    min-width: 0;
+    height: clamp(200px, 22dvh, 320px);
+    max-width: none;
+    max-height: 32dvh;
+    resize: none;
+    touch-action: pan-y;
+  }
+
+  .portrait-stage-camera {
+    top: clamp(28px, 4dvh, 84px);
+    right: clamp(24px, 4vw, 52px);
+    z-index: 42;
+  }
+
+  .portrait-stage-camera > div {
+    width: clamp(180px, 25vw, 270px);
+    min-width: 0;
+  }
+
+  .portrait-stage-results-toggle {
+    top: 50%;
+    right: 0 !important;
+    min-width: 48px;
+    min-height: 72px;
+    transform: translateY(-50%) !important;
+  }
+
+  .portrait-stage-results-panel {
+    top: 0;
+    right: 0 !important;
+    bottom: 0;
+    left: 0 !important;
+    width: 100%;
+    max-width: none;
+    z-index: 55;
+    border-radius: 0;
+    transform: none !important;
+  }
+
+  .portrait-stage-results-panel.opacity-0 {
+    right: -100vw !important;
+    left: -100vw !important;
+  }
+
+  .portrait-scale-stage {
+    padding-top: 80px;
+  }
+
+  .portrait-scale-stage .portrait-stage-visual {
+    top: auto;
+    bottom: 0;
+    height: 100%;
+    justify-content: center;
+  }
+
+  .portrait-scale-stage .portrait-stage-video {
+    height: 100%;
+  }
+
+  .portrait-scale-stage .portrait-stage-subtitle {
+    top: clamp(28px, 4dvh, 84px);
+    left: clamp(24px, 4vw, 52px);
+    right: auto;
+    width: min(36vw, 400px);
+  }
+
+  .portrait-scale-stage .portrait-stage-subtitle > div {
+    height: clamp(200px, 22dvh, 320px);
+  }
+
+  .portrait-scale-stage .portrait-stage-camera > div {
+    width: clamp(180px, 25vw, 270px);
+  }
+
+  .portrait-scale-toggle {
+    top: 48%;
+    left: 0 !important;
+    min-width: 48px;
+    min-height: 72px;
+    transform: translateY(-50%) !important;
+  }
+
+  .portrait-scale-panel {
+    top: 60dvh;
+    bottom: clamp(140px, 12dvh, 210px);
+    left: var(--portrait-gutter) !important;
+    width: calc(100vw - 2 * var(--portrait-gutter)) !important;
+    height: auto !important;
+    max-height: none !important;
+    margin: 0;
+    justify-content: flex-start;
+    transform: none !important;
+  }
+
+  .portrait-scale-panel.opacity-0 {
+    left: -100vw !important;
+  }
+
+  .portrait-scale-stage[data-video-playing="true"] .portrait-scale-panel > div:first-child {
+    background-image: linear-gradient(145deg, rgba(30, 41, 59, 0.27), rgba(71, 85, 105, 0.24)) !important;
+    border-color: rgba(199, 210, 254, 0.36);
+  }
+
+  .portrait-scale-stage[data-video-playing="true"] .portrait-scale-panel > div:first-child > div > div {
+    background-color: rgba(255, 255, 255, 0.025);
+  }
+
+  .portrait-scale-panel > div {
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: auto;
+  }
+
+  .portrait-scale-panel > div > div {
+    gap: 12px;
+  }
+
+  .portrait-scale-panel button {
+    min-height: 60px;
+  }
+
+  /* Results: let the dashboard content determine page height. */
+  .app-route-scope[data-app-route="/result"] main {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-route-scope[data-app-route="/result"] main > div {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+    padding: var(--portrait-gutter);
+  }
+
+  .app-route-scope[data-app-route="/result"] main > div > div.flex.h-full {
+    height: auto;
+  }
+
+  .app-route-scope[data-app-route="/result"] main > div > div.flex.h-full > div:nth-child(2) > div {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .app-route-scope[data-app-route="/result"] main > div > div.flex.h-full > div:nth-child(2) > div > div.relative {
+    height: auto;
+  }
+
+  .app-route-scope[data-app-route="/result"] main > div > div.flex.h-full > div:nth-child(2) > div > div.relative > div:first-child {
+    flex: none;
+    overflow: visible;
+  }
+
+  .app-route-scope[data-app-route="/result"] main button {
+    min-height: 56px;
+  }
+
+  .app-route-scope[data-app-route="/result"] .portrait-result-dashboard {
+    height: auto;
+  }
+
+  .app-route-scope[data-app-route="/result"] .portrait-result-dashboard > div:first-child > div.grid,
+  .app-route-scope[data-app-route="/result"] .portrait-result-dashboard > section:nth-child(2) > div.grid,
+  .app-route-scope[data-app-route="/result"] .portrait-result-dashboard > section:last-child > div.grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-route-scope[data-app-route="/result"] .portrait-result-dashboard > section:last-child {
+    margin-top: 0;
+  }
+
+  .app-route-scope[data-app-route="/result"] .portrait-result-actions {
+    flex-direction: column;
+  }
+
+  .app-route-scope[data-app-route="/result"] .portrait-result-actions button {
+    width: 100%;
+  }
+
+  /* Intervention landing */
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-root {
+    padding-bottom: clamp(90px, 10dvh, 180px);
+  }
+
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-avatar {
+    top: 9dvh;
+    bottom: auto;
+    height: 58dvh;
+    align-items: start;
+  }
+
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-avatar video {
+    height: 100%;
+    max-width: 100%;
+    transform: none;
+  }
+
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-heading {
+    margin-bottom: 20px;
+    text-shadow: 0 3px 16px rgba(0, 0, 0, 0.85);
+  }
+
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-actions {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-actions > button,
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-actions > div,
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-actions > div > button {
+    width: min(100%, 720px);
+  }
+
+  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-game-entry {
+    display: flex;
+    justify-content: center;
+  }
+
+  .app-route-scope[data-app-route="/intervention"] main button {
+    min-height: 64px;
+  }
+
+  /* Video player: theater background stays, content becomes one column. */
+  .portrait-video-root {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .portrait-video-root [data-portrait-video-stage] {
+    position: relative;
+    inset: auto;
+    display: flex;
+    width: min(100% - 2 * var(--portrait-gutter), 940px);
+    height: auto;
+    min-height: 0;
+    margin: 32px auto 80px;
+    flex-direction: column;
+    border-radius: 24px;
+  }
+
+  .portrait-video-root [data-portrait-video-main] {
+    flex: none;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .portrait-video-root [data-portrait-video-player] {
+    flex: none;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 16 / 9;
+    border-radius: 18px;
+  }
+
+  .portrait-video-root [data-portrait-video-programs] {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .portrait-video-root [data-portrait-video-programs] button,
+  .portrait-video-root [data-portrait-video-main] button {
+    min-height: 52px;
+  }
+
+  .portrait-video-root[data-program-active="true"] [data-portrait-video-player]:not(:fullscreen) {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: min(100vw, 1200px);
+    height: auto;
+    aspect-ratio: 16 / 9;
+    translate: none;
+    transform: translate(-50%, -50%);
+  }
+
+  /* Embedded game and story */
+  .app-route-scope[data-app-route="/intervention/game"] main,
+  .app-route-scope[data-app-route="/intervention/story"] main {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-route-scope[data-app-route="/intervention/story"] main > div.relative.z-10 {
+    margin-top: clamp(40px, 8dvh, 150px);
+  }
+
+  .app-route-scope[data-app-route="/intervention/story"] main > div.relative.z-10 > div.grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-route-scope[data-app-route="/intervention/story"] main button {
+    min-height: 56px;
+  }
+
+  /* History and reports */
+  .app-route-scope[data-app-route="/history"] main,
+  .app-route-scope[data-app-route^="/history/"] main {
+    overflow-x: hidden;
+  }
+
+  .app-route-scope[data-app-route="/history"] main button,
+  .app-route-scope[data-app-route^="/history/"] main button {
+    min-height: 48px;
+  }
+
+  .app-route-scope[data-app-route="/history"] main > div {
+    padding-inline: var(--portrait-gutter);
+  }
+
+  .app-route-scope[data-app-route="/history"] .portrait-history-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-route-scope[data-app-route="/history"] .portrait-encounter-body {
+    gap: 16px;
+  }
+
+  .app-route-scope[data-app-route="/history"] .portrait-encounter-body > div:last-child button {
+    min-width: 120px;
+    min-height: 56px;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .app-route-scope[data-app-route="/history"] .portrait-encounter-body p {
+    font-size: 16px;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items table {
+    min-width: 0;
+    display: block;
+    width: 100%;
+  }
+
+  .app-route-scope[data-app-route*="/scale/"] .portrait-scale-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-route-scope[data-app-route*="/scale/"] .portrait-scale-summary > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .app-route-scope[data-app-route*="/scale/"] .portrait-scale-summary > div:nth-child(2),
+  .app-route-scope[data-app-route*="/scale/"] .portrait-scale-summary > div:nth-child(4) {
+    display: none;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items thead {
+    display: none;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items td {
+    display: block;
+    width: auto;
+    padding: 4px;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items td:first-child {
+    grid-column: 1 / -1;
+    font-weight: 600;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items td::before {
+    display: block;
+    margin-bottom: 4px;
+    color: #64748b;
+    content: attr(data-label);
+    font-size: 12px;
+    font-weight: 600;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 700px) {
+  .app-route-scope header > div:first-child h1 {
+    display: none;
+  }
+
+  .app-route-scope header > div:first-child > div:last-child {
+    max-width: 40vw;
+  }
+
+  .portrait-home-action-meta {
+    display: none;
+  }
+
+  .app-route-scope[data-app-route="/scale-selection"] main > div > div:nth-child(2) button {
+    padding-inline: 16px;
+  }
+
+  .portrait-stage-subtitle {
+    top: 92px;
+    left: 12px;
+    width: min(45vw, 190px);
+  }
+
+  .portrait-stage-subtitle > div {
+    height: clamp(180px, 23dvh, 250px);
+  }
+
+  .portrait-stage-camera {
+    top: 92px;
+    right: 12px;
+  }
+
+  .portrait-stage-camera > div {
+    width: clamp(128px, 37vw, 180px);
+    min-width: 0;
+  }
+
+  .portrait-scale-panel {
+    right: var(--portrait-gutter);
+    width: calc(100vw - 2 * var(--portrait-gutter)) !important;
+  }
+
+  .app-route-scope[data-app-route="/history"] .portrait-encounter-body {
+    flex-wrap: wrap;
+  }
+
+  .app-route-scope[data-app-route="/history"] .portrait-encounter-body > div:last-child {
+    width: 100%;
+  }
+
+  .app-route-scope[data-app-route="/history"] .portrait-encounter-body > div:last-child button {
+    width: 100%;
+  }
+
+  .app-route-scope[data-app-route^="/history/"] .portrait-scale-items tr {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (orientation: portrait) and (max-height: 1200px) {
+  .portrait-consultation-stage {
+    display: block;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 72px var(--portrait-gutter) 190px;
+    perspective: none;
+  }
+
+  .portrait-consultation-stage > div:first-child {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    perspective: none;
+  }
+
+  .portrait-stage-visual,
+  .portrait-scale-stage .portrait-stage-visual {
+    position: fixed;
+    top: auto;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    width: 155vw;
+    height: 50dvh;
+    margin: 0;
+    transform: translateX(-50%) !important;
+    z-index: 10;
+  }
+
+  .portrait-stage-video video {
+    translate: 0 0 !important;
+  }
+
+  .portrait-stage-subtitle,
+  .portrait-scale-stage .portrait-stage-subtitle {
+    position: fixed;
+    top: 120px;
+    right: auto;
+    bottom: auto;
+    left: 12px;
+    width: min(45vw, 190px);
+    margin: 0;
+    z-index: 42;
+    translate: 0 0 !important;
+  }
+
+  .portrait-stage-subtitle > div,
+  .portrait-scale-stage .portrait-stage-subtitle > div {
+    min-width: 0;
+    height: clamp(180px, 23dvh, 250px);
+    max-height: none;
+  }
+
+  .portrait-stage-camera,
+  .portrait-scale-stage .portrait-stage-camera {
+    position: fixed;
+    display: flex;
+    top: 92px;
+    right: 12px;
+    z-index: 42;
+  }
+
+  .portrait-stage-camera > div,
+  .portrait-scale-stage .portrait-stage-camera > div {
+    width: clamp(128px, 37vw, 180px);
+    min-width: 0;
+  }
+
+  .portrait-stage-controls {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 35;
+    gap: 2px;
+    padding: 8px var(--portrait-gutter) 16px;
+    background: linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.82) 30%);
+  }
+
+  .portrait-stage-controls > div:first-child {
+    padding: 5px 12px;
+    font-size: 14px;
+  }
+
+  .portrait-scale-stage .portrait-stage-controls {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: auto;
+    width: 76px;
+    height: 76px;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .portrait-scale-stage .portrait-stage-controls > div:first-child {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    bottom: 92px;
+    width: max-content;
+    max-width: min(220px, calc(100vw - 32px));
+    background: rgba(15, 23, 42, 0.88);
+  }
+
+  .portrait-scale-stage .portrait-stage-controls > div:last-child {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 128px;
+    height: 128px;
+    transform: scale(0.59) !important;
+    transform-origin: top left;
+  }
+
+  .portrait-scale-panel {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: 0 !important;
+    width: 100% !important;
+    max-height: none !important;
+    margin: calc(100dvh - 420px) 0 0;
+  }
+
+  .portrait-scale-panel.opacity-0 {
+    display: none;
+  }
+
+  .portrait-scale-panel > div {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .portrait-scale-toggle,
+  .portrait-stage-results-toggle {
+    position: fixed;
+  }
+
+  .portrait-stage-results-panel {
+    position: fixed;
+    top: 68px;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0;
+    width: 100vw;
+    max-width: none;
+    z-index: 55;
+  }
+
+  .portrait-stage-results-panel.opacity-0 {
+    left: -100vw !important;
+    right: auto !important;
+  }
+}

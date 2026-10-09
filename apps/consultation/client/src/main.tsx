@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 import { isPerformanceMode } from "./lib/runtimeConfig";
+import "./portrait.css";
 
 if (isPerformanceMode()) {
   document.documentElement.dataset.performanceMode = "true";

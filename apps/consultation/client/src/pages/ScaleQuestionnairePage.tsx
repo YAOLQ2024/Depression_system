@@ -1178,6 +1178,7 @@ export default function ScaleQuestionnairePage() {
 
       <div
         ref={subtitleDragBoundsRef}
+        data-video-playing={Boolean(playableVideoUri && !videoFinished && !playbackBlocked)}
         style={{
           "--scale-panel-width": "clamp(260px, 22vw, 340px)",
           "--scale-panel-left": "clamp(12px, 2vw, 32px)",
@@ -1186,7 +1187,7 @@ export default function ScaleQuestionnairePage() {
           "--results-panel-reserve": "min(46vw, 670px)",
           "--results-panel-shift": "calc(var(--results-panel-reserve) / 2)",
         } as CSSProperties}
-        className="flex w-full h-full relative z-10 bg-transparent pt-8 overflow-hidden [perspective:2000px]"
+        className="portrait-consultation-stage portrait-scale-stage flex w-full h-full relative z-10 bg-transparent pt-8 overflow-hidden [perspective:2000px]"
       >
         <div
           className="flex-1 relative h-full flex flex-col items-center transition-all duration-[800ms] min-h-0 min-w-0 perspective-[1200px]"
@@ -1195,14 +1196,14 @@ export default function ScaleQuestionnairePage() {
           }}
         >
           <div
-            className="flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            className="portrait-stage-visual flex-1 w-full max-w-[1200px] mx-auto flex flex-col items-center justify-end relative mt-2 z-10 pointer-events-none transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
             style={{
               transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
             }}
           >
             {playableVideoUri ? (
               <div className="relative flex w-full items-end justify-center">
-                <div className="relative flex h-[min(88dvh,48vw,1200px)] w-full max-w-[min(88vw,1500px)] items-end justify-center">
+                <div className="portrait-stage-video relative flex h-[min(88dvh,48vw,1200px)] w-full max-w-[min(88vw,1500px)] items-end justify-center">
                   <SeamlessVideoPlayer
                     ref={playerRef}
                     currentClip={playerCurrentClip}
@@ -1269,7 +1270,7 @@ export default function ScaleQuestionnairePage() {
           </div>
 
           <div
-            className="absolute bottom-0 md:bottom-0 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+            className="portrait-stage-controls absolute bottom-0 md:bottom-0 inset-x-0 z-20 flex flex-col items-center w-full gap-[10px] pb-0 pointer-events-auto shadow-sm transform-gpu transition-transform duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
             style={{
               transform: isOpen ? "translateX(calc(-1 * var(--results-panel-shift)))" : "translateX(0px)",
             }}
@@ -1291,7 +1292,7 @@ export default function ScaleQuestionnairePage() {
         </div>
 
         {/* Subtitle — outside flex-1 so NOT affected by marginLeft/Right shift */}
-        <div className="absolute left-[5%] lg:left-[10%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
+        <div className="portrait-stage-subtitle absolute left-[5%] lg:left-[10%] top-1/2 -translate-y-[40%] z-[100] pointer-events-none w-[240px] sm:w-[280px] flex items-center justify-center">
           <DraggableMessagePanel
             title="量表字幕"
             lines={assistantLines}
@@ -1303,7 +1304,7 @@ export default function ScaleQuestionnairePage() {
         <button
           onClick={() => setIsScaleOpen((current) => !current)}
           className={cn(
-            "absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
+            "portrait-scale-toggle absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
             isScaleOpen
               ? "-translate-x-1/2 rounded-full w-8 h-16 border border-white/80"
               : "left-0 rounded-r-xl w-8 py-4 border border-l-0 border-white/80 pl-0.5 hover:translate-x-1",
@@ -1325,7 +1326,7 @@ export default function ScaleQuestionnairePage() {
         {/* Left side: Scale questionnaire panel */}
         <div
           className={cn(
-            "absolute top-0 bottom-0 my-auto z-20 transition-all duration-[800ms] pointer-events-auto origin-left flex flex-col justify-center transform-gpu",
+            "portrait-scale-panel absolute top-0 bottom-0 my-auto z-20 transition-all duration-[800ms] pointer-events-auto origin-left flex flex-col justify-center transform-gpu",
             isScaleOpen ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
           style={{
@@ -1414,7 +1415,7 @@ export default function ScaleQuestionnairePage() {
         <button
           onClick={() => setIsOpen((current) => !current)}
           className={cn(
-            "absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
+            "portrait-stage-results-toggle absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
             isOpen
               ? "translate-x-1/2 rounded-full w-8 h-16 border border-white/80"
               : "right-0 rounded-l-xl w-8 py-4 border border-r-0 border-white/80 pr-0.5 hover:-translate-x-1",
@@ -1435,7 +1436,7 @@ export default function ScaleQuestionnairePage() {
 
         <div
           className={cn(
-            "absolute top-[2%] bottom-[2%] z-20 transition-all duration-[800ms] pointer-events-auto origin-right w-[45vw] max-w-[650px]",
+            "portrait-stage-results-panel absolute top-[2%] bottom-[2%] z-20 transition-all duration-[800ms] pointer-events-auto origin-right w-[45vw] max-w-[650px]",
             isOpen ? "right-0 opacity-100" : "-right-[600px] opacity-0",
           )}
           style={isOpen ? { transform: "rotateY(-15deg)" } : undefined}
@@ -1467,7 +1468,7 @@ export default function ScaleQuestionnairePage() {
           </div>
         </div>
 
-        <div className={`absolute transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] z-40 ${isOpen ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"} right-4 md:right-8 top-4 md:top-6`}>
+        <div className={`portrait-stage-camera absolute transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] z-40 ${isOpen ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"} right-4 md:right-8 top-4 md:top-6`}>
           <CameraPreview
             className="w-[25vw] min-w-[160px] max-w-[260px] aspect-[4/3] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.4)] border border-white/20 ml-auto"
             videoRef={cameraVideoRef}

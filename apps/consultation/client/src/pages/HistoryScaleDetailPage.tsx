@@ -267,7 +267,7 @@ export default function HistoryScaleDetailPage() {
                 {hasScale ? (
                   <div className="p-4 md:p-5">
                     <GlassCard className="p-4">
-                      <div className="grid gap-4 md:grid-cols-[minmax(220px,0.95fr)_1px_minmax(0,0.85fr)_1px_minmax(0,0.85fr)] md:items-center">
+                      <div className="portrait-scale-summary grid gap-4 md:grid-cols-[minmax(220px,0.95fr)_1px_minmax(0,0.85fr)_1px_minmax(0,0.85fr)] md:items-center">
                         <div className="flex justify-center">
                           <RingChart
                             score={detail?.score ?? 0}

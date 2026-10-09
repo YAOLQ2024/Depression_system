@@ -280,7 +280,7 @@ export default function ResultPage() {
                       />
                     </div>
 
-                    <div className="mt-4 flex flex-col gap-3 border-t border-white/16 pt-4 sm:flex-row">
+                    <div className="portrait-result-actions mt-4 flex flex-col gap-3 border-t border-white/16 pt-4 sm:flex-row">
                       <button
                         onClick={handleOpenPrimaryScaleDetail}
                         disabled={!viewModel.defaultScaleId}

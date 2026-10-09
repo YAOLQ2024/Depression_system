@@ -99,7 +99,7 @@ function DashboardInner({
   const t = themeClasses;
 
   return (
-    <div className="flex h-full flex-col space-y-4">
+    <div className="portrait-result-dashboard flex h-full flex-col space-y-4">
       <GlassCard
         className={cn(
           "shrink-0 border-sky-300/25 bg-[linear-gradient(135deg,rgba(19,42,80,0.92),rgba(10,22,43,0.96)_54%,rgba(25,22,59,0.94))]",

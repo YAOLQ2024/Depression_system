@@ -88,7 +88,7 @@ export function EncounterCard({ encounter, onContinue, onViewDetail, index = 0 }
           )}
         />
 
-        <div className="flex items-center gap-6 p-5 md:px-6">
+        <div className="portrait-encounter-body flex items-center gap-6 p-5 md:px-6">
           {/* 左侧：状态圆 */}
           <div
             className={cn(
