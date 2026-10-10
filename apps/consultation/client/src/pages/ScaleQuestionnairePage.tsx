@@ -545,6 +545,7 @@ export default function ScaleQuestionnairePage() {
   const {
     isRecording,
     recordingElapsedMs,
+    mediaStreamRef,
     microphoneFeedback,
     startRecording,
     stopRecording,
@@ -1178,6 +1179,7 @@ export default function ScaleQuestionnairePage() {
 
       <div
         ref={subtitleDragBoundsRef}
+        data-results-open={isOpen}
         data-video-playing={Boolean(playableVideoUri && !videoFinished && !playbackBlocked)}
         style={{
           "--scale-panel-width": "clamp(260px, 22vw, 340px)",
@@ -1282,6 +1284,7 @@ export default function ScaleQuestionnairePage() {
             ) : null}
             <VoiceOrbButton
               isRecording={isRecording}
+              audioStream={mediaStreamRef.current}
               onToggleRecord={handleToggleRecord}
               disabled={!videoFinished || isSubmittingAnswer || isAdvancingAfterConfirmation || state.loading}
               label={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
@@ -1302,6 +1305,8 @@ export default function ScaleQuestionnairePage() {
 
         {/* Left side: Scale questionnaire panel toggle */}
         <button
+          aria-label={isScaleOpen ? "收起量表答题" : "展开量表答题"}
+          aria-expanded={isScaleOpen}
           onClick={() => setIsScaleOpen((current) => !current)}
           className={cn(
             "portrait-scale-toggle absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
@@ -1348,6 +1353,14 @@ export default function ScaleQuestionnairePage() {
                     <span className="text-sm font-medium text-white/60">
                       {isCurrentVideoStageIntro ? "引导" : `${currentItem?.index || 1}/${currentStageQuestionCount}`}
                     </span>
+                    <button
+                      type="button"
+                      className="scale-portrait-close"
+                      aria-label="收起量表答题"
+                      onClick={() => setIsScaleOpen(false)}
+                    >
+                      收起 <ChevronLeft className="h-4 w-4" />
+                    </button>
                   </div>
                   <p
                     className={cn(
@@ -1413,6 +1426,8 @@ export default function ScaleQuestionnairePage() {
         </div>
 
         <button
+          aria-label={isOpen ? "收起多模态看板" : "打开多模态看板"}
+          aria-expanded={isOpen}
           onClick={() => setIsOpen((current) => !current)}
           className={cn(
             "portrait-stage-results-toggle absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
@@ -1422,6 +1437,7 @@ export default function ScaleQuestionnairePage() {
           )}
           style={isOpen ? { right: "min(45vw, 650px)" } : undefined}
         >
+          <span className="consultation-portrait-toggle-label">{isOpen ? "收起多模态看板" : "打开多模态看板"}</span>
           {!isOpen ? (
             <>
               <span className="text-[11px] font-bold tracking-widest px-0.5 text-slate-600 mb-1" style={{ writingMode: "vertical-rl" }}>
@@ -1450,6 +1466,7 @@ export default function ScaleQuestionnairePage() {
                     <ConsultationStatusPanel
                       consultation={synthesizedConsultation}
                       onRefresh={handleRefresh}
+                      onClose={() => setIsOpen(false)}
                       refreshing={state.loading}
                       isRecording={isRecording}
                       liveTransport={isLiveStreamActive ? "SSE" : "HTTP"}

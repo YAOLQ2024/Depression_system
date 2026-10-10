@@ -1,6 +1,6 @@
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, Pill, RefreshCw } from "lucide-react";
+import { FileText, Pill, RefreshCw, X, Bot } from "lucide-react";
 import { useConsultationAppContext } from "../app/ConsultationAppContext";
 import { FlowCompletionState } from "../components/FlowCompletionState";
 import {
@@ -27,6 +27,8 @@ type ActiveDrawerState =
 export default function ResultPage() {
   const navigate = useNavigate();
   const { state, actions } = useConsultationAppContext();
+  const resultLayoutRef = useRef<HTMLDivElement | null>(null);
+  const [counselorHidden, setCounselorHidden] = useState(false);
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawerState>(null);
   const [assessmentScaleDetails, setAssessmentScaleDetails] = useState<Record<string, AssessmentScaleDetail>>({});
   const [assessmentScaleHistories, setAssessmentScaleHistories] = useState<Record<string, ResultTrendPoint[]>>({});
@@ -168,6 +170,27 @@ export default function ResultPage() {
   }, [assessmentScaleHistories, scaleDetailLoadErrors, selectedScaleId, viewModel.scaleDetails]);
   const selectedDrawerWidth = "calc((100% - 5px) / 2)";
 
+  useEffect(() => {
+    const layout = resultLayoutRef.current;
+    if (!layout || !canRenderResult) return;
+    const evidence = layout.querySelector<HTMLElement>(".result-evidence-grid");
+    if (!evidence) return;
+    const positionCounselor = () => {
+      const cards = evidence.querySelectorAll<HTMLElement>(".result-evidence-card");
+      const anchor = cards[0];
+      if (!anchor) return;
+      const top = anchor.getBoundingClientRect().top - layout.getBoundingClientRect().top;
+      layout.style.setProperty("--result-pet-top", `${top}px`);
+      const availableHeight = evidence.getBoundingClientRect().bottom - anchor.getBoundingClientRect().top;
+      layout.style.setProperty("--result-pet-height", `${availableHeight}px`);
+    };
+    const observer = new ResizeObserver(positionCounselor);
+    observer.observe(layout);
+    observer.observe(evidence);
+    positionCounselor();
+    return () => observer.disconnect();
+  }, [canRenderResult]);
+
   const modules = viewModel.modules.map((module) =>
     module.id === "consultation-summary" && viewModel.consultationSummary
       ? {
@@ -230,7 +253,7 @@ export default function ResultPage() {
 
   return (
     <ConsultationLayout backgroundImage="/4K.png" title="评估结果">
-      <div className="relative h-full w-full overflow-hidden p-4 md:p-6 lg:p-8">
+      <div data-pet-hidden={counselorHidden} className="result-page-shell relative h-full w-full overflow-hidden p-4 md:p-6 lg:p-8">
         {!canRenderResult ? (
           <FlowCompletionState
             title="尚未生成评估结果"
@@ -244,9 +267,10 @@ export default function ResultPage() {
           />
       ) : (
           <>
-            <div className="flex h-full gap-3 lg:gap-[5px]">
+            <div ref={resultLayoutRef} className="result-page-layout flex h-full gap-3 lg:gap-[5px]">
               <div
-                className="hidden shrink-0 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)] xl:block"
+                data-portrait-hidden={counselorHidden || isDrawerOpen}
+                className="result-counselor-pane hidden shrink-0 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)] xl:block"
                 style={{
                   width: isDrawerOpen ? 0 : counselorPaneWidth,
                   opacity: isDrawerOpen ? 0 : 1,
@@ -256,15 +280,16 @@ export default function ResultPage() {
                 }}
               >
                 <div className="h-full w-full">
-                  <DigitalCounselor className="px-0" overallSeverity={viewModel.overallSeverity} />
+                  <DigitalCounselor className="result-counselor px-0" overallSeverity={viewModel.overallSeverity} portraitHidden={counselorHidden || isDrawerOpen} />
+                  <button type="button" className="result-pet-close" aria-label="隐藏数字人解读" onClick={() => setCounselorHidden(true)}><X /></button>
                 </div>
               </div>
 
-              <div className="min-w-0 flex-1 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)]">
-        <div className="relative h-full overflow-hidden rounded-[10px] border border-white/16 bg-[linear-gradient(180deg,#070d1b_0%,#0b1325_100%)] shadow-[0_24px_60px_rgba(15,23,42,0.26)]">
+              <div className="result-content-pane min-w-0 flex-1 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)]">
+        <div className="result-content-card relative h-full overflow-hidden rounded-[10px] border border-white/16 bg-[linear-gradient(180deg,#070d1b_0%,#0b1325_100%)] shadow-[0_24px_60px_rgba(15,23,42,0.26)]">
                   <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent_18%,transparent_82%,rgba(255,255,255,0.03))]" />
-                  <div className="relative z-10 flex h-full min-h-0 flex-col p-4 md:p-5">
-                    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <div className="result-content-inner relative z-10 flex h-full min-h-0 flex-col p-4 md:p-5">
+                    <div className="result-content-scroll min-h-0 flex-1 overflow-y-auto pr-1">
                       <SummaryDashboard
                         modules={modules}
                         overallScore={viewModel.overallScore}
@@ -333,7 +358,7 @@ export default function ResultPage() {
               </div>
 
               <div
-                className="relative hidden shrink-0 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)] lg:block"
+                className="result-desktop-drawer relative hidden shrink-0 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)] lg:block"
                 style={{
                   width: isDrawerOpen ? selectedDrawerWidth : 0,
                   opacity: isDrawerOpen ? 1 : 0,
@@ -348,15 +373,18 @@ export default function ResultPage() {
               </div>
             </div>
 
+            {counselorHidden && !isDrawerOpen ? (
+              <button type="button" className="result-pet-show" onClick={() => setCounselorHidden(false)} aria-label="显示数字人解读"><Bot /> 数字人解读</button>
+            ) : null}
             {isDrawerOpen ? (
               <>
                 <button
                   type="button"
                   aria-label="关闭详情遮罩"
                   onClick={handleCloseDrawer}
-                  className="absolute inset-0 z-20 bg-slate-950/35 backdrop-blur-[2px] lg:hidden"
+                  className="result-mobile-backdrop absolute inset-0 z-20 bg-slate-950/35 backdrop-blur-[2px] lg:hidden"
                 />
-                <div className="absolute inset-3 z-30 lg:hidden">
+                <div className="result-mobile-drawer absolute inset-3 z-30 lg:hidden">
                   {activeDrawer?.kind === "consultation" ? (
                     <ConsultationSummaryDrawer
                       open

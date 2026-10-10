@@ -17,7 +17,7 @@ export function ConsultationProgress({
   const resolvedCurrentStep = currentStageOrder ?? currentStep ?? 1;
 
   return (
-    <div className="z-10 mx-auto mt-0 flex w-fit max-w-full items-center justify-center overflow-x-auto px-[clamp(12px,1.25vw,28px)] py-[clamp(4px,0.4vw,10px)]">
+    <div className="consultation-progress z-10 mx-auto mt-0 flex w-fit max-w-full items-center justify-center overflow-x-auto px-[clamp(12px,1.25vw,28px)] py-[clamp(4px,0.4vw,10px)]">
       {steps.map((step, idx) => {
         const stepNum = idx + 1;
         const isCompleted = stepNum < resolvedCurrentStep;

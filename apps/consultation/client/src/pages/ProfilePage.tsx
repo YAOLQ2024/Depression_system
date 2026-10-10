@@ -202,7 +202,7 @@ function Section({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay }}
     >
-      <LightCard className={cn("p-5 md:p-6", cardClassName)}>
+      <LightCard className={cn("profile-section p-5 md:p-6", cardClassName)}>
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
             <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-500">
@@ -223,7 +223,7 @@ function Section({
 
 function FieldCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
+    <div className="profile-field rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
       <div className="text-xs font-medium text-slate-400">{label}</div>
       <div className="mt-2 text-sm font-medium text-slate-700">{value}</div>
     </div>
@@ -240,7 +240,7 @@ function StatusRow({
   done?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50/85 px-4 py-3 ring-1 ring-black/[0.03]">
+    <div className="profile-status-row flex items-start justify-between gap-3 rounded-xl bg-slate-50/85 px-4 py-3 ring-1 ring-black/[0.03]">
       <div className="flex min-w-0 items-start gap-2.5">
         <div className={cn("mt-0.5 shrink-0", done ? "text-emerald-500" : "text-amber-500")}>
           {done ? <CheckCircle2 className="h-4.5 w-4.5" /> : <AlertCircle className="h-4.5 w-4.5" />}
@@ -265,7 +265,7 @@ function QuickActionButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-violet-200 hover:bg-violet-50/70"
+      className="profile-quick-action flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-violet-200 hover:bg-violet-50/70"
     >
       <div className="min-w-0">
         <div className="text-sm font-semibold text-slate-800">{title}</div>
@@ -366,13 +366,13 @@ export default function ProfilePage() {
         <Header title="个人档案" />
       </div>
 
-      <div className="relative z-10 w-full px-6 pt-6 pb-10 md:px-10 lg:px-14">
+      <div className="profile-main relative z-10 w-full px-6 pt-6 pb-10 md:px-10 lg:px-14">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-          <LightCard className="overflow-hidden">
+          <LightCard className="profile-overview overflow-hidden">
             <div className="h-1 bg-gradient-to-r from-violet-400 via-blue-400 to-violet-400" />
             <div className="p-6 md:p-7">
               <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex min-w-0 flex-col gap-5 md:flex-row md:items-start">
+                <div className="profile-overview-identity flex min-w-0 flex-col gap-5 md:flex-row md:items-start">
                   <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[28px] bg-gradient-to-br from-violet-500 to-blue-500 text-3xl font-semibold text-white shadow-lg shadow-violet-500/20">
                     {userInitial}
                   </div>
@@ -386,9 +386,6 @@ export default function ProfilePage() {
                         {roleLabel}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm leading-7 text-slate-500">
-                      这里集中展示账号信息、问诊准备页已保存内容、设备授权状态以及当前流程入口，便于在开始或继续评估前快速确认。
-                    </p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       {overviewItems.map((item) => (
                         <FieldCard key={item.label} label={item.label} value={item.value} />
@@ -415,7 +412,7 @@ export default function ProfilePage() {
                   />
                   <QuickActionButton
                     title="进入调节干预"
-                    description="查看干预入口与后续调节内容"
+                    description="选择适合您的调节方式"
                     onClick={() => navigate(APP_PATHS.intervention)}
                   />
                 </div>
@@ -429,13 +426,13 @@ export default function ProfilePage() {
             <Section
               icon={ClipboardList}
               title="问诊准备信息"
-              subtitle="以下内容来自问诊准备页，后续如需修改可直接返回准备页编辑。"
+              subtitle="请确认您的个人信息，如需更新，请点击“去修改”。"
               delay={0.1}
               action={
                 <button
                   type="button"
                   onClick={() => navigate(APP_PATHS.preparation)}
-                  className="rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-600 ring-1 ring-violet-200 transition-all hover:bg-violet-100"
+                  className="profile-edit-button rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-600 ring-1 ring-violet-200 transition-all hover:bg-violet-100"
                 >
                   去修改
                 </button>
@@ -451,7 +448,7 @@ export default function ProfilePage() {
             <Section
               icon={ShieldCheck}
               title="准备状态与授权"
-              subtitle="量表和数字人问诊都会依赖这里的设备检查、知情同意与医生风格配置。"
+              subtitle="开始评估前，请确认设备可用并完成授权。"
               delay={0.16}
             >
               <div className="grid gap-3 md:grid-cols-2">
@@ -471,7 +468,7 @@ export default function ProfilePage() {
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {deviceItems.map((item) => (
-                  <div key={item.label} className="rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
+                  <div key={item.label} className="profile-field rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
                     <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
                       <span className="text-violet-500">{item.icon}</span>
                       {item.label}
@@ -485,7 +482,7 @@ export default function ProfilePage() {
             <Section
               icon={User}
               title="账号与系统信息"
-              subtitle="补充展示常见个人中心会关心的账号标识、登录偏好与当前系统状态。"
+              subtitle="查看您的账号信息和登录设置。"
               delay={0.22}
             >
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -500,7 +497,6 @@ export default function ProfilePage() {
             <Section
               icon={ShieldCheck}
               title="准备完成度"
-              subtitle="当前按 4 个准备项计算，后续如果有必做项要求也可以在这里继续扩展。"
               delay={0.12}
             >
               <div className="rounded-2xl bg-gradient-to-br from-violet-50 via-white to-blue-50 p-5 ring-1 ring-violet-100">
@@ -535,28 +531,27 @@ export default function ProfilePage() {
             <Section
               icon={Stethoscope}
               title="当前流程"
-              subtitle="这里用来解释系统下一步会把您带到哪里。"
               delay={0.18}
               className="xl:flex-1"
               cardClassName="xl:flex xl:h-full xl:flex-col"
               contentClassName="xl:flex-1"
             >
               <div className="flex h-full flex-col gap-3 xl:justify-between">
-                <div className="rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
+                <div className="profile-field rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
                   <div className="text-xs font-medium text-slate-400">下一步入口</div>
                   <div className="mt-2 text-sm font-semibold text-slate-800">{state.homeEntryLabel}</div>
                   <p className="mt-1 text-xs leading-6 text-slate-500">
-                    系统会根据当前会话状态自动续接；如果需要重新开始，也可以回到首页直接新建会话。
+                    您可以继续上次的评估，也可以返回首页开始新的问诊。
                   </p>
                 </div>
-                <div className="rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
+                <div className="profile-field rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
                   <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
                     <Clock3 className="h-4 w-4 text-violet-500" />
                     问诊阶段
                   </div>
                   <div className="mt-2 text-sm text-slate-600">{consultationStatusLabel}</div>
                 </div>
-                <div className="rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
+                <div className="profile-field rounded-xl bg-slate-50/85 p-4 ring-1 ring-black/[0.03]">
                   <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
                     <ClipboardList className="h-4 w-4 text-violet-500" />
                     量表阶段

@@ -273,6 +273,7 @@ export default function ConsultationPage() {
   const {
     isRecording,
     recordingElapsedMs,
+    mediaStreamRef,
     microphoneFeedback,
     startRecording,
     stopRecording,
@@ -858,6 +859,7 @@ export default function ConsultationPage() {
             "--results-panel-shift": "calc(var(--results-panel-reserve) / 2)",
           } as CSSProperties
         }
+        data-results-open={isOpen}
         className="portrait-consultation-stage flex w-full h-full relative z-10 bg-transparent pt-8 overflow-hidden [perspective:2000px]"
       >
         <div
@@ -973,6 +975,7 @@ export default function ConsultationPage() {
             ) : null}
             <VoiceOrbButton
               isRecording={isRecording}
+              audioStream={mediaStreamRef.current}
               onToggleRecord={handleToggleRecord}
               disabled={(!isRecording && consultation.status !== "waiting_user_input") || isSubmittingResponse || state.loading}
               label={isRecording ? `结束录音 ${formatDuration(recordingElapsedMs)}` : "开始录音"}
@@ -990,6 +993,8 @@ export default function ConsultationPage() {
         </div>
 
         <button
+          aria-label={isOpen ? "收起多模态看板" : "打开多模态看板"}
+          aria-expanded={isOpen}
           onClick={() => setIsOpen((current) => !current)}
           className={cn(
             "portrait-stage-results-toggle absolute top-1/2 -translate-y-1/2 z-30 transition-all duration-[800ms] flex flex-col items-center justify-center gap-1 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_rgba(59,130,246,0.15)] hover:text-primary-600 pointer-events-auto",
@@ -999,6 +1004,7 @@ export default function ConsultationPage() {
           )}
           style={isOpen ? { right: "min(45vw, 650px)" } : undefined}
         >
+          <span className="consultation-portrait-toggle-label">{isOpen ? "收起多模态看板" : "打开多模态看板"}</span>
           {!isOpen ? (
             <>
               <span className="text-[11px] font-bold tracking-widest px-0.5 text-slate-600 mb-1" style={{ writingMode: "vertical-rl" }}>
@@ -1026,6 +1032,7 @@ export default function ConsultationPage() {
                   {isOpen ? (
                     <ConsultationStatusPanel
                       consultation={consultation}
+                      onClose={() => setIsOpen(false)}
                       onRefresh={handleRefresh}
                       refreshing={state.loading}
                       isRecording={isRecording}

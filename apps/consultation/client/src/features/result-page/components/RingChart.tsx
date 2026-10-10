@@ -32,7 +32,7 @@ export function RingChart({
 
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg height={size} width={size}>
+      <svg height={size} width={size} viewBox={`0 0 ${size} ${size}`}>
         <circle
           stroke={color}
           fill="transparent"

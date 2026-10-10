@@ -232,7 +232,7 @@ export default function HistoryPage() {
     navigate(`${APP_PATHS.history}/${encounter.id}`);
 
   return (
-    <div className="min-h-screen bg-[#f8f7ff]">
+    <div className="history-page min-h-screen bg-[#f8f7ff]">
       <BackgroundDecor />
 
       {/* 全局 Header */}
@@ -240,7 +240,7 @@ export default function HistoryPage() {
         <Header title="历史就诊记录" />
       </div>
 
-      <div className="relative z-10 w-full px-6 pt-6 pb-10 md:px-10 lg:px-14">
+      <div className="history-content relative z-10 w-full px-6 pt-6 pb-10 md:px-10 lg:px-14">
         {/* ─── 统计卡片区 ─── */}
         <div className="portrait-history-stats mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard
@@ -278,7 +278,7 @@ export default function HistoryPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.25 }}
-          className="mb-5 flex items-center gap-3"
+          className="history-filters mb-5 flex items-center gap-3"
         >
           <Filter className="h-4 w-4 text-slate-400" />
           <div className="flex gap-1 rounded-xl bg-white/80 p-1 shadow-sm ring-1 ring-black/[0.04] backdrop-blur-sm">
@@ -367,7 +367,7 @@ export default function HistoryPage() {
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="relative mx-4 w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/[0.06]"
+            className="history-resume-dialog relative mx-4 w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/[0.06]"
           >
             <div className="h-1 bg-gradient-to-r from-violet-500 via-blue-500 to-violet-500" />
             <div className="p-6">

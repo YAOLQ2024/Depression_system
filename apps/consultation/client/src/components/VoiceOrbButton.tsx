@@ -1,10 +1,12 @@
 import { motion } from "motion/react";
 
+import { VoiceWave } from "./VoiceWave";
 import { SiriOrb } from "./smoothui/ui/SiriOrb";
 import { cn } from "../lib/utils";
 
 interface VoiceOrbButtonProps {
   isRecording: boolean;
+  audioStream?: MediaStream | null;
   onToggleRecord: () => void;
   disabled?: boolean;
   label: string;
@@ -13,13 +15,15 @@ interface VoiceOrbButtonProps {
 
 export function VoiceOrbButton({
   isRecording,
+  audioStream,
   onToggleRecord,
   disabled = false,
   label,
   className,
 }: VoiceOrbButtonProps) {
   return (
-    <div className={cn("pointer-events-auto flex items-center justify-center", className)}>
+    <div className={cn("voice-orb-control pointer-events-auto relative flex items-center justify-center", className)}>
+      <VoiceWave active={isRecording} stream={audioStream} />
       <motion.button
         type="button"
         aria-label={label}

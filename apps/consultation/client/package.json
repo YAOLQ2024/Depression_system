@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:jetson": "vite --mode jetson",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

@@ -2,6 +2,9 @@ import { useState, type CSSProperties, type FormEvent, type ReactNode } from "re
 
 import {
   ArrowLeft,
+  ChartNoAxesColumn,
+  ShieldCheck,
+  UserRound,
   Eye,
   EyeOff,
 } from "lucide-react";
@@ -209,7 +212,7 @@ function AuthInputField({
   onBlur,
 }: InputFieldProps) {
   return (
-    <div className="mb-5">
+    <div className="auth-field mb-5">
       <label className="mb-2.5 block text-base font-semibold tracking-[0.03em] text-[#2c3e50]" htmlFor={id}>
         {label}
       </label>
@@ -310,18 +313,18 @@ function AuthPage({
   }
 
   return (
-    <main className="relative min-h-[100svh] overflow-hidden bg-[#f5f7fa]" style={entryBackgroundStyle}>
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(10,18,40,0.44)_0%,rgba(10,18,40,0.22)_42%,rgba(10,18,40,0.12)_100%)] lg:hidden" />
+    <main className="auth-page relative min-h-[100svh] overflow-hidden bg-[#f5f7fa]" style={entryBackgroundStyle}>
+      <div className="auth-backdrop absolute inset-0 bg-[linear-gradient(135deg,rgba(10,18,40,0.44)_0%,rgba(10,18,40,0.22)_42%,rgba(10,18,40,0.12)_100%)] lg:hidden" />
 
-      <EntryBrand className="left-[clamp(1rem,2vw,2.2rem)] top-[clamp(1rem,2vw,2rem)]" />
+      <EntryBrand className="auth-brand left-[clamp(1rem,2vw,2.2rem)] top-[clamp(1rem,2vw,2rem)]" />
 
-      <div className="relative z-10 flex min-h-[100svh]">
-        <section className="relative hidden flex-1 overflow-hidden lg:flex">
+      <div className="auth-layout relative z-10 flex min-h-[100svh]">
+        <section className="auth-visual relative hidden flex-1 overflow-hidden lg:flex">
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,18,44,0.62)_0%,rgba(10,22,52,0.34)_40%,rgba(10,22,52,0.18)_100%)]" />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_24%,rgba(255,255,255,0.22),transparent_18%),radial-gradient(circle_at_78%_26%,rgba(124,92,255,0.28),transparent_20%),radial-gradient(circle_at_56%_78%,rgba(170,148,255,0.18),transparent_22%)]" />
 
           <div className="relative z-10 mx-auto flex w-full max-w-[1600px] items-center justify-center px-[clamp(2rem,4vw,6rem)]">
-            <div className="relative aspect-square w-[min(72vw,860px)] min-w-[480px] max-w-[860px] animate-auth-stage-drift [perspective:1800px]">
+            <div className="auth-stage relative aspect-square w-[min(72vw,860px)] min-w-[480px] max-w-[860px] animate-auth-stage-drift [perspective:1800px]">
               <div className="absolute left-1/2 top-1/2 h-[46%] w-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(167,145,255,0.42)_0%,rgba(119,103,255,0.18)_44%,transparent_74%)] blur-[42px] animate-auth-core-pulse" />
               <div className="absolute left-1/2 top-1/2 h-[24%] w-[24%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.92)_0%,rgba(215,202,255,0.52)_44%,transparent_76%)] blur-[22px] opacity-85" />
 
@@ -339,10 +342,10 @@ function AuthPage({
                 </div>
               ))}
 
-              <div className="absolute left-1/2 top-1/2 h-[var(--cube-size)] w-[var(--cube-size)] -translate-x-1/2 -translate-y-1/2 [transform-style:preserve-3d]" style={{ "--cube-size": AUTH_CUBE_SIZE } as CSSProperties}>
+              <div className="auth-cube absolute left-1/2 top-1/2 h-[var(--cube-size)] w-[var(--cube-size)] -translate-x-1/2 -translate-y-1/2 [transform-style:preserve-3d]" style={{ "--cube-size": AUTH_CUBE_SIZE } as CSSProperties}>
                 <div className="absolute inset-[8%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0%,rgba(116,99,255,0.08)_45%,transparent_72%)] blur-xl" />
                 <div
-                  className="absolute inset-0 animate-auth-cube-spin"
+                  className="auth-cube-spinner absolute inset-0 animate-auth-cube-spin"
                   style={{ transformStyle: "preserve-3d", "--cube-size": AUTH_CUBE_SIZE } as CSSProperties}
                 >
                   {AUTH_CUBE_FACE_TRANSFORMS.map((transform) => (
@@ -358,11 +361,11 @@ function AuthPage({
           </div>
         </section>
 
-        <section className="relative flex w-full items-center justify-center bg-white/94 px-8 py-24 backdrop-blur-sm lg:w-[450px] lg:min-w-[450px] lg:bg-white lg:px-0 lg:py-0 lg:shadow-[-2px_0_20px_rgba(0,0,0,0.10)]">
-          <div className="w-full max-w-[320px] py-4 lg:py-10">
-            <div className="mb-10 text-center">
+        <section className="auth-panel relative flex w-full items-center justify-center bg-white/94 px-8 py-24 backdrop-blur-sm lg:w-[450px] lg:min-w-[450px] lg:bg-white lg:px-0 lg:py-0 lg:shadow-[-2px_0_20px_rgba(0,0,0,0.10)]">
+          <div className="auth-card w-full max-w-[320px] py-4 lg:py-10">
+            <div className="auth-heading mb-10 text-center">
               <div className="mb-4">
-                <span className="inline-flex items-center rounded-[8px] bg-[linear-gradient(45deg,#4f81ff,#3b66db)] px-6 py-3 text-[20px] font-bold tracking-[0.12em] text-white shadow-[0_4px_12px_rgba(79,129,255,0.30)]">
+                <span className="auth-heading-badge inline-flex items-center rounded-[8px] bg-[linear-gradient(45deg,#4f81ff,#3b66db)] px-6 py-3 text-[20px] font-bold tracking-[0.12em] text-white shadow-[0_4px_12px_rgba(79,129,255,0.30)]">
                   {authMode === "login" ? "智能评估" : "创建账号"}
                 </span>
               </div>
@@ -418,7 +421,7 @@ function AuthPage({
                   }
                 />
 
-                <div className="mb-6 flex items-center justify-between gap-4 text-[15px]">
+                <div className="auth-options mb-6 flex items-center justify-between gap-4 text-[15px]">
                   <label htmlFor="remember-login" className="inline-flex items-center gap-2.5 text-[#666]">
                     <input
                       id="remember-login"
@@ -450,7 +453,7 @@ function AuthPage({
                   {loading ? "登录中..." : "登录"}
                 </button>
 
-                <div className="mt-4 flex justify-end">
+                <div className="auth-return mt-4 flex justify-end">
                   <Link
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-[#4f81ff] transition hover:text-[#3b66db] hover:underline"
                     to={APP_PATHS.cover}
@@ -515,7 +518,7 @@ function AuthPage({
                   }
                 />
 
-                <div className="mb-6 flex justify-end text-[15px] text-[#666]">
+                <div className="auth-options mb-6 flex justify-end text-[15px] text-[#666]">
                   <p>
                     已有账号？
                     <button
@@ -536,7 +539,7 @@ function AuthPage({
                   {loading ? "提交中..." : "立即注册"}
                 </button>
 
-                <div className="mt-4 flex justify-end">
+                <div className="auth-return mt-4 flex justify-end">
                   <Link
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-[#4f81ff] transition hover:text-[#3b66db] hover:underline"
                     to={APP_PATHS.cover}
@@ -548,15 +551,18 @@ function AuthPage({
               </form>
             )}
 
-            <div className="mt-9 flex items-center justify-between border-t border-[#eef2f7] pt-4 text-[13px] text-[#667084]">
+            <div className="auth-badges mt-9 flex items-center justify-between border-t border-[#eef2f7] pt-4 text-[13px] text-[#667084]">
               <div className="inline-flex items-center rounded-full border border-[rgba(59,130,246,0.25)] bg-[#f2f8ff] px-3 py-1 font-semibold tracking-[0.02em] text-[#3b82f6]">
+                <UserRound className="auth-badge-icon" aria-hidden="true" />
                 受试者端
               </div>
               <div className="flex gap-2">
                 <span className="inline-flex items-center rounded-[8px] border border-[#e5e7eb] bg-[#f8fafc] px-2.5 py-1">
+                  <ChartNoAxesColumn className="auth-badge-icon" aria-hidden="true" />
                   智能评估
                 </span>
                 <span className="inline-flex items-center rounded-[8px] border border-[#e5e7eb] bg-[#f8fafc] px-2.5 py-1">
+                  <ShieldCheck className="auth-badge-icon" aria-hidden="true" />
                   安全连接
                 </span>
               </div>

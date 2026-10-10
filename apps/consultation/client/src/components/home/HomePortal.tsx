@@ -10,17 +10,17 @@ type HomePortalProps = {
 export function HomePortal({ activeMenuTitle, onAvatarClick }: HomePortalProps) {
   return (
     <div className="pointer-events-none relative flex h-full w-full select-none items-center justify-start">
-      <div className="relative mt-[4vh] aspect-square w-[52vw] min-w-[720px] max-w-[940px] -ml-[8vw] sm:-ml-[6vw]">
+      <div className="home-portal-ring relative mt-[4vh] aspect-square w-[52vw] min-w-[720px] max-w-[940px] -ml-[8vw] sm:-ml-[6vw]">
         <div className="pointer-events-none absolute -inset-10 rounded-full bg-[radial-gradient(circle,rgba(125,211,252,0.18)_0%,rgba(165,180,252,0.1)_48%,transparent_75%)] opacity-70 blur-3xl" />
 
         <div className="relative h-full w-full rounded-full">
           <CometOrbit />
 
-          <div className="pointer-events-auto absolute inset-0 flex items-end justify-center pb-8 sm:pb-12">
+          <div className="home-portal-avatar pointer-events-auto absolute inset-0 flex items-end justify-center pb-8 sm:pb-12">
             <motion.button
               type="button"
               onClick={onAvatarClick}
-              className="relative h-[89%] cursor-pointer focus:outline-none"
+              className="home-portal-avatar-button relative h-[89%] cursor-pointer focus:outline-none"
               animate={{ y: [0, -5, 0] }}
               transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
               title={`进入${activeMenuTitle}`}

@@ -144,6 +144,18 @@ powershell -ExecutionPolicy Bypass -File scripts/start_eeg_tools.ps1 -Command br
 
 也可使用 `replay -Mode simulate` 进行模拟数据联调；不要同时运行 `bridge` 与 `replay`。
 
+### Jetson 前端热更新
+
+保持 Docker 后端运行，在项目根目录启动前端开发服务：
+
+```bash
+npm --prefix apps/consultation/client run dev:jetson
+```
+
+访问 `https://192.168.50.41:3443/`，修改 React 页面和 CSS 并保存后，Vite 会自动更新页面，无需重建 Docker。开发服务使用 `infra/certs/lan-cert.pem` 和 `lan-key.pem` 提供 HTTPS，并将 `/api/v1` 请求代理到本机的 Docker 网关 `127.0.0.1:18080`。首次使用需在客户端目录执行 `npm ci` 安装依赖。
+
+开发服务需要保持运行，按 `Ctrl+C` 停止。原有 `https://192.168.50.41/` 仍访问 Docker 中构建的页面，交付时再重建 `consultation` 服务。
+
 ### 只重建改动的服务
 
 ```bash

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ClipboardList, MessageSquareHeart, PlusCircle, Sparkles, UserCheck } from "lucide-react";
+import { ArrowRight, ClipboardList, MessageSquareHeart, PlusCircle, Sparkles, UserCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 
@@ -82,7 +82,7 @@ export default function HomePage() {
   const selectedItem = menuItems[selectedIndex] || menuItems[2];
 
   return (
-    <div className="relative z-0 flex h-screen w-full select-none flex-col overflow-hidden bg-[#4c3a30] font-sans text-slate-800">
+    <div className="home-page relative z-0 flex h-screen w-full select-none flex-col overflow-hidden bg-[#4c3a30] font-sans text-slate-800">
       <img src="/4K.png" alt="" aria-hidden="true" fetchPriority="high" className="absolute inset-0 z-0 h-full w-full object-cover object-center" />
       <div className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(90deg,rgba(8,26,51,0.14),transparent_47%,rgba(8,26,51,0.12))]" />
       <div className="relative z-20 w-full"><Header theme="dark" title="首页" /></div>
@@ -124,7 +124,12 @@ export default function HomePage() {
                   <strong>{item.title}</strong>
                   <small>{item.subtitle}</small>
                 </span>
-                <span className="portrait-home-action-meta">{item.estimatedTime}</span>
+                {index === 0 ? (
+                  <span className="portrait-home-action-art" aria-hidden="true">
+                    <ClipboardList /><MessageSquareHeart />
+                  </span>
+                ) : null}
+                <span className="portrait-home-action-arrow" aria-hidden="true"><ArrowRight /></span>
               </button>
             ))}
           </div>

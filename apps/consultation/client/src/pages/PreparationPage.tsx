@@ -509,9 +509,9 @@ export default function PreparationPage() {
   return (
     <ConsultationLayout backgroundImage="/4K.png" title="问诊准备">
       <AppToast toast={toast} />
-      <div className="w-full h-full px-4 pt-2 pb-4 md:px-8 md:pt-2 md:pb-2 flex flex-col items-center z-10 text-white font-sans overflow-y-auto">
-        <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-4 md:gap-6 mt-0">
-          <div className="bg-[linear-gradient(135deg,rgba(255,255,255,0.42),rgba(226,232,240,0.30))] border border-white/55 rounded-[2rem] p-6 shadow-2xl relative overflow-hidden flex flex-col text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
+      <div className="preparation-content w-full h-full px-4 pt-2 pb-4 md:px-8 md:pt-2 md:pb-2 flex flex-col items-center z-10 text-white font-sans overflow-y-auto">
+        <div className="preparation-grid w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-4 md:gap-6 mt-0">
+          <div className="preparation-profile bg-[linear-gradient(135deg,rgba(255,255,255,0.42),rgba(226,232,240,0.30))] border border-white/55 rounded-[2rem] p-6 shadow-2xl relative overflow-hidden flex flex-col text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
             <div className="absolute top-0 right-0 p-8 opacity-20 pointer-events-none">
               <svg
                 width="120"
@@ -540,8 +540,15 @@ export default function PreparationPage() {
                 : "请先填写您的基础信息，以便我们为您提供更准确的评估。"}
             </p>
 
+            <div className="preparation-summary" aria-label="问诊准备进度">
+              <strong>准备状态</strong>
+              <span>{readyCount}/4</span>
+              <span>{readyCount === 4 ? "已完成" : "进行中"}</span>
+              <div className="preparation-summary-track"><div style={{ width: `${readyCount / 4 * 100}%` }} /></div>
+            </div>
+
             {hasSavedProfile ? (
-              <div className="grid grid-cols-2 gap-3 z-10">
+              <div className="preparation-fields grid grid-cols-2 gap-3 z-10">
                 <InfoCard icon={<User className="w-5 h-5 text-blue-300" />} label="姓名" value={getDisplayValue(profile.full_name)} className="col-span-2" />
                 <InfoCard icon={<span className="text-xl leading-none text-blue-300">♂</span>} label="性别" value={getDisplayValue(profile.gender)} />
                 <InfoCard icon={<span className="text-xl leading-none text-blue-300">📅</span>} label="年龄" value={getDisplayValue(profile.age)} />
@@ -560,23 +567,23 @@ export default function PreparationPage() {
 
             <button
               onClick={openProfileModal}
-              className="mt-6 w-full py-4 rounded-full bg-gradient-to-r from-blue-500/35 to-purple-500/35 border border-white/50 hover:from-blue-500/45 hover:to-purple-500/45 transition-colors shadow-[0_0_15px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2 group z-10"
+              className="preparation-edit mt-6 w-full py-4 rounded-full bg-gradient-to-r from-blue-500/35 to-purple-500/35 border border-white/50 hover:from-blue-500/45 hover:to-purple-500/45 transition-colors shadow-[0_0_15px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2 group z-10"
             >
               <Edit3 className="w-5 h-5 group-hover:scale-110 transition-transform" />
               <span className="font-medium tracking-wide">{hasSavedProfile ? "修改信息" : "填写信息"}</span>
             </button>
           </div>
 
-          <div className="flex flex-col gap-4">
-            <div className="bg-[linear-gradient(135deg,rgba(255,255,255,0.38),rgba(226,232,240,0.28))] border border-white/50 rounded-3xl p-6 relative overflow-hidden flex flex-col sm:flex-row gap-6 sm:items-center text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
-              <div className="text-4xl font-bold text-blue-400 opacity-60 absolute top-4 left-4">01</div>
-              <div className="flex-1 pl-12">
-                <div className="flex w-full justify-between items-center mb-1">
+          <div className="preparation-steps flex flex-col gap-4">
+            <div className="preparation-step bg-[linear-gradient(135deg,rgba(255,255,255,0.38),rgba(226,232,240,0.28))] border border-white/50 rounded-3xl p-6 relative overflow-hidden flex flex-col sm:flex-row gap-6 sm:items-center text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
+              <div className="preparation-step-number text-4xl font-bold text-blue-400 opacity-60 absolute top-4 left-4">01</div>
+              <div className="preparation-step-body flex-1 pl-12">
+                <div className="preparation-step-heading flex w-full justify-between items-center mb-1">
                   <h3 className="text-xl font-bold">设备与采集授权</h3>
                   <StatusBadge isDone={isDeviceAuth} textDone="已授权" textPending="待授权" />
                 </div>
                 <p className="text-slate-700 text-sm mb-4">{deviceSummaryText}</p>
-                <div className="flex gap-4 sm:gap-8 justify-start">
+                <div className="preparation-devices flex gap-4 sm:gap-8 justify-start">
                   <DeviceIcon icon={<Camera />} label="摄像头" statusText={cameraIndicator.text} tone={cameraIndicator.tone} />
                   <DeviceIcon icon={<Mic />} label="麦克风" statusText={microphoneIndicator.text} tone={microphoneIndicator.tone} />
                   <DeviceIcon icon={<Volume2 />} label="扬声器" statusText={speakerIndicator.text} tone={speakerIndicator.tone} />
@@ -586,7 +593,7 @@ export default function PreparationPage() {
                   <p className="text-xs text-slate-600 mt-4">最近检测：{deviceCheckedAtText}</p>
                 ) : null}
               </div>
-              <div className="flex-shrink-0 mt-4 sm:mt-0">
+              <div className="preparation-step-action flex-shrink-0 mt-4 sm:mt-0">
                 <button
                   onClick={handleAuthorizeDevices}
                   disabled={isCheckingDevices}
@@ -602,15 +609,15 @@ export default function PreparationPage() {
               </div>
             </div>
 
-            <div className="bg-[linear-gradient(135deg,rgba(255,255,255,0.38),rgba(226,232,240,0.28))] border border-white/50 rounded-3xl p-6 relative overflow-hidden flex flex-col sm:flex-row gap-6 sm:items-center text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
-              <div className="text-4xl font-bold text-blue-400 opacity-60 absolute top-4 left-4">02</div>
-              <div className="flex-1 pl-12">
-                <div className="flex w-full justify-between items-center mb-1">
+            <div className="preparation-step bg-[linear-gradient(135deg,rgba(255,255,255,0.38),rgba(226,232,240,0.28))] border border-white/50 rounded-3xl p-6 relative overflow-hidden flex flex-col sm:flex-row gap-6 sm:items-center text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
+              <div className="preparation-step-number text-4xl font-bold text-blue-400 opacity-60 absolute top-4 left-4">02</div>
+              <div className="preparation-step-body flex-1 pl-12">
+                <div className="preparation-step-heading flex w-full justify-between items-center mb-1">
                   <h3 className="text-xl font-bold">数据采集说明与授权</h3>
                   <StatusBadge isDone={isDataAuth} textDone="已确认" textPending="待确认" />
                 </div>
                 <p className="text-slate-700 text-sm mb-4">本次问诊将采集多维度数据用于辅助评估，开始问诊时会把本次同意状态写入会话。</p>
-                <div className="flex items-center gap-2 text-sm text-blue-200 bg-blue-500/10 w-fit px-3 py-1.5 rounded-full cursor-pointer hover:bg-blue-500/20 transition-colors">
+                <div className="preparation-consent-note flex items-center gap-2 text-sm text-blue-200 bg-blue-500/10 w-fit px-3 py-1.5 rounded-full cursor-pointer hover:bg-blue-500/20 transition-colors">
                   <ShieldAlert className="w-4 h-4" />
                   <span>已阅读并同意本次数据采集说明</span>
                   <span className="text-blue-400 ml-2">查看详情 →</span>
@@ -619,7 +626,7 @@ export default function PreparationPage() {
                   <p className="text-xs text-slate-600 mt-4">确认时间：{formatCheckedAt(dataConsentConfirmedAt)}</p>
                 ) : null}
               </div>
-              <div className="flex-shrink-0 mt-4 sm:mt-0">
+              <div className="preparation-step-action flex-shrink-0 mt-4 sm:mt-0">
                 <button
                   onClick={handleConfirmDataConsent}
                   disabled={isDataAuth}
@@ -635,16 +642,16 @@ export default function PreparationPage() {
               </div>
             </div>
 
-            <div className="bg-[linear-gradient(135deg,rgba(255,255,255,0.38),rgba(226,232,240,0.28))] border border-white/50 rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row gap-6 text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
-              <div className="text-4xl font-bold text-blue-400 opacity-60 absolute top-4 left-4">03</div>
-              <div className="flex-1 pl-12">
-                <div className="flex w-full justify-between items-center mb-1">
+            <div className="preparation-step bg-[linear-gradient(135deg,rgba(255,255,255,0.38),rgba(226,232,240,0.28))] border border-white/50 rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row gap-6 text-slate-900 [backdrop-filter:blur(28px)_saturate(135%)]">
+              <div className="preparation-step-number text-4xl font-bold text-blue-400 opacity-60 absolute top-4 left-4">03</div>
+              <div className="preparation-step-body flex-1 pl-12">
+                <div className="preparation-step-heading flex w-full justify-between items-center mb-1">
                   <h3 className="text-xl font-bold">问诊流程与医生选择</h3>
                   <StatusBadge isDone={isDoctorSelected} textDone="已选择" textPending="待选择" />
                 </div>
                 <p className="text-slate-700 text-sm mb-4">了解问诊流程，选择合适的询诊风格</p>
 
-                <div className="flex items-center gap-2 mb-2 text-sm text-slate-800 flex-wrap">
+                <div className="preparation-flow flex items-center gap-2 mb-2 text-sm text-slate-800 flex-wrap">
                   <div className="bg-blue-500/20 px-3 py-1.5 rounded-lg flex flex-col min-w-[120px]">
                     <span className="text-blue-300 font-medium mb-1">❶ 基础问答</span>
                     <span className="text-xs text-slate-600">了解基本情况</span>
@@ -673,7 +680,7 @@ export default function PreparationPage() {
               <div
                 onClick={() => void handleSelectDoctorPersona()}
                 className={cn(
-                  "bg-white/28 border rounded-2xl p-4 flex gap-4 items-center shrink-0 w-full sm:w-auto mt-4 md:mt-0 transition-all cursor-pointer [backdrop-filter:blur(20px)_saturate(130%)]",
+                  "preparation-doctor bg-white/28 border rounded-2xl p-4 flex gap-4 items-center shrink-0 w-full sm:w-auto mt-4 md:mt-0 transition-all cursor-pointer [backdrop-filter:blur(20px)_saturate(130%)]",
                   isDoctorSelected ? "border-blue-400 ring-2 ring-blue-500/50" : "border-white/10 hover:border-white/30",
                 )}
               >
@@ -699,8 +706,8 @@ export default function PreparationPage() {
           </div>
         </div>
 
-        <div className="w-full max-w-6xl mt-auto pt-6 pb-2 md:pb-4 flex flex-col sm:flex-row justify-center sm:justify-between items-center gap-6">
-          <div className="bg-white/32 rounded-2xl p-4 border border-white/45 flex items-center gap-4 text-slate-800 [backdrop-filter:blur(22px)_saturate(130%)]">
+        <div className="preparation-footer w-full max-w-6xl mt-auto pt-6 pb-2 md:pb-4 flex flex-col sm:flex-row justify-center sm:justify-between items-center gap-6">
+          <div className="preparation-footer-status bg-white/32 rounded-2xl p-4 border border-white/45 flex items-center gap-4 text-slate-800 [backdrop-filter:blur(22px)_saturate(130%)]">
             <div className="bg-blue-500/20 p-2 rounded-lg">
               <Check className="w-5 h-5 text-blue-400" />
             </div>
@@ -720,7 +727,7 @@ export default function PreparationPage() {
             onClick={handleStartConsultation}
             disabled={!isReady || state.loading}
             className={cn(
-              "px-12 py-4 rounded-full font-bold text-xl flex items-center gap-2 transition-all duration-300",
+              "preparation-start px-12 py-4 rounded-full font-bold text-xl flex items-center gap-2 transition-all duration-300",
               isReady && !state.loading
                 ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shadow-[0_0_30px_rgba(79,70,229,0.5)] hover:shadow-[0_0_40px_rgba(79,70,229,0.7)] hover:scale-105"
                 : "bg-white/35 text-slate-500 border border-white/45 cursor-not-allowed",
@@ -729,7 +736,7 @@ export default function PreparationPage() {
             {state.loading ? "处理中..." : "进入数字人问诊"} <ArrowRight className="w-6 h-6" />
           </button>
 
-          <div className="bg-white/28 rounded-2xl p-4 border border-white/45 flex items-center gap-3 hidden lg:flex max-w-[280px] text-slate-800 [backdrop-filter:blur(22px)_saturate(130%)]">
+          <div className="preparation-privacy bg-white/28 rounded-2xl p-4 border border-white/45 flex items-center gap-3 hidden lg:flex max-w-[280px] text-slate-800 [backdrop-filter:blur(22px)_saturate(130%)]">
             <ShieldAlert className="w-8 h-8 text-blue-300/60" />
             <p className="text-xs text-slate-600 leading-tight">问诊过程中可能暂时存储数据，我们将保护您的隐私安全。</p>
           </div>
@@ -737,7 +744,7 @@ export default function PreparationPage() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="preparation-modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col font-sans animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-6 pb-2 border-b border-slate-100">
               <div>
@@ -923,13 +930,13 @@ export default function PreparationPage() {
 function StatusBadge({ isDone, textDone, textPending }: { isDone: boolean; textDone: string; textPending: string }) {
   if (isDone) {
     return (
-      <span className="bg-green-500/20 text-green-400 px-3 py-1 text-xs rounded-full border border-green-500/30 flex items-center gap-1">
+      <span className="preparation-status-badge bg-green-500/20 text-green-400 px-3 py-1 text-xs rounded-full border border-green-500/30 flex items-center gap-1">
         <Check className="w-3 h-3" /> {textDone}
       </span>
     );
   }
   return (
-    <span className="bg-orange-500/20 text-orange-400 px-3 py-1 text-xs rounded-full border border-orange-500/30 flex items-center gap-1">
+    <span className="preparation-status-badge bg-orange-500/20 text-orange-400 px-3 py-1 text-xs rounded-full border border-orange-500/30 flex items-center gap-1">
       <AlertCircle className="w-3 h-3" /> {textPending}
     </span>
   );
@@ -947,7 +954,7 @@ function DeviceIcon({
   tone: DeviceIndicatorTone;
 }) {
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="preparation-device flex flex-col items-center gap-2">
       <div
         className={cn(
           "p-2 rounded-lg",
@@ -977,7 +984,7 @@ function DeviceIcon({
 
 function InfoCard({ icon, label, value, className }: { icon: React.ReactNode; label: string; value: string; className?: string }) {
   return (
-    <div className={cn("bg-white/24 border border-white/35 rounded-xl p-3 flex items-center gap-3 [backdrop-filter:blur(16px)_saturate(125%)]", className)}>
+    <div className={cn("preparation-info-card bg-white/24 border border-white/35 rounded-xl p-3 flex items-center gap-3 [backdrop-filter:blur(16px)_saturate(125%)]", className)}>
       <div className="bg-blue-500/20 p-2 rounded-lg text-white">{icon}</div>
       <div className="flex flex-col">
         <span className="text-xs text-slate-600">{label}</span>

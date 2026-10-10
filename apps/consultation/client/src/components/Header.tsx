@@ -88,21 +88,21 @@ export function Header({ theme = 'light', title }: HeaderProps) {
   };
 
   return (
-    <header className="relative z-10 flex h-[clamp(56px,4.2vw,88px)] w-full items-center justify-between px-[clamp(12px,1.25vw,30px)]">
-      <div className="flex min-w-0 -translate-y-[clamp(6px,0.55vw,12px)] cursor-pointer items-center gap-[clamp(8px,0.7vw,16px)]" onClick={handleLogoClick}>
-        <div className="h-[clamp(28px,2.2vw,48px)] w-[clamp(58px,4vw,84px)] shrink-0 overflow-hidden">
+    <header className="app-header relative z-10 flex h-[clamp(56px,4.2vw,88px)] w-full items-center justify-between px-[clamp(12px,1.25vw,30px)]">
+      <div className="header-brand flex min-w-0 -translate-y-[clamp(6px,0.55vw,12px)] cursor-pointer items-center gap-[clamp(8px,0.7vw,16px)]" onClick={handleLogoClick}>
+        <div className="header-logo h-[clamp(28px,2.2vw,48px)] w-[clamp(58px,4vw,84px)] shrink-0 overflow-hidden">
           <img
             src="/aim-brand-lockup-transparent-clean.png"
             alt="AIM"
             className="h-full w-auto max-w-none object-contain object-left drop-shadow-[0_1px_4px_rgba(255,255,255,0.16)]"
           />
         </div>
-        <div className="flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
-          <h1 className={cn("shrink-0 text-[clamp(14px,1.05vw,24px)] font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
+        <div className="header-titles flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
+          <h1 className={cn("header-system-title shrink-0 text-[clamp(14px,1.05vw,24px)] font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
             抑郁症数字人辅助评估系统
           </h1>
           {title !== false ? (
-            <div className="flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
+            <div className="header-page-title flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
               <span className={cn("h-[clamp(16px,1.25vw,28px)] w-px rounded-full", isDark ? "bg-white/20" : "bg-slate-300")} />
               <span className={cn("truncate text-[clamp(12px,0.85vw,19px)] font-normal", isDark ? "text-white/70" : "text-slate-500")}>
                 {title || "量表问诊"}
@@ -112,8 +112,8 @@ export function Header({ theme = 'light', title }: HeaderProps) {
         </div>
       </div>
       
-      <div className="flex -translate-y-[clamp(6px,0.55vw,12px)] items-center gap-[clamp(10px,1vw,24px)]">
-        <div ref={notificationsRef} className="relative">
+      <div className="header-account flex -translate-y-[clamp(6px,0.55vw,12px)] items-center gap-[clamp(10px,1vw,24px)]">
+        <div ref={notificationsRef} className="header-notifications relative">
           <button
             type="button"
             onClick={() => {
@@ -166,17 +166,19 @@ export function Header({ theme = 'light', title }: HeaderProps) {
             setShowNotifications(false);
             showProfileModal(event.currentTarget);
           }}
-          className="group flex cursor-pointer items-center gap-[clamp(7px,0.6vw,14px)] rounded-full p-[clamp(4px,0.35vw,8px)] transition-colors hover:bg-white/10 md:pr-[clamp(10px,0.9vw,20px)]"
+          aria-label="打开账号菜单"
+          aria-haspopup="menu"
+          className="header-profile-button group flex cursor-pointer items-center gap-[clamp(7px,0.6vw,14px)] rounded-full p-[clamp(4px,0.35vw,8px)] transition-colors hover:bg-white/10 md:pr-[clamp(10px,0.9vw,20px)]"
         >
           <div
             className={cn(
-              "flex h-[clamp(30px,2.25vw,50px)] w-[clamp(30px,2.25vw,50px)] items-center justify-center rounded-full border text-[clamp(13px,0.95vw,21px)] font-semibold shadow-sm",
+              "header-avatar flex h-[clamp(30px,2.25vw,50px)] w-[clamp(30px,2.25vw,50px)] items-center justify-center rounded-full border text-[clamp(13px,0.95vw,21px)] font-semibold shadow-sm",
               isDark ? "border-white/20 bg-white/10 text-white" : "border-slate-200 bg-primary-50 text-primary-700",
             )}
           >
             {userInitial}
           </div>
-          <div className="hidden md:flex flex-col items-start leading-tight">
+          <div className="header-user-info hidden md:flex flex-col items-start leading-tight">
             <span className={cn("text-[clamp(13px,0.95vw,21px)] font-medium transition-colors", isDark ? "text-white/90 group-hover:text-white" : "text-slate-700 group-hover:text-primary-600")}>
               {userDisplayName}
             </span>
@@ -184,7 +186,7 @@ export function Header({ theme = 'light', title }: HeaderProps) {
               {profileStatusLabel}
             </span>
           </div>
-          <ChevronDown className={cn("h-[clamp(15px,1.1vw,24px)] w-[clamp(15px,1.1vw,24px)] transition-colors", isDark ? "text-white/60 group-hover:text-white" : "text-slate-400 group-hover:text-primary-600")} />
+          <ChevronDown className={cn("header-profile-chevron h-[clamp(15px,1.1vw,24px)] w-[clamp(15px,1.1vw,24px)] transition-colors", isDark ? "text-white/60 group-hover:text-white" : "text-slate-400 group-hover:text-primary-600")} />
         </button>
       </div>
     </header>

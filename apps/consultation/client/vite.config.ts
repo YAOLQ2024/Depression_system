@@ -1,12 +1,27 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   server: {
     host: "0.0.0.0",
-    port: 3000,
+    port: mode === "jetson" ? 3443 : 3000,
+    ...(mode === "jetson" ? {
+      strictPort: true,
+      https: {
+        cert: readFileSync(new URL("../../../infra/certs/lan-cert.pem", import.meta.url)),
+        key: readFileSync(new URL("../../../infra/certs/lan-key.pem", import.meta.url)),
+      },
+      proxy: {
+        "/api/v1": {
+          target: "http://127.0.0.1:18080",
+          changeOrigin: true,
+          ws: true,
+        },
+      },
+    } : {}),
   },
   build: {
     outDir: "dist",
@@ -38,4 +53,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

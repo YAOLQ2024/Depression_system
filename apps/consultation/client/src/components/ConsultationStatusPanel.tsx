@@ -480,7 +480,7 @@ function SectionCard({
   return (
     <div
       className={cn(
-        "bg-slate-800/42 rounded-[20px] border border-white/10 p-[3px] flex flex-col relative overflow-hidden shadow-[0_4px_18px_rgba(0,0,0,0.18)]",
+        "consultation-dashboard-card bg-slate-800/42 rounded-[20px] border border-white/10 p-[3px] flex flex-col relative overflow-hidden shadow-[0_4px_18px_rgba(0,0,0,0.18)]",
         className,
       )}
     >
@@ -516,6 +516,7 @@ function DistributionBar({ label, value }: { label: string; value: number }) {
 export function ConsultationStatusPanel({
   consultation,
   onRefresh,
+  onClose,
   refreshing = false,
   isRecording = false,
   liveTransport = "HTTP",
@@ -529,6 +530,7 @@ export function ConsultationStatusPanel({
 }: {
   consultation: ConsultationSession;
   onRefresh: () => void;
+  onClose?: () => void;
   refreshing?: boolean;
   isRecording?: boolean;
   liveTransport?: "SSE" | "HTTP";
@@ -588,7 +590,7 @@ export function ConsultationStatusPanel({
   const eegHasSamples = Boolean(eegSamples.length || eegAppendSamples.length);
 
   return (
-    <div className={cn("w-full min-h-full font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
+    <div className={cn("consultation-dashboard w-full min-h-full font-sans text-slate-100 flex flex-col pt-0 bg-slate-900/40", className)}>
       <div className="flex items-center justify-between py-2 px-4 top-0 sticky bg-slate-900/82 backdrop-blur-md z-10 border-b border-indigo-500/20 shadow-md">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-indigo-300" />
@@ -605,6 +607,7 @@ export function ConsultationStatusPanel({
             <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
             刷新
           </button>
+          {onClose ? <button type="button" onClick={onClose} className="consultation-portrait-close" aria-label="收起多模态看板">收起看板 ↓</button> : null}
         </div>
       </div>
 

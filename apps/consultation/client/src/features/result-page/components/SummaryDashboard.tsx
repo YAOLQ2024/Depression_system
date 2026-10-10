@@ -102,7 +102,7 @@ function DashboardInner({
     <div className="portrait-result-dashboard flex h-full flex-col space-y-4">
       <GlassCard
         className={cn(
-          "shrink-0 border-sky-300/25 bg-[linear-gradient(135deg,rgba(19,42,80,0.92),rgba(10,22,43,0.96)_54%,rgba(25,22,59,0.94))]",
+          "result-overview shrink-0 border-sky-300/25 bg-[linear-gradient(135deg,rgba(19,42,80,0.92),rgba(10,22,43,0.96)_54%,rgba(25,22,59,0.94))]",
           compact ? "p-3" : "p-4 md:p-5",
         )}
       >
@@ -115,8 +115,8 @@ function DashboardInner({
           <span className="shrink-0 rounded-full border border-sky-200/25 bg-sky-300/10 px-3 py-1 text-xs font-medium text-sky-100">已完成评估</span>
         </div>
 
-        <div className={cn("grid gap-4", compact ? "grid-cols-3" : "md:grid-cols-[minmax(150px,0.7fr)_minmax(0,0.85fr)_minmax(0,1.1fr)] md:items-center")}>
-          <div className={cn("flex justify-center", compact ? "items-start" : "md:justify-start")}>
+        <div className={cn("result-overview-metrics grid gap-4", compact ? "grid-cols-3" : "md:grid-cols-[minmax(150px,0.7fr)_minmax(0,0.85fr)_minmax(0,1.1fr)] md:items-center")}>
+          <div className={cn("result-score flex justify-center", compact ? "items-start" : "md:justify-start")}>
             <RingChart
               score={overallScore ?? 0}
               label={overallScoreLabel || "综合评分"}
@@ -126,7 +126,7 @@ function DashboardInner({
             />
           </div>
 
-          <div className={cn("flex flex-col", compact ? "items-start" : "items-center text-center md:items-start md:text-left")}>
+          <div className={cn("result-severity flex flex-col", compact ? "items-start" : "items-center text-center md:items-start md:text-left")}>
             <div className={cn("mb-3 text-sm font-semibold tracking-[0.06em]", t.subtitle[theme])}>抑郁程度</div>
             <InfoTooltip content={TOOLTIP_CONTENT.severity}>
               <SeverityBadge level={overallSeverity || "待接入"} className={cn(compact ? "px-3 py-2 text-base" : "px-5 py-3 text-xl font-semibold tracking-wide md:text-2xl")} />
@@ -134,7 +134,7 @@ function DashboardInner({
             <p className={cn("mt-3 text-xs leading-5 md:text-sm", t.muted[theme])}>请结合下方评估依据与专业人员意见理解结果。</p>
           </div>
 
-          <div className={cn("flex flex-col", compact ? "items-start" : "items-center text-center md:items-start md:text-left")}>
+          <div className={cn("result-risk flex flex-col", compact ? "items-start" : "items-center text-center md:items-start md:text-left")}>
             <div className={cn("mb-3 text-sm font-semibold tracking-[0.06em]", t.subtitle[theme])}>风险等级</div>
             <SeverityBadge level={overallRiskLevel || "待接入"} className={cn(compact ? "px-3 py-2 text-base" : "px-5 py-3 text-xl font-semibold tracking-wide md:text-2xl")} />
             {overallRiskReason ? (
@@ -146,17 +146,17 @@ function DashboardInner({
         </div>
       </GlassCard>
 
-      <section className="shrink-0">
+      <section className="result-evidence shrink-0">
         <div className="mb-2">
           <h2 className={cn("text-base font-semibold", t.title[theme])}>评估依据</h2>
           <p className={cn("mt-0.5 text-xs", t.muted[theme])}>以下结果已纳入本次综合评估，不单独作为最终结论。</p>
         </div>
-        <div className={cn("grid gap-2", compact ? "grid-cols-3" : modules.length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2")}>
+        <div className={cn("result-evidence-grid grid gap-2", compact ? "grid-cols-3" : modules.length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2")}>
           {modules.map((module, index) => {
             const toneClasses = getToneClasses(module.tone || "blue");
             const scoreTooltip = getModuleScoreTooltip(module.id);
             return (
-              <GlassCard key={module.id} className={cn(compact ? "p-3" : "p-4")}>
+              <GlassCard key={module.id} className={cn("result-evidence-card", compact ? "p-3" : "p-4")}>
                 <div className={cn("flex gap-3", compact ? "h-full flex-col" : "items-start justify-between")}>
                   <div className={cn("flex min-w-0 gap-3", compact ? "items-start" : "items-center")}>
                     <div className={cn("flex shrink-0 items-center justify-center rounded-full", compact ? "h-10 w-10" : "h-12 w-12", toneClasses.iconBg, toneClasses.iconText)}>
@@ -192,7 +192,7 @@ function DashboardInner({
         </div>
       </section>
 
-      <section className="shrink-0">
+      <section className="result-scale-section shrink-0">
         <div className="mb-2">
           <h2 className={cn("text-base font-semibold", t.title[theme])}>量表明细</h2>
           <p className={cn("mt-0.5 text-xs", t.muted[theme])}>查看每份量表的得分、等级与逐题作答。</p>
@@ -200,7 +200,7 @@ function DashboardInner({
         <ScaleResultList scales={scales} selectedScaleId={selectedScaleId} onScaleSelect={onOpenScaleDetail} />
       </section>
 
-      <section className="mt-auto shrink-0">
+      <section className="result-advice-section mt-auto shrink-0">
         <div className="mb-2">
           <h2 className={cn("text-base font-semibold", t.title[theme])}>后续建议</h2>
           <p className={cn("mt-0.5 text-xs", t.muted[theme])}>请优先依据综合评估结论采取下一步行动。</p>

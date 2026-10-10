@@ -13,6 +13,7 @@ interface DigitalCounselorProps {
   title?: string;
   className?: string;
   overallSeverity?: string | null;
+  portraitHidden?: boolean;
 }
 
 // Result clips are 30 fps. Keep both player layers visible for two frames
@@ -120,8 +121,10 @@ export function DigitalCounselor({
   title = "数字心理咨询师",
   className,
   overallSeverity,
+  portraitHidden = false,
 }: DigitalCounselorProps) {
   const playerRef = useRef<SeamlessVideoPlayerHandle | null>(null);
+  const pausedByVisibilityRef = useRef(false);
   const [sequenceStep, setSequenceStep] = useState<"intro" | "severity">("intro");
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [videoError, setVideoError] = useState(false);
@@ -138,6 +141,25 @@ export function DigitalCounselor({
     setPlaybackBlocked(false);
     setVideoError(false);
   }, [overallSeverity]);
+
+  // Visibility controls only pause the portrait player; keep the same clip and position.
+  useEffect(() => {
+    const orientation = window.matchMedia("(orientation: portrait)");
+    const syncVisibility = () => {
+      if (orientation.matches && portraitHidden) {
+        playerRef.current?.pauseDisplayed();
+        pausedByVisibilityRef.current = true;
+      } else if (pausedByVisibilityRef.current) {
+        pausedByVisibilityRef.current = false;
+        void playerRef.current?.playDisplayed().catch(() => setPlaybackBlocked(true));
+      }
+    };
+    syncVisibility();
+    orientation.addEventListener("change", syncVisibility);
+    return () => {
+      orientation.removeEventListener("change", syncVisibility);
+    };
+  }, [portraitHidden, currentClip?.clipKey]);
 
   const handleVideoEnded = useEffectEvent((clip: SeamlessVideoClip) => {
     if (clip.clipKey !== RESULT_INTRO_CLIP.clipKey || !severityClip) {
@@ -187,6 +209,9 @@ export function DigitalCounselor({
           muted={false}
           playsInline
           onEnded={handleVideoEnded}
+          onPlaybackStarted={() => {
+            if (portraitHidden && window.matchMedia("(orientation: portrait)").matches) playerRef.current?.pauseDisplayed();
+          }}
           onPlaybackBlocked={() => {
             setPlaybackBlocked(true);
           }}

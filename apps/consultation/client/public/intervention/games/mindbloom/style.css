@@ -107,3 +107,13 @@ footer a { color: var(--green-dark); }
   .flower { max-width: 67px; }
   .modal { padding: 24px 20px; }
 }
+
+@media (orientation: portrait) {
+  .game-wrap { width: min(960px, 100%); padding: clamp(16px, 2.4vw, 28px); }
+  .garden { min-height: clamp(300px, 36dvh, 680px); }
+  .icon-button, .mode-button, .action-button, .plant-button, .primary-button, .modal-close {
+    min-height: 48px;
+  }
+  .icon-button, .modal-close { min-width: 48px; }
+  .plant-button { padding-inline: 22px; }
+}

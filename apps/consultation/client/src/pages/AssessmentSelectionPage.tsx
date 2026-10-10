@@ -180,7 +180,7 @@ export default function AssessmentSelectionPage() {
 
   // ── Render ──
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-[#f6eff5] font-sans text-slate-700">
+    <div className="scale-selection-page flex h-screen w-full flex-col overflow-hidden bg-[#f6eff5] font-sans text-slate-700">
       <HealingBackgroundDecor />
 
       {/* ── Header ── */}
@@ -190,9 +190,9 @@ export default function AssessmentSelectionPage() {
 
       {/* ── Main content ── */}
       <main className="relative z-10 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[1200px] px-6 py-8 pb-16">
+        <div className="scale-selection-content mx-auto max-w-[1200px] px-6 py-8 pb-16">
           {/* ── Page header ── */}
-          <div className="mb-10 text-center">
+          <div className="scale-selection-heading mb-10 text-center">
             {/* Step badge */}
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/54 px-4 py-1.5 text-xs font-semibold tracking-[0.16em] text-[#8566a9] shadow-[0_5px_18px_rgba(136,103,166,0.12)] backdrop-blur-xl">
               <Flower2 className="h-3.5 w-3.5 text-[#c598bd]" />
@@ -220,9 +220,9 @@ export default function AssessmentSelectionPage() {
           </div>
 
           {/* ── Content grid ── */}
-          <div className="grid items-start gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="scale-selection-grid grid items-start gap-6 lg:grid-cols-[1fr_320px]">
             {/* ── Scale cards ── */}
-            <div className="flex flex-col gap-3">
+            <div className="scale-selection-cards flex flex-col gap-3">
               {!catalogItems.length ? (
                 <div className="flex min-h-[20rem] items-center justify-center rounded-3xl border border-dashed border-[#d7c6df] bg-white/48 backdrop-blur-xl">
                   <div className="text-center">
@@ -239,9 +239,10 @@ export default function AssessmentSelectionPage() {
                     <button
                       key={item.slug}
                       type="button"
+                      aria-pressed={isSelected}
                       onClick={() => toggleScale(item.slug)}
                       className={cn(
-                        "group relative flex items-center gap-5 rounded-2xl border-[1.5px] px-6 py-5 text-left transition-all duration-200",
+                        "scale-selection-card group relative flex items-center gap-5 rounded-2xl border-[1.5px] px-6 py-5 text-left transition-all duration-200",
                         "bg-white/[0.62] backdrop-blur-2xl",
                         "outline-none focus-visible:ring-2 focus-visible:ring-[#b48bd1]/55",
                         isSelected
@@ -261,7 +262,7 @@ export default function AssessmentSelectionPage() {
                       {/* Checkbox */}
                       <div
                         className={cn(
-                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 transition-all duration-200",
+                          "scale-selection-checkbox flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 transition-all duration-200",
                           isSelected
                             ? "scale-105 border-transparent bg-gradient-to-br from-[#a57bd0] to-[#c387aa] shadow-[0_4px_12px_rgba(160,114,189,0.32)]"
                             : "border-[#cfc6da] bg-white/72 group-hover:border-[#b99ccd]",
@@ -277,7 +278,7 @@ export default function AssessmentSelectionPage() {
                       </div>
 
                       {/* Card body */}
-                      <div className="min-w-0 flex-1">
+                      <div className="scale-selection-card-body min-w-0 flex-1">
                         <div className="mb-2 flex items-start justify-between gap-3">
                           <span className="text-[17px] font-semibold tracking-tight text-[#42364f]">
                             {item.short_name || item.name}
@@ -321,9 +322,9 @@ export default function AssessmentSelectionPage() {
             </div>
 
             {/* ── Sidebar ── */}
-            <div className="sticky top-4 flex flex-col gap-3.5">
+            <div className="scale-selection-sidebar sticky top-4 flex flex-col gap-3.5">
               {/* Selection summary */}
-              <div className="rounded-3xl border border-white/80 bg-white/[0.58] p-5 shadow-[0_10px_28px_rgba(121,91,147,0.10),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl">
+              <div className="scale-selection-section rounded-3xl border border-white/80 bg-white/[0.58] p-5 shadow-[0_10px_28px_rgba(121,91,147,0.10),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl">
                 <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-[0.13em] text-[#896bab]">
                   <Flower2 className="h-3.5 w-3.5 text-[#c899bb]" />
                   当前选择
@@ -366,7 +367,7 @@ export default function AssessmentSelectionPage() {
               </div>
 
               {/* Rules */}
-              <div className="rounded-3xl border border-white/80 bg-white/[0.58] p-5 shadow-[0_10px_28px_rgba(121,91,147,0.10),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl">
+              <div className="scale-selection-section rounded-3xl border border-white/80 bg-white/[0.58] p-5 shadow-[0_10px_28px_rgba(121,91,147,0.10),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl">
                 <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-[0.13em] text-[#896bab]">
                   <Flower2 className="h-3.5 w-3.5 text-[#c899bb]" />
                   规则说明
@@ -400,7 +401,7 @@ export default function AssessmentSelectionPage() {
                 onClick={handleStartSelection}
                 disabled={!canStartAssessment}
                 className={cn(
-                  "flex w-full items-center justify-center gap-2.5 rounded-full px-6 py-4 text-[15px] font-semibold transition-all duration-200 outline-none",
+                  "scale-selection-start flex w-full items-center justify-center gap-2.5 rounded-full px-6 py-4 text-[15px] font-semibold transition-all duration-200 outline-none",
                   canStartAssessment
                     ? "bg-[linear-gradient(110deg,#8f72c7_0%,#aa79c9_48%,#c98ead_100%)] text-white shadow-[0_12px_26px_rgba(148,101,178,0.26),inset_0_1px_0_rgba(255,255,255,0.34)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_16px_32px_rgba(148,101,178,0.32)] active:translate-y-0 active:scale-[0.98]"
                     : "cursor-not-allowed border border-white/70 bg-white/45 text-[#a096a6]",
@@ -425,7 +426,7 @@ export default function AssessmentSelectionPage() {
           </div>
 
           {/* Footer */}
-          <div className="mt-12 border-t border-white/70 pt-6 text-center text-xs text-[#9a8ea0]">
+          <div className="scale-selection-footer mt-12 border-t border-white/70 pt-6 text-center text-xs text-[#9a8ea0]">
             量表选择 · 抑郁症数字人辅助评估系统
           </div>
         </div>

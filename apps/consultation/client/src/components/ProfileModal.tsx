@@ -196,7 +196,7 @@ export function ProfileModal() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -5, scale: 0.98 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className="absolute z-[110] min-w-[180px] overflow-hidden rounded-xl border border-slate-700 bg-slate-800 py-1 shadow-2xl pointer-events-auto"
+            className="profile-account-menu absolute z-[110] min-w-[180px] overflow-hidden rounded-xl border border-slate-700 bg-slate-800 py-1 shadow-2xl pointer-events-auto"
             style={{ top: `${position.top}px`, left: `${position.left}px`, transformOrigin: position.transformOrigin }}
           >
             <MenuItem
