@@ -684,11 +684,14 @@ export default function PreparationPage() {
                   isDoctorSelected ? "border-blue-400 ring-2 ring-blue-500/50" : "border-white/10 hover:border-white/30",
                 )}
               >
-                <img
+                <picture className="shrink-0">
+                  <source media="(orientation: portrait)" srcSet="/digital-human/portrait-male-v1/portrait-male-poster.png" />
+                  <img
                   src="/home-digital-human.png"
                   alt="Doctor"
                   className="w-14 h-14 rounded-full object-cover border-2 border-blue-400/50"
                 />
+                </picture>
                 <div className="flex flex-col">
                   <div className="font-bold text-lg">{displayedDoctorPersona?.display_name || "医生风格加载中"}</div>
                   <div className="text-slate-700 text-xs mb-1">

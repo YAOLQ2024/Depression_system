@@ -1132,7 +1132,7 @@ export default function ScaleQuestionnairePage() {
   if (isAssessmentCompleted) {
     return (
       <ConsultationLayout backgroundImage="/4K.png" title="智能评估">
-        <div className="absolute inset-x-0 top-0 z-50 pointer-events-none">
+        <div className="absolute inset-x-0 top-0 z-0 pointer-events-none">
           <div className="pointer-events-auto">
             <ConsultationProgress currentStageOrder={scaleSteps.length} steps={scaleSteps} />
           </div>
@@ -1169,7 +1169,7 @@ export default function ScaleQuestionnairePage() {
 
   return (
     <ConsultationLayout backgroundImage="/4K.png" title="智能评估">
-      <div className="absolute inset-x-0 top-0 z-50 pointer-events-none">
+      <div className="absolute inset-x-0 top-0 z-0 pointer-events-none">
         <div className="pointer-events-auto">
           <ConsultationProgress currentStageOrder={currentStageOrder} steps={scaleSteps} />
         </div>

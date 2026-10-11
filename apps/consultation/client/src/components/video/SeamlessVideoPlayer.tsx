@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { cn } from "../../lib/utils";
+import { getClipPlaybackEnd, getDigitalHumanLayout, resolveDigitalHumanSource, usePortraitOrientation } from "../../lib/digitalHumanResources";
 
 export type SeamlessVideoClip = {
   clipKey: string;
@@ -123,6 +124,14 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
     },
     ref,
   ) {
+    const portrait = usePortraitOrientation();
+    const portraitRef = useRef(portrait);
+    portraitRef.current = portrait;
+    const physicalSourceRef = useRef<Record<LayerId, string>>({ A: "", B: "" });
+    const endedNotifiedRef = useRef<Record<LayerId, boolean>>({ A: false, B: false });
+    const orientationRestoreRef = useRef<Record<LayerId, { signature: string; progress: number; playing: boolean; metadataRestored: boolean } | null>>({ A: null, B: null });
+    const orientationSwapRef = useRef<{ from: LayerId; to: LayerId; signature: string } | null>(null);
+    const [layerLayouts, setLayerLayouts] = useState<Record<LayerId, string>>({ A: "landscape", B: "landscape" });
     const videoRefs = {
       A: useRef<HTMLVideoElement | null>(null),
       B: useRef<HTMLVideoElement | null>(null),
@@ -213,7 +222,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
     });
 
     const attemptPlayLayer = useEffectEvent(async (layerId: LayerId) => {
-      if (!autoPlay) {
+      if (!autoPlay || endedNotifiedRef.current[layerId]) {
         return;
       }
 
@@ -227,11 +236,13 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
         await videoElement.play();
         onPlaybackStarted?.(clip);
       } catch (error) {
+        // A rapid direction/node change can cancel a pending play request.
+        if (error instanceof DOMException && error.name === "AbortError") return;
         onPlaybackBlocked?.({ clip, error });
       }
     });
 
-    const switchDisplayedLayer = useEffectEvent((nextLayerId: LayerId) => {
+    const switchDisplayedLayer = useEffectEvent((nextLayerId: LayerId, resumePlayback = true) => {
       const nextClip = layerClipRef.current[nextLayerId];
       if (!nextClip) {
         return;
@@ -240,7 +251,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       const previousLayerId = activeLayerIdRef.current;
       const isSwitchingLayers = previousLayerId !== nextLayerId;
 
-      void attemptPlayLayer(nextLayerId);
+      if (resumePlayback) void attemptPlayLayer(nextLayerId);
       activeLayerIdRef.current = nextLayerId;
       setActiveLayerId(nextLayerId);
       updateDisplayedClip(nextClip);
@@ -253,6 +264,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
         transitionTimerRef.current = window.setTimeout(() => {
           pauseLayer(previousLayerId);
           transitionTimerRef.current = null;
+          syncPreloadClip(preloadClipRef.current);
         }, transitionDurationMs + 48);
       }
 
@@ -272,17 +284,21 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       const desiredCurrentSignature = buildClipSignature(currentClipRef.current);
       const layerSignature = layerClipSignatureRef.current[layerId];
       if (!desiredCurrentSignature || desiredCurrentSignature !== layerSignature) {
+        orientationRestoreRef.current[layerId] = null;
         emitStateChange();
         return;
       }
 
+      const restored = orientationRestoreRef.current[layerId];
+      orientationRestoreRef.current[layerId] = null;
+      if (orientationSwapRef.current?.to === layerId) orientationSwapRef.current = null;
       if (activeLayerIdRef.current === layerId) {
         updateDisplayedClip(clip);
-        void attemptPlayLayer(layerId);
+        if (!restored || restored.playing) void attemptPlayLayer(layerId);
         return;
       }
 
-      switchDisplayedLayer(layerId);
+      switchDisplayedLayer(layerId, restored ? restored.playing : true);
     });
 
     const scheduleFrameReadyCheck = useEffectEvent((layerId: LayerId) => {
@@ -298,7 +314,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
         if (assignedSignature !== layerClipSignatureRef.current[layerId]) {
           return;
         }
-        if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        if (videoElement.seeking || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
           return;
         }
         handleLayerReady(layerId);
@@ -345,6 +361,9 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       layerClipRef.current[layerId] = clip;
       layerClipSignatureRef.current[layerId] = nextSignature;
       layerReadyRef.current[layerId] = false;
+      orientationRestoreRef.current[layerId] = null;
+      endedNotifiedRef.current[layerId] = false;
+      physicalSourceRef.current[layerId] = "";
 
       if (!clip || !videoElement) {
         updateLayerPhase(layerId, "idle");
@@ -364,12 +383,17 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       } else {
         videoElement.removeAttribute("poster");
       }
-      videoElement.src = clip.src;
+      physicalSourceRef.current[layerId] = resolveDigitalHumanSource(clip.src, portraitRef.current);
+      setLayerLayouts((layouts) => ({ ...layouts, [layerId]: getDigitalHumanLayout(clip.src, portraitRef.current) }));
+      videoElement.src = physicalSourceRef.current[layerId];
       videoElement.load();
     });
 
     const syncCurrentClip = useEffectEvent((clip: SeamlessVideoClip | null) => {
       currentClipRef.current = clip;
+      if (orientationSwapRef.current && orientationSwapRef.current.signature !== buildClipSignature(clip)) {
+        orientationSwapRef.current = null;
+      }
 
       if (!clip) {
         loadClipIntoLayer("A", null);
@@ -407,6 +431,8 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
 
     const syncPreloadClip = useEffectEvent((nextClip: SeamlessVideoClip | null) => {
       preloadClipRef.current = nextClip;
+      // The spare decoder temporarily prepares the same node's other actor.
+      if (orientationSwapRef.current || transitionTimerRef.current !== null) return;
 
       // On the Jetson display Chromium currently composites in software. Keep
       // only the displayed 1080p clip loaded; the small transition delay is
@@ -459,9 +485,18 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       getDisplayedVideoElement: () => getVideoElement(activeLayerIdRef.current),
       getPreloadVideoElement: () => getVideoElement(getOtherLayerId(activeLayerIdRef.current)),
       pauseDisplayed: () => {
+        const pending = orientationSwapRef.current;
+        if (pending && orientationRestoreRef.current[pending.to]) {
+          orientationRestoreRef.current[pending.to]!.playing = false;
+        }
         pauseLayer(activeLayerIdRef.current);
       },
       playDisplayed: async () => {
+        const pending = orientationSwapRef.current;
+        if (pending && orientationRestoreRef.current[pending.to]) {
+          orientationRestoreRef.current[pending.to]!.playing = true;
+          return;
+        }
         const videoElement = getVideoElement(activeLayerIdRef.current);
         if (!videoElement) {
           return;
@@ -469,6 +504,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
 
         const clip = layerClipRef.current[activeLayerIdRef.current];
         try {
+          endedNotifiedRef.current[activeLayerIdRef.current] = false;
           await videoElement.play();
           if (clip) {
             onPlaybackStarted?.(clip);
@@ -491,6 +527,58 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
     }, [preloadClip]);
 
     useEffect(() => {
+      const from = activeLayerIdRef.current;
+      const video = getVideoElement(from);
+      const clip = layerClipRef.current[from];
+      if (!clip || !video || buildClipSignature(clip) !== buildClipSignature(currentClipRef.current)) return;
+      const source = resolveDigitalHumanSource(clip.src, portrait);
+      const pending = orientationSwapRef.current;
+      if (source === physicalSourceRef.current[from]) {
+        // A quick rotation back cancels the pending actor without touching the visible decoder.
+        if (pending) {
+          const resume = orientationRestoreRef.current[pending.to]?.playing;
+          orientationSwapRef.current = null;
+          loadClipIntoLayer(pending.to, null);
+          if (resume) void attemptPlayLayer(from);
+          syncPreloadClip(preloadClipRef.current);
+        }
+        return;
+      }
+      if (pending && physicalSourceRef.current[pending.to] === source) return;
+      const to = getOtherLayerId(from);
+      const previousRestore = pending ? orientationRestoreRef.current[pending.to] : null;
+      const end = getClipPlaybackEnd(physicalSourceRef.current[from], video.duration);
+      const completed = endedNotifiedRef.current[from] || video.ended;
+      const progress = previousRestore?.progress ?? (Number.isFinite(end) && end > 0 ? Math.min(1, video.currentTime / end) : 0);
+      const playing = !completed && (previousRestore?.playing ?? (!video.paused || (!layerReadyRef.current[from] && autoPlay)));
+      if (transitionTimerRef.current !== null) {
+        window.clearTimeout(transitionTimerRef.current);
+        transitionTimerRef.current = null;
+      }
+      video.pause();
+      clearFrameReadyWait(from);
+      // Keep the current decoded frame displayed while the spare layer loads and seeks.
+      loadClipIntoLayer(to, null);
+      orientationSwapRef.current = { from, to, signature: buildClipSignature(clip) };
+      loadClipIntoLayer(to, clip);
+      endedNotifiedRef.current[to] = completed;
+      orientationRestoreRef.current[to] = {
+        signature: buildClipSignature(clip), progress: completed ? 1 : progress,
+        playing, metadataRestored: false,
+      };
+    }, [portrait, activeLayerId, currentClip]);
+
+    const restoreOrientationPosition = useEffectEvent((layerId: LayerId) => {
+      const restore = orientationRestoreRef.current[layerId];
+      const video = getVideoElement(layerId);
+      if (!restore || !video || restore.signature !== layerClipSignatureRef.current[layerId]) return;
+      const end = getClipPlaybackEnd(physicalSourceRef.current[layerId], video.duration);
+      if (!Number.isFinite(end) || end <= 0) return;
+      restore.metadataRestored = true;
+      video.currentTime = Math.max(0, Math.min(end - .05, restore.progress * end));
+    });
+
+    useEffect(() => {
       return () => {
         LAYER_IDS.forEach((layerId) => {
           clearFrameReadyWait(layerId);
@@ -510,7 +598,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
     }, []);
 
     const handleLoadedState = useEffectEvent((layerId: LayerId) => {
-      if (!layerClipRef.current[layerId]) {
+      if (!layerClipRef.current[layerId] || (orientationRestoreRef.current[layerId] && !orientationRestoreRef.current[layerId]?.metadataRestored)) {
         return;
       }
       scheduleFrameReadyCheck(layerId);
@@ -526,6 +614,8 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
         return;
       }
 
+      if (orientationSwapRef.current?.from === layerId || orientationRestoreRef.current[layerId] || endedNotifiedRef.current[layerId]) return;
+      endedNotifiedRef.current[layerId] = true;
       onEnded?.(clip);
     });
 
@@ -540,6 +630,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
         return;
       }
 
+      if (orientationSwapRef.current?.from === layerId || orientationRestoreRef.current[layerId] || endedNotifiedRef.current[layerId]) return;
       onTimeUpdate?.({ clip, video: videoElement });
     });
 
@@ -567,6 +658,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
           return (
             <div
               key={layerId}
+              data-digital-human-layout={layerLayouts[layerId]}
               aria-hidden={!isVisible}
               className={cn(
                 sharedLayerClassName,
@@ -583,6 +675,8 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
                 playsInline={playsInline}
                 preload={performanceMode ? "metadata" : "auto"}
                 className={cn(sharedVideoClassName, videoClassName)}
+                onLoadedMetadata={() => restoreOrientationPosition(layerId)}
+                onSeeked={() => handleLoadedState(layerId)}
                 onCanPlay={() => handleLoadedState(layerId)}
                 onEnded={() => handleVideoEnded(layerId)}
                 onError={(event) => handleVideoError(layerId, event)}

@@ -25,12 +25,15 @@ export function HomePortal({ activeMenuTitle, onAvatarClick }: HomePortalProps) 
               transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
               title={`进入${activeMenuTitle}`}
             >
-              <img
+              <picture className="block h-full">
+                  <source media="(orientation: portrait)" srcSet="/digital-human/portrait-male-v1/portrait-male-poster.png" />
+                  <img
                 src="/home-digital-human.png"
                 alt="数字人心理助手"
                 fetchPriority="high"
                 className="h-full w-auto max-w-none object-contain object-bottom drop-shadow-[0_28px_48px_rgba(15,23,42,0.26)]"
               />
+                </picture>
             </motion.button>
           </div>
         </div>

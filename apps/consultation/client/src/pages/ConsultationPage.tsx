@@ -822,7 +822,7 @@ export default function ConsultationPage() {
   if (consultation.status === "handoff_ready" || consultation.status === "paused_for_human_review") {
     return (
       <ConsultationLayout backgroundImage="/4K.png" title="智能评估">
-        <div className="absolute inset-x-0 top-0 z-50 pointer-events-none">
+        <div className="absolute inset-x-0 top-0 z-0 pointer-events-none">
           <div className="pointer-events-auto">
             <ConsultationProgress currentStageOrder={STAGE_LABELS.length} steps={STAGE_LABELS} />
           </div>
@@ -843,7 +843,7 @@ export default function ConsultationPage() {
 
   return (
     <ConsultationLayout backgroundImage="/4K.png" title="智能评估">
-      <div className="absolute inset-x-0 top-0 z-50 pointer-events-none">
+      <div className="absolute inset-x-0 top-0 z-0 pointer-events-none">
         <div className="pointer-events-auto">
           <ConsultationProgress currentStageOrder={currentStageOrder} steps={STAGE_LABELS} />
         </div>

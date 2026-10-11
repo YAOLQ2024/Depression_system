@@ -216,7 +216,7 @@ export default function HistoryDetailPage() {
       <BackgroundDecor />
       <div className="relative z-20"><Header title="历史就诊详情" /></div>
 
-      <div className="relative z-10 w-full px-6 pt-6 pb-10 md:px-10 lg:px-14">
+      <div className="history-detail-main relative z-10 w-full px-6 pt-6 pb-10 md:px-10 lg:px-14">
         {state.error && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 text-center">
             <p className="text-sm text-rose-500">{state.error}</p>
