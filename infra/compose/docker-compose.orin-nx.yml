@@ -1,0 +1,61 @@
+# Local Orin NX runtime additions. Loaded after the existing Jetson overrides.
+x-local-logging: &local-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-local-build: &local-build
+  args:
+    NO_PROXY: localhost,127.0.0.1,::1,.tsinghua.edu.cn,.npmmirror.com,.aliyun.com,.aliyuncs.com
+
+services:
+  postgres:
+    logging: *local-logging
+  redis:
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    logging: *local-logging
+  minio:
+    build: *local-build
+    logging: *local-logging
+  identity-service:
+    build: *local-build
+    logging: *local-logging
+  consultation-service:
+    build: *local-build
+    logging: *local-logging
+  assessment-service:
+    build: *local-build
+    logging: *local-logging
+  risk-service:
+    build: *local-build
+    logging: *local-logging
+  intervention-service:
+    build: *local-build
+    logging: *local-logging
+  followup-service:
+    build: *local-build
+    logging: *local-logging
+  multimodal-service:
+    build:
+      <<: *local-build
+      dockerfile: Dockerfile.orin-nx
+    logging: *local-logging
+  gateway-service:
+    build: *local-build
+    logging: *local-logging
+  consultation:
+    build:
+      <<: *local-build
+      dockerfile: Dockerfile.orin-nx
+    logging: *local-logging
+  operations-console:
+    build: *local-build
+    logging: *local-logging
+  caddy:
+    logging: *local-logging
+
+volumes:
+  redis_data:

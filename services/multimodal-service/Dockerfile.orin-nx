@@ -1,0 +1,30 @@
+# Lightweight runtime for an already provisioned JetPack 6 / Python 3.10 host.
+# GPU packages and JetPack libraries are mounted read-only by the Compose override.
+FROM nvidia/cuda:12.1.1-base-ubuntu22.04
+
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL} PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=5 \
+    PYTHONPATH=/opt/mcs-python PYTHONUNBUFFERED=1 \
+    LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:/opt/jetson/lib/nvidia:/opt/jetson/lib
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-pip ffmpeg libgl1 libglib2.0-0 libgomp1 libportaudio2 ca-certificates \
+    && ln -s /usr/bin/python3 /usr/local/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-app.txt requirements-jetson-host-runtime.txt ./
+RUN pip install --no-cache-dir -r requirements-app.txt -r requirements-jetson-host-runtime.txt \
+    && pip install --no-cache-dir --no-deps dataoceanai-dolphin==20260513 funasr==1.2.6 pytorch-wpe==0.0.1
+# Isolate MediaPipe dependencies in this image; preserve the mounted NVIDIA torch.
+RUN pip install --no-cache-dir \
+    mediapipe==0.10.18 jax==0.4.33 jaxlib==0.4.33 \
+    numpy==1.26.4 protobuf==4.25.9 opencv-contrib-python==4.10.0.84 sympy==1.13.1
+COPY jetson-sitecustomize.py /opt/mcs-python/sitecustomize.py
+COPY alembic ./alembic
+COPY app ./app
+COPY scripts ./scripts
+COPY tests ./tests
+COPY alembic.ini pyproject.toml README.md seed.py .env.example ./
+RUN sed -i 's/\r$//' scripts/start.sh && chmod +x scripts/start.sh
+CMD ["./scripts/start.sh"]
