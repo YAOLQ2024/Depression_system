@@ -59,3 +59,32 @@ h1 { margin: 8px 0 10px; font-weight: 500; letter-spacing: .12em; font-size: cla
   .opening-title { white-space: normal; text-wrap: balance; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+@media (orientation: portrait) {
+  #experience { height: 100dvh; min-height: 0; }
+  .video-backdrop { transform: scale(1.34); }
+  .top-bar {
+    top: max(16px, env(safe-area-inset-top));
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    gap: 10px;
+  }
+  .poem-panel {
+    top: clamp(92px, 11dvh, 200px);
+    bottom: clamp(112px, 14dvh, 220px);
+    left: 50%;
+    width: min(930px, calc(100vw - 36px));
+    height: auto;
+    padding: clamp(20px, 3.5vw, 42px) clamp(18px, 4vw, 44px);
+  }
+  .poem-kicker { font-size: clamp(13px, 1.8vw, 19px); }
+  .poem-panel h1 { font-size: clamp(28px, 4vw, 44px); }
+  .scroll-viewport { height: calc(100% - 84px); }
+  .poem-line { font-size: clamp(24px, 3.6vw, 42px); line-height: 1.55; }
+  .progress-area {
+    bottom: max(16px, env(safe-area-inset-bottom));
+    width: min(720px, calc(100vw - 36px));
+  }
+  .progress-meta { font-size: clamp(13px, 1.8vw, 18px); }
+  .opening-copy { max-height: calc(100dvh - 40px); overflow-y: auto; }
+}

@@ -1,4 +1,11 @@
 services:
+  # Caddy owns the host-facing HTTP redirect ports (3000/3001). Keep the
+  # application containers internal so their dev-mode published ports do not
+  # collide with Caddy when this LAN HTTPS overlay is active.
+  consultation:
+    ports: !reset []
+  operations-console:
+    ports: !reset []
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped

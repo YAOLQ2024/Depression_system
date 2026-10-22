@@ -1,0 +1,459 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>MCS 多模态问诊系统软件测试批量记录</title><style>@page { size: A4; margin: 18mm 16mm; } body { font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 10.5pt; line-height: 1.45; color: #243047; } h1 { text-align: center; font-size: 20pt; color: #183d63; margin-bottom: 18pt; } h2 { font-size: 15pt; color: #183d63; border-bottom: 1px solid #8fa9c1; padding-bottom: 4pt; margin-top: 20pt; } h3 { font-size: 12pt; color: #24567c; margin-top: 16pt; } table { border-collapse: collapse; width: 100%; margin: 8pt 0 14pt; font-size: 9pt; } th, td { border: 1px solid #9aabba; padding: 5pt 6pt; vertical-align: top; } th { background: #e7eef5; color: #183d63; } tr { page-break-inside: avoid; } strong { color: #183d63; } a { color: #245e8c; }</style></head><body><h1>MCS 多模态问诊系统软件测试批量记录</h1>
+<p><strong>版本：</strong> 当前工作区与板端运行基线（2026-10-17）<br />
+<strong>设备：</strong> NVIDIA Jetson Orin NX Engineering Reference Developer Kit Super，aarch64<br />
+<strong>系统：</strong> Ubuntu 22.04.5 LTS，Linux 5.15.148-tegra<br />
+<strong>测试日期：</strong> 2026-10-17<br />
+<strong>执行范围：</strong> 运行环境、远端代码同步核对、服务健康、HTTPS 镜像重建与入口、前后端单元测试、诗歌页横竖屏显示、基础设施只读检查。</p>
+<h2>一、记录范围与阶段结论</h2>
+<p>本轮对 MCS 当前工作区和 Jetson 上运行的 Docker 服务进行检查。执行 <code>git fetch --all --prune</code> 后，<code>origin/feature/zhurui</code> 与本地 <code>feature/zhurui</code> 均为提交 <code>03c87c1</code>，没有远端新提交；保留了工作区已有的未提交 UI 改动。14 个容器均处于运行状态；网关、身份、问诊、评估、风险、多模态、干预和随访 8 个服务的 <code>/health/ready</code> 均返回 HTTP 200。PostgreSQL、Redis 和 MinIO 的只读连通检查通过。咨询端与运营端 HTTPS 页面均能打开。</p>
+<p>前端 TypeScript 检查、生产构建及 10 项前端单元测试通过；Risk Service 13 项、Consultation Service 23 项、Multimodal Service 32 项、EEG 工具 31 项测试通过，共 99 项 Python 用例通过。<code>scripts/jetson-smoke.py</code> 的端到端烟雾流程也通过：HTTPS/页面/视频、注册登录、资料、问诊创建启动、五模态预热、文本推理和 4 秒合成音频上传、对象存储、CUDA ASR 及情绪分析。使用 Chromium 对诗歌页进行 1080×1920 竖屏和 1024×600 横屏截图检查。随后已按当前工作区重建 consultation 镜像并更新容器；默认 HTTPS 实际返回新构建资源，两首诗歌页引用 <code>portrait-layout-v3</code>，竖屏 Chromium 检查可见页面内容铺满浏览器视口。横屏截图未见明显内容越界。</p>
+<p>重建过程中发现 LAN HTTPS Compose 组合把 Caddy 的宿主机 3000/3001 端口与咨询端、运营端开发端口重复映射，导致 consultation 首次重建后启动失败。已在 <code>docker-compose.lan-https.yml</code> 清除这两个应用容器的宿主机端口映射（Caddy 继续拥有 HTTP 重定向端口），Compose 校验通过，consultation 容器已运行，默认 HTTPS 首页和 readiness 均返回 HTTP 200。MCS-UI-001 已复测通过。</p>
+<p>后端 pytest 依赖安装在 <code>/tmp/mcs-system-test-deps</code> 独立目录中，没有改动系统 Python 或运行服务容器；Multimodal 测试额外安装了 <code>httpx</code>、Transformers 等导入依赖。端到端烟雾测试在当前数据库中创建了明确标记为非真实患者的合成账号和问诊记录；没有访问或修改真实患者数据。PHQ-9 全量作答到风险/干预/报告链、恢复演练、摄像头/麦克风实际采集及 EEG 真机数据采集没有执行。故本记录覆盖自动化、运行环境和一条多模态烟雾流程，不构成完整临床业务验收。</p>
+<h2>二、测试结果汇总</h2>
+<table>
+<thead>
+<tr>
+<th>编号</th>
+<th>测试项目</th>
+<th style="text-align: right;">执行规模</th>
+<th>结果</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ENV 01</td>
+<td>设备与操作系统基线</td>
+<td style="text-align: right;">1 轮</td>
+<td>通过</td>
+<td>Jetson Orin NX、Ubuntu 22.04.5、aarch64</td>
+</tr>
+<tr>
+<td>ENV 02</td>
+<td>Compose 配置</td>
+<td style="text-align: right;">1 轮</td>
+<td>通过</td>
+<td>当前部署的 4 份 Compose 配置合并校验通过</td>
+</tr>
+<tr>
+<td>RUN 01</td>
+<td>Docker 容器状态</td>
+<td style="text-align: right;">14 个容器</td>
+<td>通过</td>
+<td>14/14 running；其中配置了健康检查的容器均 healthy</td>
+</tr>
+<tr>
+<td>RUN 02</td>
+<td>核心 API 就绪状态</td>
+<td style="text-align: right;">8 个服务</td>
+<td>通过</td>
+<td>gateway、identity、consultation、assessment、risk、multimodal、intervention、followup 均 HTTP 200</td>
+</tr>
+<tr>
+<td>RUN 03</td>
+<td>数据与对象存储连通</td>
+<td style="text-align: right;">3 项</td>
+<td>通过</td>
+<td>PostgreSQL accepting connections；Redis PONG；MinIO health HTTP 200</td>
+</tr>
+<tr>
+<td>RUN 04</td>
+<td>HTTPS 页面入口</td>
+<td style="text-align: right;">3 个入口</td>
+<td>通过</td>
+<td>Vite 前端、默认咨询端、运营端分别 HTTP 200</td>
+</tr>
+<tr>
+<td>UI 01</td>
+<td>封面竖屏布局</td>
+<td style="text-align: right;">1080×1920 模拟视口</td>
+<td>通过</td>
+<td>标题、进入按钮和页脚可见</td>
+</tr>
+<tr>
+<td>UI 02</td>
+<td>两个诗歌页竖屏布局</td>
+<td style="text-align: right;">2 页 × 1080×1920</td>
+<td>通过（模拟视口）</td>
+<td>默认 HTTPS 更新后的页面已加载 <code>portrait-layout-v3</code>；浏览器截图未见原黑边</td>
+</tr>
+<tr>
+<td>UI 03</td>
+<td>两个诗歌页横屏布局</td>
+<td style="text-align: right;">2 页 × 1024×600</td>
+<td>通过（模拟视口）</td>
+<td>默认 HTTPS 更新后的页面截图未见明显内容溢出</td>
+</tr>
+<tr>
+<td>UI 04</td>
+<td>默认 HTTPS 与热更新版本一致性</td>
+<td style="text-align: right;">2 个入口</td>
+<td>通过</td>
+<td>consultation 镜像已重建；默认 HTTPS 下两首诗歌页均引用 <code>portrait-layout-v3</code></td>
+</tr>
+<tr>
+<td>FE 01</td>
+<td>Consultation 前端 TypeScript 检查</td>
+<td style="text-align: right;">1 次</td>
+<td>通过</td>
+<td><code>npm run typecheck</code></td>
+</tr>
+<tr>
+<td>FE 02</td>
+<td>Consultation 前端单元测试</td>
+<td style="text-align: right;">10 项</td>
+<td>通过</td>
+<td><code>npm run test:eeg</code>，10 passed、0 failed</td>
+</tr>
+<tr>
+<td>FE 03</td>
+<td>Consultation 前端生产构建</td>
+<td style="text-align: right;">1 次</td>
+<td>通过</td>
+<td><code>npm run build</code></td>
+</tr>
+<tr>
+<td>PY 01</td>
+<td>EEG 工具单元测试</td>
+<td style="text-align: right;">31 项</td>
+<td>通过</td>
+<td><code>tools/eeg-tools/tests</code>，31 passed</td>
+</tr>
+<tr>
+<td>PY 02</td>
+<td>Risk Service 单元测试</td>
+<td style="text-align: right;">13 项</td>
+<td>通过</td>
+<td>独立测试依赖目录，13 passed</td>
+</tr>
+<tr>
+<td>PY 03</td>
+<td>Consultation Service 单元测试</td>
+<td style="text-align: right;">23 项</td>
+<td>通过</td>
+<td>独立测试依赖目录，23 passed</td>
+</tr>
+<tr>
+<td>PY 04</td>
+<td>Multimodal Service 单元测试</td>
+<td style="text-align: right;">32 项</td>
+<td>通过</td>
+<td>独立测试依赖目录，32 passed，含 6 条弃用/依赖警告</td>
+</tr>
+<tr>
+<td>FLOW 01</td>
+<td>登录、问诊启动及多模态烟雾流程</td>
+<td style="text-align: right;">1 条合成测试流程</td>
+<td>通过</td>
+<td>创建非真实患者测试账号；问诊、五模态预热、文本和合成音频推理通过</td>
+</tr>
+<tr>
+<td>FLOW 02</td>
+<td>PHQ-9 完整作答、风险评估、干预完成及历史/PDF报告闭环</td>
+<td style="text-align: right;">未执行</td>
+<td>未执行</td>
+<td>本轮未复测完整量表与后续业务状态流转</td>
+</tr>
+<tr>
+<td>DEV 01</td>
+<td>摄像头、麦克风和 EEG 真机采集</td>
+<td style="text-align: right;">未执行</td>
+<td>未执行</td>
+<td>未执行实际采集；避免采集环境中的人员影像、声音或真实 EEG</td>
+</tr>
+<tr>
+<td>REC 01</td>
+<td>备份完整性和恢复演练</td>
+<td style="text-align: right;">未执行</td>
+<td>未执行</td>
+<td>当前无隔离数据库副本用于受控恢复测试</td>
+</tr>
+</tbody>
+</table>
+<h2>三、测试记录</h2>
+<h3>ENV 01：设备与操作系统基线</h3>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>记录</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设备</td>
+<td>NVIDIA Jetson Orin NX Engineering Reference Developer Kit Super</td>
+</tr>
+<tr>
+<td>系统</td>
+<td>Ubuntu 22.04.5 LTS，Linux 5.15.148-tegra，aarch64</td>
+</tr>
+<tr>
+<td>执行方式</td>
+<td>只读系统信息查询</td>
+</tr>
+<tr>
+<td>实际现象</td>
+<td>系统型号、内核和架构信息可读取</td>
+</tr>
+<tr>
+<td>判定</td>
+<td>通过</td>
+</tr>
+</tbody>
+</table>
+<h3>RUN 01–04：服务、存储及入口</h3>
+<table>
+<thead>
+<tr>
+<th>检查对象</th>
+<th>实际结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docker Compose</td>
+<td>当前部署的 <code>docker-compose.dev.yml</code>、<code>docker-compose.lan-https.yml</code>、<code>docker-compose.jetson-nano.yml</code>、<code>docker-compose.orin-nx.yml</code> 合并配置校验通过</td>
+</tr>
+<tr>
+<td>容器</td>
+<td>14/14 容器运行；应用服务就绪端点均成功</td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td><code>pg_isready</code> 返回 accepting connections</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td><code>redis-cli ping</code> 返回 PONG</td>
+</tr>
+<tr>
+<td>MinIO</td>
+<td><code>/minio/health/live</code> 返回 HTTP 200</td>
+</tr>
+<tr>
+<td>咨询端与运营端</td>
+<td>默认 HTTPS 咨询端 HTTP 200；运营端 <code>https://localhost:8443/</code> HTTP 200</td>
+</tr>
+<tr>
+<td>前端热更新</td>
+<td><code>https://192.168.50.11:3443/</code> HTTP 200，Vite 服务 active</td>
+</tr>
+<tr>
+<td>默认 HTTPS 镜像</td>
+<td>重建 <code>consultation</code>，容器启动；<code>https://localhost/</code> 首页及 <code>/health/ready</code> 均 HTTP 200</td>
+</tr>
+<tr>
+<td>版本核对</td>
+<td>默认 HTTPS 提供的两首诗歌 HTML 均引用 <code>portrait-layout-v3</code></td>
+</tr>
+<tr>
+<td>端口映射</td>
+<td>LAN HTTPS overlay 让 Caddy 独占 3000/3001，避免 consultation / operations-console 与 Caddy 冲突</td>
+</tr>
+</tbody>
+</table>
+<h3>UI 01–04：横竖屏及版本核对</h3>
+<table>
+<thead>
+<tr>
+<th>页面</th>
+<th>竖屏</th>
+<th>横屏</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>咨询端封面</td>
+<td>1080×1920 模拟截图</td>
+<td>本轮未单独截图</td>
+<td>当前源码页面</td>
+</tr>
+<tr>
+<td>《做一个最好的你》</td>
+<td>1080×1920，默认 HTTPS 新镜像</td>
+<td>1024×600，默认 HTTPS 新镜像</td>
+<td>CSS 版本 <code>portrait-layout-v3</code></td>
+</tr>
+<tr>
+<td>《山水诗境》</td>
+<td>1080×1920，默认 HTTPS 新镜像</td>
+<td>1024×600，默认 HTTPS 新镜像</td>
+<td>CSS 版本 <code>portrait-layout-v3</code></td>
+</tr>
+<tr>
+<td>默认 HTTPS 页面</td>
+<td>首页及静态资源正常</td>
+<td>咨询端 readiness 正常</td>
+<td>容器由当前工作区重建</td>
+</tr>
+</tbody>
+</table>
+<p>默认 HTTPS 页面在本次重建后与当前工作区前端源码一致。检查静态 HTML 得到 <code>portrait-layout-v3</code>，竖屏截图存于证据目录。截图为 Chromium 模拟视口，不是板上触摸屏实拍；仍需在实际屏幕核对浏览器全屏模式及触控操作。</p>
+<h3>FE 01–03：前端检查</h3>
+<table>
+<thead>
+<tr>
+<th>命令</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>npm --prefix apps/consultation/client run typecheck</code></td>
+<td>通过</td>
+</tr>
+<tr>
+<td><code>npm --prefix apps/consultation/client run test:eeg</code></td>
+<td>10 passed，0 failed</td>
+</tr>
+<tr>
+<td><code>npm --prefix apps/consultation/client run build</code></td>
+<td>通过，Vite 构建完成</td>
+</tr>
+</tbody>
+</table>
+<h3>PY 01–04：Python 测试</h3>
+<table>
+<thead>
+<tr>
+<th>测试套件</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tools/eeg-tools/tests</code></td>
+<td>31 passed</td>
+</tr>
+<tr>
+<td><code>services/risk-service/tests</code></td>
+<td>13 passed</td>
+</tr>
+<tr>
+<td><code>services/consultation-service/tests</code></td>
+<td>23 passed</td>
+</tr>
+<tr>
+<td><code>services/multimodal-service/tests</code></td>
+<td>32 passed，6 warnings（弃用 API 和系统 requests/urllib3 版本提示）</td>
+</tr>
+<tr>
+<td>测试依赖</td>
+<td>位于 <code>/tmp/mcs-system-test-deps</code>；覆盖 pytest、SQLAlchemy、FastAPI、服务依赖、测试客户端、Transformers 等；宿主 Python 环境未改动</td>
+</tr>
+</tbody>
+</table>
+<p>没有为运行测试而修改系统 Python 或向运行容器安装依赖。</p>
+<h3>FLOW 01：端到端多模态烟雾流程</h3>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8 个应用 readiness、咨询/运营端 HTTPS、前端 HTML 和 WebM</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>注册、Cookie 登录、用户信息、bootstrap、医生目录及资料更新</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>问诊创建和启动、多模态会话绑定、五模态 warmup</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>文本情绪推理</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>4 秒本地合成 WAV 上传、MinIO 存储、CUDA ASR 转写与情绪分析</td>
+<td>通过；原音频及归一化 WAV 均返回存储 URI</td>
+</tr>
+<tr>
+<td>EEG 真机数据</td>
+<td>未执行；本流程只验证五模态 warmup，不代表有设备数据</td>
+</tr>
+</tbody>
+</table>
+<p>测试账号 <code>jetson-deployment-smoke-65f0591d@mcs.local</code> 明确标记为非真实患者。问诊会话 ID：<code>27c6a58f-776f-4b62-bc2f-f48ab39b3102</code>；多模态会话 ID：<code>327b0904-1180-4c2f-a8d1-d94868364ce6</code>。测试账号和记录保留在本机数据库中以供复核；未访问或修改真实患者记录。</p>
+<h3>DEV 02：板端资源状态</h3>
+<table>
+<thead>
+<tr>
+<th>检查项</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Multimodal EEG 服务</td>
+<td>readiness HTTP 200，模型已加载，transport 等待数据流，设备 ID 为空，尚无真实数据包</td>
+</tr>
+<tr>
+<td>温度</td>
+<td>短时 <code>tegrastats</code> 采样约 54–57°C；本轮不是持续压力测试</td>
+</tr>
+<tr>
+<td>摄像头 / 麦克风</td>
+<td>未执行采集</td>
+</tr>
+</tbody>
+</table>
+<h2>四、问题与后续复测</h2>
+<table>
+<thead>
+<tr>
+<th>问题编号</th>
+<th>严重度</th>
+<th>问题</th>
+<th>处理与复测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MCS-UI-001</td>
+<td>高</td>
+<td>默认 HTTPS 曾由旧 Docker 镜像提供</td>
+<td><strong>已处理并复测通过</strong>：重建 consultation 镜像；默认 HTTPS 页面/ready 均 HTTP 200，两诗歌页使用 <code>portrait-layout-v3</code></td>
+</tr>
+<tr>
+<td>MCS-OPS-002</td>
+<td>中</td>
+<td>LAN HTTPS Compose 中 Caddy 与应用容器重复映射宿主机 3000/3001</td>
+<td><strong>已处理</strong>：LAN HTTPS overlay 取消两个应用容器的端口发布；Compose 配置校验和容器启动通过</td>
+</tr>
+<tr>
+<td>MCS-TEST-003</td>
+<td>中</td>
+<td>PHQ-9 全量答题、风险评估、干预完成与历史/PDF报告链本轮未复测</td>
+<td>在测试账号上补跑完整量表及后续状态流转，并保存报告下载与风险结果证据</td>
+</tr>
+<tr>
+<td>MCS-DEV-004</td>
+<td>中</td>
+<td>摄像头、麦克风和 EEG 真机数据链未进行实采验证</td>
+<td>在受控测试环境、明确采集范围后，逐项检查设备识别、采样、结束释放和文件清理</td>
+</tr>
+</tbody>
+</table>
+<p>旧设备参考报告中的 <code>SW-REC-001</code> 属于另一份测试记录；本轮没有在隔离数据库中执行恢复，因此不将其判定为当前 MCS 的复测结果。</p>
+<h2>五、证据文件</h2>
+<p>原有 Chromium 截图使用 Vite 热更新地址；本轮新增默认 HTTPS 页面下的两张竖屏及两张横屏截图，直接从更新后的镜像生成。全部截图都是模拟视口，不是物理触摸屏实拍。</p>
+<ul>
+<li>
+<p><a href="../test-evidence/system-test-2026-10-17/jetson-smoke-2026-10-17.txt">Jetson 端到端烟雾测试日志</a></p>
+</li>
+<li>
+<p><a href="../test-evidence/system-test-2026-10-17/modern-portrait-default-https.png">诗歌播放器竖屏（默认 HTTPS）：《做一个最好的你》</a></p>
+</li>
+<li><a href="../test-evidence/system-test-2026-10-17/mountain-portrait-default-https.png">诗歌播放器竖屏（默认 HTTPS）：《山水诗境》</a></li>
+<li><a href="../test-evidence/system-test-2026-10-17/modern-landscape-default-https.png">诗歌播放器横屏（默认 HTTPS）：《做一个最好的你》</a></li>
+<li><a href="../test-evidence/system-test-2026-10-17/mountain-landscape-default-https.png">诗歌播放器横屏（默认 HTTPS）：《山水诗境》</a></li>
+<li><a href="../test-evidence/system-test-2026-10-17/cover-portrait.png">咨询端封面竖屏</a></li>
+</ul></body></html>

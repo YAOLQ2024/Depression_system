@@ -1,0 +1,24 @@
+Date: 2026-10-17 Asia/Shanghai
+Command: python3 scripts/jetson-smoke.py --url https://localhost --audio-fixture .codex-tmp/mcs-deployment-fixture.wav
+Exit: 0
+
+PASS readiness: identity
+PASS readiness: consultation
+PASS readiness: assessment
+PASS readiness: risk
+PASS readiness: intervention
+PASS readiness: followup
+PASS readiness: multimodal
+PASS readiness: gateway
+PASS readiness: consultation-web
+PASS readiness: operations-web
+PASS trusted HTTPS, frontend and WebM asset
+PASS registration, cookie login, bootstrap and profile
+PASS consultation start, multimodal binding and five-modality warmup
+PASS text model inference
+PASS prerecorded audio upload, MinIO storage, CUDA ASR and emotion analysis
+
+Synthetic test account: jetson-deployment-smoke-65f0591d@mcs.local
+Consultation session: 27c6a58f-776f-4b62-bc2f-f48ab39b3102
+Multimodal session: 327b0904-1180-4c2f-a8d1-d94868364ce6
+Physical devices tested: false

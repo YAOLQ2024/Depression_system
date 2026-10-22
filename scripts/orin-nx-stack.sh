@@ -21,6 +21,13 @@ if "$enable_trt"; then
   esac
   files+=(-f "$ROOT_DIR/infra/compose/docker-compose.jetson-tensorrt.yml")
 fi
+case "${MCS_EEG_BRIDGE_ENABLED:-false}" in
+  true|1|yes)
+    files+=(-f "$ROOT_DIR/infra/compose/docker-compose.jetson-eeg-bridge.yml")
+    ;;
+  false|0|no) ;;
+  *) echo 'MCS_EEG_BRIDGE_ENABLED must be true or false' >&2; exit 2 ;;
+esac
 if [[ -x "$ROOT_DIR/.codex-tmp/docker-compose" ]]; then
   exec "$ROOT_DIR/.codex-tmp/docker-compose" "${files[@]}" "$@"
 fi

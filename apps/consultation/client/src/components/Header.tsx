@@ -90,16 +90,16 @@ export function Header({ theme = 'light', title }: HeaderProps) {
   return (
     <header className="app-header relative z-10 flex h-[clamp(56px,4.2vw,88px)] w-full items-center justify-between px-[clamp(12px,1.25vw,30px)]">
       <div className="header-brand flex min-w-0 -translate-y-[clamp(6px,0.55vw,12px)] cursor-pointer items-center gap-[clamp(8px,0.7vw,16px)]" onClick={handleLogoClick}>
-        <div className="header-logo h-[clamp(28px,2.2vw,48px)] w-[clamp(58px,4vw,84px)] shrink-0 overflow-hidden">
+        <div className="header-logo h-[clamp(28px,2.2vw,48px)] w-[clamp(64px,6vw,128px)] shrink-0">
           <img
-            src="/aim-brand-lockup-transparent-clean.png"
+            src="/aim-full-logo.png"
             alt="AIM"
-            className="h-full w-auto max-w-none object-contain object-left drop-shadow-[0_1px_4px_rgba(255,255,255,0.16)]"
+            className="h-full w-full object-contain object-left drop-shadow-[0_1px_4px_rgba(255,255,255,0.16)]"
           />
         </div>
         <div className="header-titles flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
           <h1 className={cn("header-system-title shrink-0 text-[clamp(14px,1.05vw,24px)] font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
-            抑郁症数字人辅助评估系统
+            抑郁症智能评测与调节系统
           </h1>
           {title !== false ? (
             <div className="header-page-title flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
