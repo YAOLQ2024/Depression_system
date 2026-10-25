@@ -59,6 +59,17 @@
     stage.classList.toggle("has-many-lines", chapter.lines.length > 6);
     stage.classList.toggle("has-long-lines", chapter.lines.some((line) => line.text.length > 14));
     title.textContent = chapter.title;
+    // Keep the ci's tune and subtitle together, with a separate subtitle row in portrait.
+    const titleSeparator = chapter.title.indexOf("·");
+    if (titleSeparator !== -1) {
+      const separator = document.createElement("span");
+      separator.className = "poem-title-separator";
+      separator.textContent = "·";
+      const detail = document.createElement("span");
+      detail.className = "poem-title-detail";
+      detail.textContent = chapter.title.slice(titleSeparator + 1);
+      title.replaceChildren(chapter.title.slice(0, titleSeparator), separator, detail);
+    }
     author.textContent = chapter.author;
     lines.replaceChildren(...chapter.lines.map((line) => {
       const element = document.createElement("p");

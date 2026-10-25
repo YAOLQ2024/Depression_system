@@ -44,3 +44,8 @@
 - 网关只负责鉴权、转发、聚合和响应封装，不承担领域计算
 - 新服务接入时只新增 client/router/schemas，不把逻辑散落到现有模块里
 - consultation 页面可通过 gateway 订阅 `/consultations/{id}/multimodal/live/stream`
+
+## 2026-10-22 EEG 历史与解释代理
+
+- 为多模态会话新增 EEG 窗口历史、解释任务、详情及历史列表代理。
+- 保持现有登录态及 X-MCS-User-Id 透传，由领域服务核对资源归属。

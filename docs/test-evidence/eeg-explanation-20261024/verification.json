@@ -1,0 +1,66 @@
+{
+  "scope": "Synthetic browser fixture; no real patient or EEG device data",
+  "wide": {
+    "header": 53,
+    "waves": 360,
+    "channels": [
+      76.65625,
+      76.671875,
+      76.65625
+    ],
+    "waveWidth": 469.203125,
+    "faceWidth": 306.78125,
+    "followingBelow": true,
+    "overflow": false
+  },
+  "narrow_sidebar": {
+    "height": 360,
+    "channels": [
+      68.65625,
+      68.671875,
+      68.65625
+    ],
+    "overflow": false
+  },
+  "portrait": {
+    "channels": [
+      76.65625,
+      76.671875,
+      76.65625
+    ],
+    "overflow": false
+  },
+  "explanation": {
+    "height": 342,
+    "cardHeights": [
+      148,
+      148
+    ],
+    "parallel": true,
+    "overflow": false,
+    "percentageFont": "12px"
+  },
+  "narrow_explanation": {
+    "height": 370,
+    "parallel": true,
+    "overflow": false
+  },
+  "checks": [
+    "parallel explanation summaries; ready panel <=410px, narrow <=380px; 12px channel percentages",
+    "notes expand and collapse; history pagination and follow-latest buttons work",
+    "20-window heatmap scrolls horizontally without page overflow",
+    "single compact header",
+    "360px waves and 40/60 face-to-signal ratio",
+    "inline explanation without dialog or scroll jump",
+    "history preserves current avatar",
+    "late target response ignored",
+    "same mounted wave/SVG nodes and gain retained",
+    "stream continues after returning",
+    "wheel/Shift-wheel/button zoom and double-click reset retained",
+    "500px sidebar keeps full face beside waves; 390px keeps 260px face",
+    "390px no horizontal overflow",
+    "missing reference values stay absent",
+    "following modality cards reachable by sidebar scroll"
+  ],
+  "runtime_exceptions": []
+}

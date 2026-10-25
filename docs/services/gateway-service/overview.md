@@ -1,5 +1,9 @@
 # `gateway-service` 服务设计概览
 
+## 2026-10-22 当前代码状态
+
+当前 gateway 已代理问诊、量表与多模态链路；新增 EEG 窗口历史和解释任务代理仍只负责鉴权及转发。详见 [融合实施记录](../../multiEmo/eeg-mirror-implementation_20261022.md)。下文待实现列表保留历史阶段背景。
+
 ## 1. 概述
 
 `gateway-service` 是浏览器端统一 API 入口，也是当前最关键的前端聚合层。

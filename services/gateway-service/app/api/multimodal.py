@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, File, Form, Header, Request, UploadFile
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Cookie, File, Form, Header, Query, Request, UploadFile
 
 from app.api.consultations import _proxy_error, _require_current_user
 from app.clients.multimodal_client import (
@@ -221,3 +223,45 @@ async def get_multimodal_turn_bundle(
     if upstream["status"] >= 400:
         raise _proxy_error(upstream)
     return upstream["payload"]
+
+
+def _forward_eeg(method, session_id, suffix, payload, cookie, authorization):
+    _, user = _require_current_user(cookie, authorization)
+    upstream = forward_multimodal_request(method,
+        f"/api/v1/multimodal/sessions/{session_id}/eeg/{suffix}", payload, acting_user_id=user["id"])
+    if upstream["status"] >= 400:
+        raise _proxy_error(upstream)
+    return upstream["payload"]
+
+
+@router.get("/sessions/{session_id}/eeg/windows")
+def eeg_windows(session_id: str, cursor: str | None = Query(default=None, max_length=1024),
+                limit: int = Query(default=20, ge=1, le=100),
+                mcs_session: str | None = Cookie(default=None), authorization: str | None = Header(default=None)):
+    query = urlencode({"limit": limit, **({"cursor": cursor} if cursor else {})})
+    return _forward_eeg("GET", session_id, f"windows?{query}", None, mcs_session, authorization)
+
+
+@router.post("/sessions/{session_id}/eeg/explanations")
+async def eeg_request_explanation(session_id: str, request: Request,
+                                  mcs_session: str | None = Cookie(default=None), authorization: str | None = Header(default=None)):
+    # Validate login before reading a request or contacting the domain service.
+    _require_current_user(mcs_session, authorization)
+    payload = await request.json()
+    result = _forward_eeg("POST", session_id, "explanations", payload, mcs_session, authorization)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(result, status_code=202 if result.get("data", {}).get("status") in {"queued", "running"} else 200)
+
+
+@router.get("/sessions/{session_id}/eeg/explanations")
+def eeg_explanation_history(session_id: str, target_class: int = Query(default=2, ge=0, le=2),
+                            cursor: str | None = Query(default=None, max_length=1024), limit: int = Query(default=20, ge=1, le=100),
+                            mcs_session: str | None = Cookie(default=None), authorization: str | None = Header(default=None)):
+    query = urlencode({"target_class": target_class, "limit": limit, **({"cursor": cursor} if cursor else {})})
+    return _forward_eeg("GET", session_id, f"explanations?{query}", None, mcs_session, authorization)
+
+
+@router.get("/sessions/{session_id}/eeg/explanations/{explanation_id}")
+def eeg_explanation_detail(session_id: str, explanation_id: str,
+                           mcs_session: str | None = Cookie(default=None), authorization: str | None = Header(default=None)):
+    return _forward_eeg("GET", session_id, f"explanations/{explanation_id}", None, mcs_session, authorization)

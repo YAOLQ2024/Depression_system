@@ -199,6 +199,11 @@ services:
       EEG_PREVIEW_SECONDS: 4
       EEG_WINDOW_SECONDS: 10
       EEG_MIN_FEATURE_FRAMES: 10
+      EEG_EXPLANATIONS_ENABLED: ${EEG_EXPLANATIONS_ENABLED:-false}
+      EEG_EXPLANATION_BACKGROUND_PATH: /app/runtime-assets/eeg/background.npz
+      EEG_EXPLANATION_NSAMPLES: ${EEG_EXPLANATION_NSAMPLES:-512}
+      EEG_EXPLANATION_MAX_BACKGROUND: ${EEG_EXPLANATION_MAX_BACKGROUND:-64}
+      EEG_EXPLANATION_TIMEOUT_SECONDS: ${EEG_EXPLANATION_TIMEOUT_SECONDS:-45}
     depends_on:
       postgres:
         condition: service_healthy
@@ -215,6 +220,31 @@ services:
       retries: 20
     ports:
       - "${MCS_CONTAINER_MULTIMODAL_PORT:-18017}:8000"
+
+  eeg-explanation-worker:
+    profiles: [eeg-explanations]
+    build:
+      context: ../../services/multimodal-service
+      dockerfile: Dockerfile.explanation
+    environment:
+      DATABASE_URL: postgresql://mcs:mcs@postgres:5432/mcs
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+      REDIS_KEY_PREFIX: mcs:multimodal
+      RUNTIME_ASSETS_DIR: /app/runtime-assets
+      EEG_EXPLANATIONS_ENABLED: ${EEG_EXPLANATIONS_ENABLED:-false}
+      EEG_EXPLANATION_BACKGROUND_PATH: /app/runtime-assets/eeg/background.npz
+      EEG_EXPLANATION_NSAMPLES: ${EEG_EXPLANATION_NSAMPLES:-512}
+      EEG_EXPLANATION_MAX_BACKGROUND: ${EEG_EXPLANATION_MAX_BACKGROUND:-64}
+      EEG_EXPLANATION_TIMEOUT_SECONDS: ${EEG_EXPLANATION_TIMEOUT_SECONDS:-45}
+    volumes:
+      - ../../services/multimodal-service/runtime-assets:/app/runtime-assets:ro
+    depends_on:
+      multimodal-service:
+        condition: service_healthy
+    cpus: 1.0
+    mem_limit: 768m
+    restart: unless-stopped
 
   ai-service:
     profiles:

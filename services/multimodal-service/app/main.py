@@ -7,6 +7,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from app.api.eeg_explanations import router as eeg_explanations_router
 from app.api.multimodal import router as multimodal_router
 from app.api.non_eeg_inference import legacy_router, router as non_eeg_inference_router
 from app.config import get_settings
@@ -75,3 +76,4 @@ def health_ready():
 app.include_router(non_eeg_inference_router)
 app.include_router(legacy_router)
 app.include_router(multimodal_router)
+app.include_router(eeg_explanations_router)

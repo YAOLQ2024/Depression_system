@@ -160,21 +160,6 @@ export default function InterventionPage() {
               });
             }}
           />
-          <div className="portrait-intervention-game-entry">
-            <ActionButton
-              text="体验心灵花园"
-              delay={0.4}
-              onClick={() =>
-                void handleSelectExperience(APP_PATHS.interventionGame, {
-                  event_type: "experience_selected",
-                  program_id: "mindbloom-word-garden",
-                  program_title: "心灵花园词语游戏",
-                  delivery_mode: "game",
-                  payload: { destination: "game" },
-                })
-              }
-            />
-          </div>
         </div>
       </div>
     </ConsultationLayout>

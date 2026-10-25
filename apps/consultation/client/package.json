@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test:eeg": "node --test tests/eegWaveWindow.test.mjs"
+    "test:eeg": "node --test tests/eegWaveWindow.test.mjs tests/eegMirrorTimeline.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

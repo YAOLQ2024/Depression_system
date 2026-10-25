@@ -74,7 +74,7 @@ function extractImmediateEegWavePatch(
 function extractBufferedLivePatch(
   live: ConsultationMultimodalLivePatch,
 ): ConsultationMultimodalLivePatch | null {
-  const hasDeferredPayload = Boolean(live.speech || live.text || live.face || live.pose || live.eeg_live);
+  const hasDeferredPayload = Boolean(live.speech || live.text || live.face || live.pose || live.eeg_live || live.eeg_explanation_status);
   if (!hasDeferredPayload) {
     return null;
   }
@@ -87,6 +87,7 @@ function extractBufferedLivePatch(
     face: live.face,
     pose: live.pose,
     eeg_live: live.eeg_live,
+    eeg_explanation_status: live.eeg_explanation_status,
   };
 }
 

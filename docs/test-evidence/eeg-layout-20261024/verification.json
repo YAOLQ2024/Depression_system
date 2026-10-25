@@ -1,0 +1,48 @@
+{
+  "scope": "Synthetic browser fixture; no real patient or EEG device data",
+  "wide": {
+    "header": 53,
+    "waves": 520,
+    "channels": [
+      130,
+      130,
+      130
+    ],
+    "waveWidth": 593.421875,
+    "faceWidth": 182.578125,
+    "followingBelow": true,
+    "overflow": false
+  },
+  "narrow_sidebar": {
+    "height": 120,
+    "channels": [
+      130,
+      130,
+      130
+    ],
+    "overflow": false
+  },
+  "portrait": {
+    "channels": [
+      130,
+      130,
+      130
+    ],
+    "overflow": false
+  },
+  "checks": [
+    "single compact header",
+    "520px waves and channel heights >=120px",
+    "inline explanation without dialog or scroll jump",
+    "history preserves current avatar",
+    "late target response ignored",
+    "same mounted wave/SVG nodes and gain retained",
+    "stream continues after returning",
+    "wheel/Shift-wheel/button zoom and double-click reset retained",
+    "container-based narrow layout",
+    "390px no horizontal overflow",
+    "missing reference values stay absent",
+    "following modality cards reachable by sidebar scroll"
+  ],
+  "runtime_exceptions": []
+}

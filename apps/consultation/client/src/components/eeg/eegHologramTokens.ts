@@ -79,8 +79,8 @@ const TOKENS: Record<EegHologramState, EegHologramTokens> = {
     eyelidDrop: 0,
   },
   消极: {
-    accentColor: "#60a5fa",
-    highlightColor: "#dbeafe",
+    accentColor: "#D98B79",
+    highlightColor: "#F0C3B7",
     modelFilter: "hue-rotate(178deg) saturate(1.82) brightness(0.92) contrast(1.08)",
     modelOpacity: 0.98,
     modelScale: 1.004,
@@ -116,8 +116,8 @@ const TOKENS: Record<EegHologramState, EegHologramTokens> = {
     eyelidDrop: 2.5,
   },
   中性: {
-    accentColor: "#facc15",
-    highlightColor: "#fef08a",
+    accentColor: "#82AEE8",
+    highlightColor: "#D2E3F7",
     modelFilter: "none",
     modelOpacity: 1,
     modelScale: 1.004,
@@ -153,8 +153,8 @@ const TOKENS: Record<EegHologramState, EegHologramTokens> = {
     eyelidDrop: 0.4,
   },
   积极: {
-    accentColor: "#4ade80",
-    highlightColor: "#dcfce7",
+    accentColor: "#48D6B0",
+    highlightColor: "#B6F2DF",
     modelFilter: "hue-rotate(78deg) saturate(1.62) brightness(0.98) contrast(1.04)",
     modelOpacity: 0.98,
     modelScale: 1.004,

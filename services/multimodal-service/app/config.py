@@ -225,6 +225,12 @@ def get_settings() -> dict:
                 str(eeg_root / "EEG_model.pkl"),
             )
         ),
+        "eeg_explanations_enabled": _as_bool(os.getenv("EEG_EXPLANATIONS_ENABLED"), False),
+        "eeg_explanation_background_path": Path(os.getenv("EEG_EXPLANATION_BACKGROUND_PATH", str(eeg_root / "background.npz"))),
+        "eeg_explanation_timeout_seconds": max(5, min(120, _as_int(os.getenv("EEG_EXPLANATION_TIMEOUT_SECONDS"), 45))),
+        "eeg_explanation_nsamples": max(128, min(4096, _as_int(os.getenv("EEG_EXPLANATION_NSAMPLES"), 512))),
+        "eeg_explanation_max_pending": max(1, min(10, _as_int(os.getenv("EEG_EXPLANATION_MAX_PENDING"), 3))),
+        "eeg_explanation_max_background": max(1, min(128, _as_int(os.getenv("EEG_EXPLANATION_MAX_BACKGROUND"), 64))),
         "eeg_live_ttl_seconds": _as_int(os.getenv("EEG_LIVE_TTL_SECONDS"), 30),
         "eeg_turn_state_ttl_seconds": _as_int(os.getenv("EEG_TURN_STATE_TTL_SECONDS"), 600),
         "eeg_turn_window_ttl_seconds": _as_int(os.getenv("EEG_TURN_WINDOW_TTL_SECONDS"), 600),

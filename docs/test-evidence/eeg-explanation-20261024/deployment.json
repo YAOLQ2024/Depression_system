@@ -1,0 +1,45 @@
+{
+  "checked_at_local": "2026-10-24T22:14:23.616600+08:00",
+  "containers": {
+    "consultation": {
+      "id": "90d1a2c2d4b2a63a1a7781aa230b423d7eea65eff0df98bd8dc6d40a100df3be",
+      "image": "sha256:bc8d322598c7467229d8905e6764bcd882fd2f4225e4fc9be6900868e5ced978",
+      "health": null,
+      "replaced": true
+    },
+    "gateway-service": {
+      "id": "7117d0c7d2d56d9b7628cc4b3cbb8376c4fee9aa3faf867b11a2d57d23382ad3",
+      "image": "sha256:7fef564b2acb2afe875698073d100cea66aca4d4ea5b1997c2244e1a26ec69bb",
+      "health": "healthy",
+      "replaced": false
+    },
+    "multimodal-service": {
+      "id": "ec77d185cf43998434731a4e4e97f9995ad0811092bcab4514e27b108ae445e2",
+      "image": "sha256:2237945aa512d9e7f52032510d35ca4d669ee63d93de619e2e564d5fb02fdf2a",
+      "health": "healthy",
+      "replaced": false
+    },
+    "eeg-bridge": {
+      "id": "dafc80ca50de488f47697f144fba63a13e2be85b0f0527316b1ab9b974e2e3da",
+      "image": "sha256:8073546c9fcb2fb42e50b81c35f95dc52a6e9381a1ca3d7e60eb0bff13f3f35d",
+      "health": "healthy",
+      "replaced": false
+    }
+  },
+  "served_assets": {
+    "/assets/useVisualCapture-MF8VGc4V.js": "e1b9614907e80dac0021b7f91aad8e0e1b4020b4fca6f034300565e7a55ebb07",
+    "/assets/useVisualCapture-wrVGqt62.css": "0f03bb7e93c03923b6495fce190997729f367851e5a10a2fc57860751957de41"
+  },
+  "source_sha256": {
+    "apps/consultation/client/src/components/eeg/eegMirror.css": "0d71565924298b90447720786a48634860a2dd12b3ba93a52206612e3ae8c50f",
+    "apps/consultation/client/src/components/eeg/EegExplanationPanel.tsx": "dce332802dcd902117582d7134cdab3a0ec3103c965237ff776b42b24966b991"
+  },
+  "checks": [
+    "TypeScript and Docker Vite production build passed",
+    "HTTPS index and entry asset return 200",
+    "served explanation CSS/JS equal new image assets",
+    "compact channel values and expandable notes deployed",
+    "synthetic fixture absent from production build",
+    "only frontend container replaced; backend and EEG bridge unchanged"
+  ]
+}

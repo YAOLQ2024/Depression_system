@@ -1,0 +1,41 @@
+{
+  "checked_at_local": "2026-10-24T21:53:29.276544+08:00",
+  "containers": {
+    "consultation": {
+      "id": "9a1ed846e1ee3d1867f140577bc63c3a39ddd8d8a7c1b4b24d99fbeebcaae301",
+      "image": "sha256:510b800ea3c397d488bf91b2addafea37af2e3b7960e18f43d29442815aaa498",
+      "health": null,
+      "replaced": true
+    },
+    "gateway-service": {
+      "id": "7117d0c7d2d56d9b7628cc4b3cbb8376c4fee9aa3faf867b11a2d57d23382ad3",
+      "image": "sha256:7fef564b2acb2afe875698073d100cea66aca4d4ea5b1997c2244e1a26ec69bb",
+      "health": "healthy",
+      "replaced": false
+    },
+    "multimodal-service": {
+      "id": "ec77d185cf43998434731a4e4e97f9995ad0811092bcab4514e27b108ae445e2",
+      "image": "sha256:2237945aa512d9e7f52032510d35ca4d669ee63d93de619e2e564d5fb02fdf2a",
+      "health": "healthy",
+      "replaced": false
+    },
+    "eeg-bridge": {
+      "id": "dafc80ca50de488f47697f144fba63a13e2be85b0f0527316b1ab9b974e2e3da",
+      "image": "sha256:8073546c9fcb2fb42e50b81c35f95dc52a6e9381a1ca3d7e60eb0bff13f3f35d",
+      "health": "healthy",
+      "replaced": false
+    }
+  },
+  "served_assets": {
+    "/assets/useVisualCapture-hStJvjjz.css": "26dc0655e0aad365ea2318d3a702b34a3b8d645b79a3a0a694cf4f50961a77c3",
+    "/assets/useVisualCapture-tZ3h5bBh.js": "fe86723aada2e20871e2cfa4fab8596a414a870eded99fbbbbdf889ce4730ef9"
+  },
+  "checks": [
+    "Docker Vite production build passed",
+    "HTTPS index and entry asset return 200",
+    "served EEG CSS/JS equal new image assets",
+    "360px balanced layout deployed; thumbnail layout removed",
+    "synthetic fixture absent from production build",
+    "only frontend container replaced; backend and EEG bridge unchanged"
+  ]
+}

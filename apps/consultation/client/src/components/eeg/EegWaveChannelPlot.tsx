@@ -166,9 +166,9 @@ export function EegWaveChannelPlot(props: Props) {
         </svg>
       </svg>
       <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-slate-950/45 to-transparent" />
-      <span ref={upperRef} className="pointer-events-none absolute right-2 top-1 text-[9px] font-medium tabular-nums text-slate-400" />
-      <span ref={lowerRef} className="pointer-events-none absolute right-2 bottom-[2px] text-[9px] font-medium tabular-nums text-slate-400" />
-      <div className="pointer-events-none absolute left-2 top-1 text-[9px] font-semibold text-slate-200">{props.label}</div>
+      <span ref={upperRef} className="pointer-events-none absolute right-2 top-1 text-[11px] font-medium tabular-nums text-slate-400" />
+      <span ref={lowerRef} className="pointer-events-none absolute right-2 bottom-[2px] text-[11px] font-medium tabular-nums text-slate-400" />
+      <div className="pointer-events-none absolute left-2 top-1 text-[11px] font-semibold text-slate-200">{props.label}</div>
     </div>
   );
 }

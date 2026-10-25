@@ -1,0 +1,71 @@
+{
+  "checked_at_local": "2026-10-22T17:43:13.944020+08:00",
+  "scope": "Code and isolated software validation; all SHAP reference/training data and UI test values are synthetic. No real EEG device collection or production patient/session testing.",
+  "backend": {
+    "passed": 39,
+    "failed": 0,
+    "files": [
+      "test_eeg_explanations.py",
+      "test_eeg_runtime.py",
+      "test_eeg_protocol.py",
+      "test_multimodal_routes.py"
+    ],
+    "postgresql": "Isolated mcs_eeg_test_* database; real PostgreSQL and Alembic downgrade/upgrade checked",
+    "shap": "Real KernelExplainer plus worker subprocess on synthetic assets; original v20 runtime input replay and stored identity consistency also checked"
+  },
+  "frontend": {
+    "typecheck": "passed",
+    "tests_passed": 14,
+    "tests_failed": 0,
+    "production_build": "passed",
+    "test_harness_in_build": false
+  },
+  "gateway": "Login gate, acting identity forwarding, cursor encoding, target validation and queued HTTP 202 checked with TestClient",
+  "browser": {
+    "scope": "Browser interaction on synthetic local harness only; no production records or device acquisition",
+    "checks": [
+      "compact/live/explanation rendering",
+      "actual buttons and native modal",
+      "history selection preserves current avatar",
+      "late target response discarded",
+      "return to current wave stream",
+      "Escape and focus restoration",
+      "1080x1920 portrait no horizontal overflow",
+      "transparent assets decoded",
+      "missing reference data rendered unavailable without zero-filling"
+    ],
+    "runtime_exceptions": []
+  },
+  "narrow_viewport": "390px dialog overflow check passed separately",
+  "containers": {
+    "api": "Existing runtime image with final app source mounted read-only; isolated test database, EEG and Redis disabled; /health/ready returned 200; new EEG route reached domain validation and returned expected 404 for an absent session",
+    "worker_image_id": "sha256:b8183e025abc28c2806ac0fdf4277bdcee45d546cc8d4a607cafd5160755cfdd",
+    "worker_python": "3.11",
+    "worker_memory_limit": "768m",
+    "worker_cpu_limit": 1,
+    "worker_test_network": "none",
+    "worker_shap_dimension": 110,
+    "worker_additivity_error": 4.440892098500626e-16
+  },
+  "repository_checks": {
+    "compose_config": "passed",
+    "optional_profile_config": "passed",
+    "phase_check": "passed; host FastAPI availability probe reports absent; actual API startup tested in isolated container",
+    "git_diff_check": "passed",
+    "original_delivery_hashes": "all 52 original manifest files unchanged"
+  },
+  "deployment": "Existing product containers were not rebuilt/restarted by this task. A separate temporary API test container was used.",
+  "remaining_validation": [
+    "Curated real background.npz and matching manifest",
+    "Real participant/input protocol and explanation stability",
+    "Target device end-to-end latency and 30-minute joint workload",
+    "Full optical-flow face morphing; first version uses cross-fade"
+  ],
+  "source_sha256": {
+    "services/multimodal-service/app/services/eeg_runtime.py": "aaa132f15611ba40e9b802a707878ca2e622cfd75f85831fdd8c19623279a05b",
+    "services/multimodal-service/app/services/eeg_explanation_service.py": "af84ddd64c32c4b64e97827b3a994239ce240a555be59ad319b1a5214d37611e",
+    "services/multimodal-service/app/services/eeg_explanation_worker.py": "f269b800e1683f87f3affae9b47e09252b05429fe84b695b5e2bea928c4d7fd1",
+    "apps/consultation/client/src/components/eeg/EegMirrorPanel.tsx": "af04ca5f5ee10a5a9d8b68fe504597b670127789f30f2c40190c00a83cfc37ec",
+    "apps/consultation/client/src/components/eeg/useEegMirrorData.ts": "101af42c9c08c61afb8737fb2d6098e21b838ca9ce390ebacbe1b792576d2d50"
+  }
+}

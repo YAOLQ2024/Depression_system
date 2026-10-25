@@ -7,10 +7,6 @@
   display: none;
 }
 
-.portrait-intervention-game-entry {
-  display: none;
-}
-
 .preparation-summary,
 .auth-badge-icon {
   display: none;
@@ -1378,11 +1374,6 @@
   .app-route-scope[data-app-route="/intervention"] .portrait-intervention-actions > div,
   .app-route-scope[data-app-route="/intervention"] .portrait-intervention-actions > div > button {
     width: min(100%, 720px);
-  }
-
-  .app-route-scope[data-app-route="/intervention"] .portrait-intervention-game-entry {
-    display: flex;
-    justify-content: center;
   }
 
   .app-route-scope[data-app-route="/intervention"] main button {

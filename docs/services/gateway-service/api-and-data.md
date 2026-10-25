@@ -76,3 +76,7 @@
 - `/api/v1/users/me/profile` 只能更新当前 cookie / bearer token 对应的用户资料，不接受客户端指定其他用户 id
 - 对 `consultation-service` 已采用统一的内部用户头透传方式
 - 后续对 `assessment-service` 也应沿用同样的内部鉴权传递方式
+
+## 2026-10-22 EEG 扩展
+
+浏览器通过 /api/v1/multimodal/sessions/{id}/eeg/windows 与 /eeg/explanations 访问新增领域能力，使用现有 Cookie / Bearer 登录态。gateway 只验证登录并转发，不接收客户端模型或直接执行归因。

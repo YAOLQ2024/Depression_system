@@ -157,6 +157,10 @@ export type EegWaveSample = {
 };
 
 export type EegLiveResult = {
+  sample_id?: string | null;
+  inference_id?: string | null;
+  model_sha256?: string | null;
+  score_kind?: string | null;
   window_index?: number | null;
   primary_label?: string | null;
   primary_score?: number | null;
@@ -200,6 +204,7 @@ export type ConsultationMultimodalLive = {
   pose: FacePoseMultimodalLive;
   eeg_live: EegLivePayload;
   eeg_waves: EegWavePreview;
+  eeg_explanation_status?: { explanation_id: string; sample_id: string; inference_id: string; target_class: number; status: string };
   updated_at?: string | null;
 };
 

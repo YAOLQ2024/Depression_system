@@ -1,5 +1,9 @@
 # `multimodal-service` 服务设计概览
 
+## 2026-10-22 当前代码状态
+
+当前服务已具备 EEG / 非 EEG 会话、真实模型推理、SSE 与持久化能力，并新增可选 EEG 异步解释 worker。详见 [融合实施记录](../../multiEmo/eeg-mirror-implementation_20261022.md)。下文“仅健康检查”等描述属于早期阶段。
+
 ## 1. 概述
 
 `multimodal-service` 负责 MCS 中语音、表情、姿态、脑电等多模态信号的接入、标准化和特征输出。

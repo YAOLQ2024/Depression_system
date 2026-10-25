@@ -150,3 +150,7 @@
   - `top_3_labels`
   - `sample_count`
   - `quality_flags`
+
+## 2026-10-22 EEG 窗口与解释扩展
+
+新增 GET /api/v1/multimodal/sessions/{id}/eeg/windows、POST /eeg/explanations、GET /eeg/explanations、GET /eeg/explanations/{explanation_id}。窗口列表包含 sample_id、inference_id、时间范围和预测状态。解释请求只接 inference_id、target_class，服务端使用冻结的模型输入和经核验背景集。任务状态 queued/running/ready/failed/invalid/unavailable；非 ready 结果不返回数值。所有路径核验 X-MCS-User-Id 与 session／inference／explanation 的所属关系。历史按完整解释配置隔离，分页 cursor 固定配置。

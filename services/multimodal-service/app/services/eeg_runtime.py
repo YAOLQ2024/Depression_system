@@ -4,6 +4,8 @@ import asyncio
 import base64
 import binascii
 import io
+import hashlib
+import uuid
 import logging
 import os
 import pickle
@@ -30,6 +32,7 @@ from app.services.eeg_live_state_store import (
     write_eeg_turn_state_payload,
     write_eeg_turn_window_payload,
 )
+from app.services.eeg_explanation_math import freeze_input
 from app.services.eeg_protocol import EEGPacketDecoder, FeaturePacket, MODEL_FEATURE_COUNT, WavePacket
 from app.services.object_storage import upload_object_to_bucket
 
@@ -217,6 +220,8 @@ class EegFeatureSample:
 
 @dataclass(slots=True)
 class EegWindowBuffer:
+    sample_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    quality_flags: dict[str, bool] = field(default_factory=dict)
     sample_started_at: datetime | None = None
     sample_ended_at: datetime | None = None
     wave_samples: list[EegWaveSample] = field(default_factory=list)
@@ -753,6 +758,7 @@ class EEGRuntimeService:
         self._runtime_feature_source = "packet"
         self._all_feature_names: list[str] = []
         self._model_name = "eeg_3class"
+        self._model_sha256: str | None = None
         self._model_version: str | None = None
         self._model_loaded = False
         self._live_update_callback: Callable[[str, dict[str, Any], dict[str, Any] | None], None] | None = None
@@ -1046,8 +1052,9 @@ class EEGRuntimeService:
             return False
 
         try:
-            with model_path.open("rb") as fp:
-                model_obj = pickle.load(fp)
+            model_bytes = model_path.read_bytes()
+            self._model_sha256 = hashlib.sha256(model_bytes).hexdigest()
+            model_obj = pickle.loads(model_bytes)
             self._clf = model_obj.get("model")
             self._scaler = model_obj.get("scaler")
             selected = model_obj.get("selected_features")
@@ -1259,7 +1266,7 @@ class EEGRuntimeService:
         }
         self._store_live_payload_locked(binding.session_id, final_payload)
 
-    def _serialize_window_npz_bytes(self, binding: EegTurnBinding) -> bytes:
+    def _serialize_window_npz_bytes(self, binding: EegTurnBinding, snapshot: dict | None = None) -> bytes:
         wave_samples = binding.current_window.wave_samples
         feature_samples = binding.current_window.feature_samples
         sample_values = (
@@ -1284,6 +1291,11 @@ class EEGRuntimeService:
         buffer = io.BytesIO()
         np.savez_compressed(
             buffer,
+            aggregate_vector=np.asarray((snapshot or {}).get("aggregate_vector", []), dtype=np.float32),
+            scaled_vector=np.asarray((snapshot or {}).get("scaled_vector", []), dtype=np.float64),
+            selected_indices=np.asarray((snapshot or {}).get("selected_indices", []), dtype=np.int32),
+            model_sha256=np.array((snapshot or {}).get("model_sha256") or ""),
+            input_hash=np.array((snapshot or {}).get("input_hash") or ""),
             samples=sample_values,
             sequences=sample_sequences,
             sample_timestamps_ms=sample_timestamps_ms,
@@ -1295,7 +1307,7 @@ class EEGRuntimeService:
         )
         return buffer.getvalue()
 
-    def _upload_raw_window(self, binding: EegTurnBinding) -> str | None:
+    def _upload_raw_window(self, binding: EegTurnBinding, snapshot: dict | None = None) -> str | None:
         object_key = (
             f"raw/eeg/{binding.session_id}/{binding.turn_id}/window-{binding.window_index}.npz"
         )
@@ -1303,7 +1315,7 @@ class EEGRuntimeService:
             return upload_object_to_bucket(
                 bucket_name=str(get_settings()["multimodal_bucket"]),
                 object_key=object_key,
-                file_bytes=self._serialize_window_npz_bytes(binding),
+                file_bytes=self._serialize_window_npz_bytes(binding, snapshot),
                 content_type="application/octet-stream",
             )
         except Exception:
@@ -1339,6 +1351,9 @@ class EEGRuntimeService:
                 self._packet_feature_count(),
             )
             return None
+        if not np.isfinite(features_matrix).all():
+            current_window.quality_flags["nonfinite_features"] = True
+            return None
         try:
             normalized_matrix = _normalize_feature_rows(features_matrix, self._norm_mode).astype(
                 np.float32
@@ -1358,6 +1373,9 @@ class EEGRuntimeService:
                 self._model_feature_count(),
             )
             return None
+        if not np.isfinite(model_input_vector).all():
+            current_window.quality_flags["nonfinite_features"] = True
+            return None
         if np.any(self._selected_features < 0) or np.any(self._selected_features >= model_input_vector.size):
             logger.warning(
                 "EEG selected feature indices exceed aggregated vector size=%s",
@@ -1366,6 +1384,10 @@ class EEGRuntimeService:
             return None
         selected = model_input_vector[self._selected_features].reshape(1, -1)
         scaled = self._scaler.transform(selected)
+        if not np.isfinite(scaled).all():
+            current_window.quality_flags["nonfinite_features"] = True
+            logger.warning("EEG scaled input contains nonfinite values")
+            return None
         prediction = int(self._clf.predict(scaled)[0])
 
         probabilities = _predict_probabilities(self._clf, scaled)
@@ -1378,6 +1400,14 @@ class EEGRuntimeService:
         return {
             "modality": "eeg",
             "status": "ready",
+            "sample_id": current_window.sample_id,
+            "inference_id": str(uuid.uuid4()),
+            "model_sha256": self._model_sha256,
+            "score_kind": "softmax_decision_score" if "svc" in type(self._clf).__name__.lower() else "model_score",
+            "_explanation_input": freeze_input(
+                model_sha256=self._model_sha256, feature_names=self._all_feature_names,
+                selected=self._selected_features.tolist(), aggregated=model_input_vector, scaled=scaled,
+            ),
             "device_status": self._device_status,
             "window_index": binding.window_index,
             "question_key": binding.question_key,
@@ -1408,6 +1438,7 @@ class EEGRuntimeService:
         now = _utcnow()
         with get_db_session() as db_session:
             capture = MultimodalCapture(
+                id=current_window.sample_id,
                 session_id=binding.session_id,
                 turn_id=binding.turn_id,
                 flow_run_id=binding.flow_run_id,
@@ -1427,6 +1458,8 @@ class EEGRuntimeService:
                     "wave_sample_count": len(current_window.wave_samples),
                     "feature_frame_count": len(current_window.feature_samples),
                     "raw_eeg_uri": raw_eeg_uri,
+                    "quality_flags": dict(current_window.quality_flags),
+                    "prediction_status": "ready" if inference_payload else "invalid" if current_window.quality_flags else "insufficient_frames",
                 },
                 captured_at=current_window.sample_ended_at,
                 created_at=now,
@@ -1436,6 +1469,7 @@ class EEGRuntimeService:
 
             if inference_payload is not None:
                 result_row = MultimodalInferenceResult(
+                    id=inference_payload["inference_id"],
                     session_id=binding.session_id,
                     turn_id=binding.turn_id,
                     flow_run_id=binding.flow_run_id,
@@ -1461,6 +1495,12 @@ class EEGRuntimeService:
                         "sampling_rate": self._sampling_rate,
                         "updated_at": inference_payload.get("sample_ended_at"),
                         "latest_result": {
+                            "sample_id": inference_payload.get("sample_id"),
+                            "inference_id": inference_payload.get("inference_id"),
+                            "model_sha256": inference_payload.get("model_sha256"),
+                            "score_kind": inference_payload.get("score_kind"),
+                            "sample_started_at": inference_payload.get("sample_started_at"),
+                            "sample_ended_at": inference_payload.get("sample_ended_at"),
                             "window_index": inference_payload.get("window_index"),
                             "primary_label": inference_payload.get("primary_label"),
                             "primary_score": inference_payload.get("primary_score"),
@@ -1483,6 +1523,9 @@ class EEGRuntimeService:
         current_window = binding.current_window
         payload = {
             "session_id": binding.session_id,
+            "sample_id": current_window.sample_id,
+            "inference_id": (inference_payload or {}).get("inference_id"),
+            "model_sha256": self._model_sha256,
             "turn_id": binding.turn_id,
             "flow_run_id": binding.flow_run_id,
             "stage_id": binding.stage_id,
@@ -1496,7 +1539,7 @@ class EEGRuntimeService:
             "channel_names": list(self._channel_names),
             "sampling_rate": self._sampling_rate,
             "model_version": self._model_version,
-            "quality_flags": {},
+            "quality_flags": dict(current_window.quality_flags),
         }
         if inference_payload is not None:
             payload["primary_label"] = inference_payload.get("primary_label")
@@ -1706,8 +1749,10 @@ class EEGRuntimeService:
         if not force and len(current_window.feature_samples) < self._min_feature_frames:
             return
 
-        raw_eeg_uri = self._upload_raw_window(binding)
-        inference_payload = self._infer_window_locked(binding, raw_eeg_uri=raw_eeg_uri)
+        inference_payload = self._infer_window_locked(binding, raw_eeg_uri=None)
+        raw_eeg_uri = self._upload_raw_window(binding, (inference_payload or {}).get("_explanation_input"))
+        if inference_payload is not None:
+            inference_payload["raw_eeg_uri"] = raw_eeg_uri
         window_payload = self._build_window_payload(
             binding,
             raw_eeg_uri=raw_eeg_uri,
@@ -1721,6 +1766,10 @@ class EEGRuntimeService:
         if inference_payload is not None:
             binding.latest_results.append(
                 {
+                    "sample_id": inference_payload.get("sample_id"),
+                    "inference_id": inference_payload.get("inference_id"),
+                    "model_sha256": inference_payload.get("model_sha256"),
+                    "score_kind": inference_payload.get("score_kind"),
                     "window_index": inference_payload.get("window_index"),
                     "primary_label": inference_payload.get("primary_label"),
                     "primary_score": inference_payload.get("primary_score"),

@@ -29,19 +29,19 @@ const EEG_EMOTION_CONFIG: Record<
   }
 > = {
   消极: {
-    accentColor: "#60a5fa",
-    highlightColor: "#bfdbfe",
-    imageSrc: "/eeg-emotion/eeg-negative-neural.png",
+    accentColor: "#D98B79",
+    highlightColor: "#F0C3B7",
+    imageSrc: "/eeg-emotion/mirror/head_negative.png",
   },
   中性: {
-    accentColor: "#facc15",
-    highlightColor: "#fde68a",
-    imageSrc: "/eeg-emotion/eeg-neutral-neural.png",
+    accentColor: "#82AEE8",
+    highlightColor: "#D2E3F7",
+    imageSrc: "/eeg-emotion/mirror/head_neutral.png",
   },
   积极: {
-    accentColor: "#4ade80",
-    highlightColor: "#bbf7d0",
-    imageSrc: "/eeg-emotion/eeg-positive-neural.png",
+    accentColor: "#48D6B0",
+    highlightColor: "#B6F2DF",
+    imageSrc: "/eeg-emotion/mirror/head_positive.png",
   },
 };
 

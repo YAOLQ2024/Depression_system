@@ -126,3 +126,7 @@
 - `full_name` 必填
 - 数值字段需要范围校验
 - 文本字段允许留空，但正式版应补充长度限制和敏感词记录策略
+
+## 2026-10-22 EEG 融合契约
+
+当前前端已使用 React / TypeScript，早期占位描述仅作历史记录。EEG 卡片复用既有 live 波形与分类；新增查询以 consultation.multimodal_session_id 为范围，通过 gateway 的 /api/v1/multimodal/sessions/{id}/eeg/windows 与 /eeg/explanations 获取跨轮次历史和指定目标解释。业务 consultation session ID 不能代替多模态 session ID。解释缺失不补零，头像类别不随历史选择改变。

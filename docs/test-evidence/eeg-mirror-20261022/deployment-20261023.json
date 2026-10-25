@@ -1,0 +1,55 @@
+{
+  "checked_at_local": "2026-10-23T11:48:25.713555+08:00",
+  "scope": "Deployed container, schema, GPU, static assets and unauthenticated API checks; no patient session or physical acquisition test.",
+  "containers": {
+    "multimodal-service": {
+      "id": "ec77d185cf43998434731a4e4e97f9995ad0811092bcab4514e27b108ae445e2",
+      "image": "sha256:2237945aa512d9e7f52032510d35ca4d669ee63d93de619e2e564d5fb02fdf2a",
+      "health": "healthy"
+    },
+    "gateway-service": {
+      "id": "7117d0c7d2d56d9b7628cc4b3cbb8376c4fee9aa3faf867b11a2d57d23382ad3",
+      "image": "sha256:7fef564b2acb2afe875698073d100cea66aca4d4ea5b1997c2244e1a26ec69bb",
+      "health": "healthy"
+    },
+    "consultation": {
+      "id": "98fd79ef31c5d8e40b93ded5773c083d0ceff554a587cbdb4f2d9c22a0840bd0",
+      "image": "sha256:0ff4219139d6e4f68990980e066f89d9cd64651ec76ec36dfec4deed5fa7ac0e",
+      "health": "no-healthcheck"
+    },
+    "eeg-bridge": {
+      "id": "dafc80ca50de488f47697f144fba63a13e2be85b0f0527316b1ab9b974e2e3da",
+      "image": "sha256:8073546c9fcb2fb42e50b81c35f95dc52a6e9381a1ca3d7e60eb0bff13f3f35d",
+      "health": "healthy"
+    }
+  },
+  "explanation_compute_enabled": false,
+  "multimodal-service_ready": true,
+  "gateway-service_ready": true,
+  "new_routes": "OpenAPI registered, gateway/domain anonymous 401, absent session 404",
+  "migration": "20261022_0013",
+  "frontend_assets": {
+    "/assets/index-By71LACl.js": "362111a2ebc6e24668f71e329752710d43ab76077845bcd65fb024fe2ff268a6",
+    "/assets/react-vendor-Bgb0_rhN.js": "c575936e256226d0a276050e0ab59ee5cc00247ac21d75051d3eeb844d5d5f56",
+    "/assets/router-vendor-BDbFC2-R.js": "4f8db5b6e98f5caf28909a26e110520cfd677b3d013dcf520b41d9249e2f7243",
+    "/assets/charts-vendor-7CvvicQ9.js": "c3935020ac5bdb2f0baecc323af3b60946a9dd599af6fd52b62bdada4e70e927",
+    "/assets/motion-vendor-Bkcb96Sq.js": "305a9c9e2800bce3dbeb49943a251e851bd205c549dd035c1e8aea50916663a2",
+    "/assets/index-xbenJtib.css": "3e8f86e54949e587cf40cec4078266d0de08ddac79f4c3f879396fc7e8218d39",
+    "/assets/ConsultationPage-DrrbmOF9.js": "fd5850173d830db9f89e6ae2956b42720ab71f885c59a8d7b050d5e16c81c8ee",
+    "/assets/useVisualCapture-CU9ViP5g.css": "d105b2c7d5eb2df46bc52fd626f037dd38deed41d6c1280ec897d1dfa96fd6e2",
+    "/assets/useVisualCapture-fSCeniWp.js": "3a97b6a3b556e214da2203575b74080bc56be3416c98d7d9a99186ca34ebaebb"
+  },
+  "transparent_assets": "Three deployed PNG files equal source assets",
+  "source_sha256": {
+    "services/multimodal-service/app/services/eeg_runtime.py": "aaa132f15611ba40e9b802a707878ca2e622cfd75f85831fdd8c19623279a05b",
+    "services/multimodal-service/app/services/eeg_explanation_service.py": "af84ddd64c32c4b64e97827b3a994239ce240a555be59ad319b1a5214d37611e",
+    "services/gateway-service/app/api/multimodal.py": "6efb3ab1a39ff9ca71d3760699dee546a434f93d50d49d02aafd72a46365eede"
+  },
+  "gpu": {
+    "cuda_available": true,
+    "cuda_tensor_sum": 1.0,
+    "tensorrt": "10.3.0",
+    "sklearn": "1.7.2",
+    "numpy": "1.26.4"
+  }
+}

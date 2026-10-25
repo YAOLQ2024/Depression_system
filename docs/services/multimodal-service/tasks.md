@@ -81,3 +81,10 @@
 - `MCS_TENSORRT_ENABLED=false ./scripts/jetson-stack.sh up -d --no-deps multimodal-service` 可切回 CPU。
 - 新姿态模型的 96 帧 FP16 引擎出现 NaN，板端构建改用 FP32 并关闭 TF32；以完整窗口有限值及 CPU 对比为验收条件。
 - 本板 plan 独立挂载至 `/app/board-engines`，不写入 ONNX 运行目录；超出引擎输入范围时使用原始 ONNX 路径回退。
+
+## 2026-10-22 EEG 解释与历史
+
+- 冻结当前 v20 的 52→156→110 输入管线；为新窗口补稳定样本／预测 ID、模型 SHA 和精确输入快照。
+- 增加窗口历史、按目标类的幂等解释任务与查询接口，沿用会话权限。
+- 独立 worker 认领 PostgreSQL 持久任务并计算真实 Kernel SHAP，验证加和及分组／导联守恒。
+- 背景资产必须匹配模型／特征／scaler；缺失时返回 unavailable。解释不阻塞采集或问诊。

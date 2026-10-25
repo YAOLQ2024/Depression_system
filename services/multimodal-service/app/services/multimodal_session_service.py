@@ -1988,7 +1988,7 @@ def _load_inference_payloads(
             MultimodalInferenceResult.turn_id == turn_id
         )
     rows = db_session.execute(statement.order_by(MultimodalInferenceResult.created_at.asc())).scalars().all()
-    return [dict(row.inference_payload or {}) for row in rows]
+    return [{k: v for k, v in (row.inference_payload or {}).items() if not k.startswith("_")} for row in rows]
 
 
 def _resolve_question_key(results_by_modality: dict[str, list[dict[str, Any]]]) -> str | None:
