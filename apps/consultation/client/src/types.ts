@@ -185,6 +185,12 @@ export type EegLivePayload = {
   model_version?: string | null;
   latest_result?: EegLiveResult | null;
   latest_results?: EegLiveResult[];
+  calibration?: {
+    required: boolean;
+    status: "not_required" | "pending" | "collecting" | "ready";
+    collected_frames: number;
+    target_frames: number;
+  };
   error_message?: string | null;
 };
 

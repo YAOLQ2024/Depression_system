@@ -149,7 +149,8 @@ start_everything() {
 
 open_kiosk() {
   progress '系统已就绪，正在打开全屏页面…'
-  local browser="${MCS_CHROMIUM_BINARY:-/snap/bin/chromium}"
+  # Run with host NVIDIA graphics libraries, as verified on this Jetson.
+  local browser="${MCS_CHROMIUM_BINARY:-/snap/chromium/current/usr/lib/chromium-browser/chrome}"
   [[ -x "$browser" ]] || fail "找不到 Chromium：$browser"
 
   export DISPLAY="${DISPLAY:-:0}"
@@ -157,11 +158,12 @@ open_kiosk() {
     export XAUTHORITY="/run/user/$(id -u)/gdm/Xauthority"
   fi
 
-  local profile="$HOME/.local/share/mcs-project-kiosk"
+  # A separate profile prevents forwarding to an already running Snap instance.
+  local profile="$HOME/.local/share/mcs-project-gpu"
   mkdir -p "$profile"
   log '打开项目封面并进入浏览器全屏模式。'
   nohup "$browser" --user-data-dir="$profile" --no-first-run \
-    --no-default-browser-check --new-window --kiosk \
+    --no-default-browser-check --new-window --start-fullscreen \
     https://localhost:3443/ >>"$LOG_DIR/chromium.log" 2>&1 </dev/null 8>&- 9>&- &
 }
 

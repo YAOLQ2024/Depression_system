@@ -32,7 +32,8 @@ from app.services.eeg_live_state_store import (
     write_eeg_turn_state_payload,
     write_eeg_turn_window_payload,
 )
-from app.services.eeg_explanation_math import freeze_input
+from app.services.eeg_explanation_math import M1_PIPELINE_VERSION, PIPELINE_VERSION, freeze_input
+from app.services.eeg_model_runtime import ModelRuntime, normalize_bundle
 from app.services.eeg_protocol import EEGPacketDecoder, FeaturePacket, MODEL_FEATURE_COUNT, WavePacket
 from app.services.object_storage import upload_object_to_bucket
 
@@ -50,7 +51,7 @@ EEG_TRANSPORT_READY_STATUSES = {
     "streaming",
     "waiting_for_stream",
 }
-EEG_SUPPORTED_NORM_MODES = {"none", "session_zscore"}
+EEG_SUPPORTED_NORM_MODES = {"none", "session_zscore", "independent_calibration"}
 EEG_DEFAULT_TRIAL_FEATURE_COMPONENTS = ("med", "std", "slope")
 EEG_WAVE_SEQ_MODULO = 1 << 16
 EEG_PREVIEW_SEQ_REORDER_TOLERANCE = 8
@@ -761,6 +762,8 @@ class EEGRuntimeService:
         self._model_sha256: str | None = None
         self._model_version: str | None = None
         self._model_loaded = False
+        self._m1_runtime: ModelRuntime | None = None
+        self._calibration_session_id: str | None = None
         self._live_update_callback: Callable[[str, dict[str, Any], dict[str, Any] | None], None] | None = None
         self._sync_transport_state_locked()
 
@@ -786,6 +789,26 @@ class EEGRuntimeService:
         self._norm_mode = "none"
         self._runtime_feature_source = "packet"
         self._all_feature_names = []
+        self._m1_runtime = None
+        self._calibration_session_id = None
+        self._window_feature_frames = self._window_seconds
+        self._min_feature_frames = max(1, int(get_settings()["eeg_min_feature_frames"]))
+
+    def _calibration_snapshot_locked(self, session_id: str | None = None) -> dict[str, Any]:
+        adapter = self._m1_runtime
+        if adapter is None:
+            return {"required": False, "status": "not_required", "collected_frames": 0,
+                    "target_frames": 0}
+        owns_calibration = (
+            self._calibration_session_id is not None
+            and (session_id is None or session_id == self._calibration_session_id)
+        )
+        return {
+            "required": True,
+            "status": ("ready" if adapter.calibrated else "collecting") if owns_calibration else "pending",
+            "collected_frames": len(adapter.calibration_rows) if owns_calibration else 0,
+            "target_frames": adapter.calibration_target,
+        }
 
     @staticmethod
     def _coerce_feature_name_list(values: Any) -> list[str]:
@@ -895,6 +918,10 @@ class EEGRuntimeService:
             "model_loaded": model_loaded,
             "model_name": self._model_name,
             "model_version": self._model_version,
+            "calibration": self._calibration_snapshot_locked(),
+            "classification_ready": model_loaded and (
+                self._m1_runtime is None or self._m1_runtime.calibrated
+            ),
             "channel_names": list(self._channel_names),
             "sampling_rate": self._sampling_rate,
             "transport_provider": self._transport_provider,
@@ -914,6 +941,9 @@ class EEGRuntimeService:
     def shutdown(self) -> None:
         with self._lock:
             self._active_binding = None
+            if self._m1_runtime is not None:
+                self._m1_runtime.reset_calibration()
+            self._calibration_session_id = None
             self._stop_provider_locked(clear_error=False)
 
     def set_live_update_callback(
@@ -941,6 +971,11 @@ class EEGRuntimeService:
                 return self._build_binding_status_payload_locked(active)
             if active is not None:
                 self._finish_binding_locked(active, reason="rebound")
+            if self._m1_runtime is not None and self._calibration_session_id != session_id:
+                # Calibration belongs to one participant/session, across its turns.
+                self._m1_runtime.reset_calibration()
+                self._calibration_session_id = session_id
+                self._decoder.reset()
             carryover_preview = self._load_preview_carryover_locked(session_id)
             carryover_results = self._load_result_carryover_locked(session_id)
             binding = EegTurnBinding(
@@ -1007,7 +1042,7 @@ class EEGRuntimeService:
             cached = self._memory_live_payloads.get(session_id)
             if cached is not None:
                 return cached
-            return self._build_pending_live_payload()
+            return self._build_pending_live_payload(session_id=session_id)
 
     def ingest_transport_bytes(self, chunk: bytes) -> None:
         with self._lock:
@@ -1054,7 +1089,7 @@ class EEGRuntimeService:
         try:
             model_bytes = model_path.read_bytes()
             self._model_sha256 = hashlib.sha256(model_bytes).hexdigest()
-            model_obj = pickle.loads(model_bytes)
+            model_obj = normalize_bundle(pickle.loads(model_bytes))
             self._clf = model_obj.get("model")
             self._scaler = model_obj.get("scaler")
             selected = model_obj.get("selected_features")
@@ -1133,6 +1168,11 @@ class EEGRuntimeService:
                     f":trial={len(self._trial_feature_names)}"
                 )
 
+            if self._norm_mode == "independent_calibration":
+                self._m1_runtime = ModelRuntime(model_obj)
+                self._window_feature_frames = self._m1_runtime.required_frames
+                self._min_feature_frames = self._m1_runtime.required_frames
+
             self._last_error = None
             return self._is_model_ready_locked()
         except Exception as exc:
@@ -1167,9 +1207,10 @@ class EEGRuntimeService:
             values=(float(packet.channels[0]), float(packet.channels[1]), float(packet.channels[2])),
         )
         current_window = binding.current_window
-        current_window.sample_started_at = current_window.sample_started_at or captured_at
-        current_window.sample_ended_at = captured_at
-        current_window.wave_samples.append(sample)
+        if self._m1_runtime is None or self._m1_runtime.calibrated:
+            current_window.sample_started_at = current_window.sample_started_at or captured_at
+            current_window.sample_ended_at = captured_at
+            current_window.wave_samples.append(sample)
         binding.last_sample_at = captured_at
         sample_payload = {
             "seq": sample.seq,
@@ -1199,6 +1240,16 @@ class EEGRuntimeService:
                 vector.size,
                 expected_count,
             )
+            return
+        if self._m1_runtime is not None and not self._m1_runtime.calibrated:
+            # These frames are independent of every classification window,
+            # including the final frame that completes calibration.
+            if not np.isfinite(vector).all():
+                logger.warning("Ignoring nonfinite EEG calibration frame")
+                return
+            self._m1_runtime.add_calibration(vector)
+            binding.last_sample_at = captured_at
+            self._write_binding_live_locked(binding)
             return
         feature_sample = EegFeatureSample(
             captured_at=captured_at,
@@ -1291,7 +1342,7 @@ class EEGRuntimeService:
         buffer = io.BytesIO()
         np.savez_compressed(
             buffer,
-            aggregate_vector=np.asarray((snapshot or {}).get("aggregate_vector", []), dtype=np.float32),
+            aggregate_vector=np.asarray((snapshot or {}).get("aggregate_vector", []), dtype=np.float64),
             scaled_vector=np.asarray((snapshot or {}).get("scaled_vector", []), dtype=np.float64),
             selected_indices=np.asarray((snapshot or {}).get("selected_indices", []), dtype=np.int32),
             model_sha256=np.array((snapshot or {}).get("model_sha256") or ""),
@@ -1339,6 +1390,12 @@ class EEGRuntimeService:
             return None
         if self._clf is None or self._scaler is None or self._selected_features is None:
             return None
+        if self._m1_runtime is not None and (
+            not self._m1_runtime.calibrated
+            or self._calibration_session_id != binding.session_id
+            or len(current_window.feature_samples) != self._m1_runtime.required_frames
+        ):
+            return None
 
         features_matrix = np.array(
             [sample.values for sample in current_window.feature_samples],
@@ -1355,13 +1412,16 @@ class EEGRuntimeService:
             current_window.quality_flags["nonfinite_features"] = True
             return None
         try:
-            normalized_matrix = _normalize_feature_rows(features_matrix, self._norm_mode).astype(
-                np.float32
-            )
-            model_input_vector = _aggregate_trial_vectors(
-                normalized_matrix,
-                components=self._trial_feature_components,
-            )
+            if self._m1_runtime is not None:
+                model_input_vector, scaled = self._m1_runtime.prepare(features_matrix)
+            else:
+                normalized_matrix = _normalize_feature_rows(features_matrix, self._norm_mode).astype(
+                    np.float32
+                )
+                model_input_vector = _aggregate_trial_vectors(
+                    normalized_matrix,
+                    components=self._trial_feature_components,
+                )
         except ValueError as exc:
             logger.warning("EEG feature aggregation failed: %s", exc)
             return None
@@ -1382,8 +1442,9 @@ class EEGRuntimeService:
                 model_input_vector.size,
             )
             return None
-        selected = model_input_vector[self._selected_features].reshape(1, -1)
-        scaled = self._scaler.transform(selected)
+        if self._m1_runtime is None:
+            selected = model_input_vector[self._selected_features].reshape(1, -1)
+            scaled = self._scaler.transform(selected)
         if not np.isfinite(scaled).all():
             current_window.quality_flags["nonfinite_features"] = True
             logger.warning("EEG scaled input contains nonfinite values")
@@ -1407,6 +1468,7 @@ class EEGRuntimeService:
             "_explanation_input": freeze_input(
                 model_sha256=self._model_sha256, feature_names=self._all_feature_names,
                 selected=self._selected_features.tolist(), aggregated=model_input_vector, scaled=scaled,
+                pipeline_version=M1_PIPELINE_VERSION if self._m1_runtime is not None else PIPELINE_VERSION,
             ),
             "device_status": self._device_status,
             "window_index": binding.window_index,
@@ -1573,7 +1635,10 @@ class EEGRuntimeService:
         latest_results = list(binding.latest_results)
         return {
             "eeg_live": {
-                "status": "ready" if binding.preview_buffer or latest_results else "pending",
+                "status": (
+                    "calibrating" if self._m1_runtime is not None and not self._m1_runtime.calibrated
+                    else "ready" if binding.preview_buffer or latest_results else "pending"
+                ),
                 "device_status": self._device_status,
                 "device_id": self._device_id,
                 "channel_names": list(self._channel_names),
@@ -1582,6 +1647,7 @@ class EEGRuntimeService:
                 "turn_id": binding.turn_id,
                 "model_name": self._model_name,
                 "model_version": self._model_version,
+                "calibration": self._calibration_snapshot_locked(binding.session_id),
                 "latest_result": latest_results[-1] if latest_results else None,
                 "latest_results": latest_results,
                 "error_message": self._last_error,
@@ -1594,7 +1660,7 @@ class EEGRuntimeService:
             },
         }
 
-    def _build_pending_live_payload(self) -> dict[str, Any]:
+    def _build_pending_live_payload(self, *, session_id: str | None = None) -> dict[str, Any]:
         return {
             "eeg_live": {
                 "status": "pending" if self._enabled else "disabled",
@@ -1606,6 +1672,7 @@ class EEGRuntimeService:
                 "turn_id": None,
                 "model_name": self._model_name,
                 "model_version": self._model_version,
+                "calibration": self._calibration_snapshot_locked(session_id),
                 "latest_result": None,
                 "latest_results": [],
                 "error_message": self._last_error,
@@ -1738,6 +1805,7 @@ class EEGRuntimeService:
             "transport_provider": self._transport_provider,
             "transport_status": self._transport_status,
             "model_loaded": self._is_model_ready_locked(),
+            "calibration": self._calibration_snapshot_locked(binding.session_id),
             "channel_names": list(self._channel_names),
             "sampling_rate": self._sampling_rate,
         }

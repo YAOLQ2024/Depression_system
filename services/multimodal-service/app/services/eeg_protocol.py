@@ -14,6 +14,25 @@ KEPT_FEATURE_INDICES = tuple(
     index for index in range(FEATURE_COUNT) if index not in FEATURE_DROPPED_INDICES
 )
 MODEL_FEATURE_COUNT = len(KEPT_FEATURE_INDICES)
+# Order of the 52 retained values in the hardware feature packet.
+MODEL_FEATURE_NAMES = (
+    "DE_T7_delta", "DE_T7_theta", "DE_T7_alpha", "DE_T7_beta", "DE_T7_gamma",
+    "DE_T8_delta", "DE_T8_theta", "DE_T8_alpha", "DE_T8_beta", "DE_T8_gamma",
+    "DE_Fpz_delta", "DE_Fpz_theta", "DE_Fpz_alpha", "DE_Fpz_beta", "DE_Fpz_gamma",
+    "APV_T7", "APV_T8", "APV_Fpz", "HFD_T7", "HFD_T8", "HFD_Fpz",
+    "log_theta_alpha_r_T7", "log_theta_alpha_r_T8", "log_theta_alpha_r_Fpz",
+    "rel_alpha_T7", "rel_alpha_T8",
+    "log_theta_beta_r_T7", "log_theta_beta_r_T8", "log_theta_beta_r_Fpz",
+    "PAC_T7_T7_delta_theta", "PAC_T7_T8_delta_theta", "PAC_T7_Fpz_delta_theta",
+    "PAC_T8_T7_delta_theta", "PAC_T8_T8_delta_theta", "PAC_T8_Fpz_delta_theta",
+    "PAC_Fpz_T7_delta_theta", "PAC_Fpz_T8_delta_theta", "PAC_Fpz_Fpz_delta_theta",
+    "AAC_T7_T7_delta_theta", "AAC_T7_T8_delta_theta",
+    "AAC_T8_T7_delta_theta", "AAC_T8_T8_delta_theta", "AAC_T8_Fpz_delta_theta",
+    "AAC_Fpz_T7_delta_theta", "AAC_Fpz_Fpz_delta_theta",
+    "PPC_T7_T7_delta_theta", "PPC_T7_T8_delta_theta", "PPC_T7_Fpz_delta_theta",
+    "PPC_T8_T7_delta_theta", "PPC_T8_T8_delta_theta", "PPC_T8_Fpz_delta_theta",
+    "PPC_Fpz_Fpz_delta_theta",
+)
 WAVE_PACKET_BYTES = 19
 FEATURE_PACKET_BYTES = 233
 

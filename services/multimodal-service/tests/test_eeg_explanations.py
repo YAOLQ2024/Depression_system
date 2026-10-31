@@ -44,7 +44,9 @@ def synthetic_assets(tmp_path, monkeypatch):
     # The real feature vocabulary / selection order, paired with a newly trained synthetic classifier.
     baseline_path = Path(__file__).resolve().parents[1] / 'runtime-assets/eeg/EEG_model.pkl'
     baseline = pickle.loads(baseline_path.read_bytes())
-    indices = list(map(int, baseline['selected_features']))
+    # The explanation worker's legacy 110-input contract is independent of
+    # the currently deployed M1 model, which selects all 156 aggregate values.
+    indices = list(map(int, baseline['selected_features']))[:110]
     names = baseline['trial_feature_names']
     rng = np.random.RandomState(29)
     train = rng.normal(size=(30, 110))
@@ -241,7 +243,8 @@ def test_runtime_window_persists_the_same_ids_and_scaled_input(database, monkeyp
     monkeypatch.setattr(runtime, '_ensure_provider_started_locked', lambda: None)
     monkeypatch.setattr(runtime, '_upload_raw_window', lambda *a, **k: None)
     runtime.begin_turn(session_id=session_id, turn_id='new-turn', flow_run_id=session_id, stage_id='test', question_key='test')
-    for i in range(10):
+    calibration_frames = (runtime._m1_runtime.calibration_target if runtime._m1_runtime else 0)
+    for i in range(calibration_frames + runtime._window_feature_frames):
         runtime.ingest_transport_bytes(build_feature_frame([float(np.sin(j*.17+i*.37)) for j in range(57)]))
     live = runtime.get_session_live_payload(session_id)['eeg_live']['latest_result']
     assert live['sample_id'] and live['inference_id'] and live['model_sha256']
@@ -249,9 +252,10 @@ def test_runtime_window_persists_the_same_ids_and_scaled_input(database, monkeyp
         record = db.get(MultimodalInferenceResult, live['inference_id'])
         assert record.sample_id == live['sample_id']
         snapshot = record.inference_payload['_explanation_input']
-        assert len(snapshot['aggregate_vector']) == 156 and len(snapshot['scaled_vector']) == 110
+        assert len(snapshot['aggregate_vector']) == 156
         model = pickle.loads(Path(get_settings()['eeg_model_path']).read_bytes())
-        vector = np.asarray(snapshot['aggregate_vector'], dtype=np.float32)[model['selected_features']].reshape(1, -1)
+        assert len(snapshot['scaled_vector']) == len(model['selected_features'])
+        vector = np.asarray(snapshot['aggregate_vector'], dtype=float)[model['selected_features']].reshape(1, -1)
         np.testing.assert_array_equal(model['scaler'].transform(vector).reshape(-1), snapshot['scaled_vector'])
     window = next(w for w in service.list_windows(session_id, 'alice')['items'] if w['inference_id'] == live['inference_id'])
     assert window['sample_id'] == live['sample_id'] and window['model_sha256'] == live['model_sha256']

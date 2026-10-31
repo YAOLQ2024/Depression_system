@@ -9,6 +9,7 @@ import numpy as np
 
 MAPPING_VERSION = "unique-channel-equal-split-v1"
 PIPELINE_VERSION = "window-zscore-mss-v1"
+M1_PIPELINE_VERSION = "independent-calibration-mss-v1"
 OUTPUT_KIND = "svc_ovr_decision_score"
 GROUPS = ("基础特征", "PAC", "AAC", "PPC")
 CHANNELS = ("Fpz", "T7", "T8")
@@ -35,11 +36,12 @@ def feature_mapping(names: list[str], selected: list[int]) -> list[dict]:
 
 
 def freeze_input(*, model_sha256: str | None, feature_names: list[str],
-                 selected: list[int], aggregated: np.ndarray, scaled: np.ndarray) -> dict:
+                 selected: list[int], aggregated: np.ndarray, scaled: np.ndarray,
+                 pipeline_version: str = PIPELINE_VERSION) -> dict:
     values = np.asarray(scaled).reshape(-1)
     if not np.isfinite(values).all():
         raise ValueError("nonfinite_model_input")
-    snapshot = {"model_sha256": model_sha256, "pipeline_version": PIPELINE_VERSION,
+    snapshot = {"model_sha256": model_sha256, "pipeline_version": pipeline_version,
                 "feature_names": [feature_names[i] for i in selected],
                 "selected_indices": selected, "aggregate_vector": aggregated.tolist(),
                 "scaled_vector": values.tolist()}

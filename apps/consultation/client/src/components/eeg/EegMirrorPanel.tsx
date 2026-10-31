@@ -98,7 +98,8 @@ export function EegMirrorPanel({
     "disconnected",
     "dependency_missing",
   ].includes(live.device_status || "");
-  const stale = !hasSignal || signalStale || resultStale || disconnected;
+  const calibrating = live.calibration?.required && live.calibration.status !== "ready";
+  const stale = calibrating || !hasSignal || signalStale || resultStale || disconnected;
   const status = disconnected
     ? "设备未连接"
     : !hasSignal
@@ -176,7 +177,9 @@ export function EegMirrorPanel({
             errorMessage={live.error_message}
           />
           <div className="eeg-mirror-result-time">
-            {latest?.primary_label
+            {calibrating
+              ? `正在校准 ${live.calibration!.collected_frames}/${live.calibration!.target_frames} 帧，完成后开始分类`
+              : latest?.primary_label
               ? formatEegInterval({
                   sample_started_at: latest.sample_started_at || null,
                   sample_ended_at: latest.sample_ended_at || null,
