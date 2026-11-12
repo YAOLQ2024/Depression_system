@@ -13,6 +13,7 @@ import {
 } from "../features/result-page";
 import { ConsultationLayout } from "../layouts";
 import { cn } from "../lib/utils";
+import { NEW_DOCTOR_PERSONA_ID } from "../lib/digitalHumanResources";
 import { APP_PATHS } from "../routes";
 import { getAssessmentScaleDetail } from "../services/api/assessment.api";
 import { getEncounterScaleHistory } from "../services/api/consultation.api";
@@ -270,6 +271,7 @@ export default function ResultPage() {
             <div ref={resultLayoutRef} className="result-page-layout flex h-full gap-3 lg:gap-[5px]">
               <div
                 data-portrait-hidden={counselorHidden || isDrawerOpen}
+                data-square-actor={state.user?.preparation_state?.assigned_doctor_persona === NEW_DOCTOR_PERSONA_ID}
                 className="result-counselor-pane hidden shrink-0 transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.1,0.15,1)] xl:block"
                 style={{
                   width: isDrawerOpen ? 0 : counselorPaneWidth,

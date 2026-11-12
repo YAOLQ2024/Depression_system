@@ -1,0 +1,16 @@
+{
+  "clips": 82,
+  "renamed_source_files": 77,
+  "duration_seconds": 412.276,
+  "width": 512,
+  "height": 512,
+  "fps": 25,
+  "video_codec": "vp9",
+  "audio_codec": "opus",
+  "alpha": true,
+  "full_audio_video_decode_passed": 82,
+  "last_frame_alpha_checked": 82,
+  "empty_last_frames": 0,
+  "original_project_videos_untouched": 166,
+  "source_files_equal_imported_sha256": 82
+}

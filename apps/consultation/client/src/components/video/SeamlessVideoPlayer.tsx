@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { cn } from "../../lib/utils";
+import { useSelectedDoctorPersona } from "../../app/ConsultationAppContext";
 import { getClipPlaybackEnd, getDigitalHumanLayout, resolveDigitalHumanSource, usePortraitOrientation } from "../../lib/digitalHumanResources";
 
 export type SeamlessVideoClip = {
@@ -125,6 +126,9 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
     ref,
   ) {
     const portrait = usePortraitOrientation();
+    const personaId = useSelectedDoctorPersona();
+    const personaIdRef = useRef(personaId);
+    personaIdRef.current = personaId;
     const portraitRef = useRef(portrait);
     portraitRef.current = portrait;
     const physicalSourceRef = useRef<Record<LayerId, string>>({ A: "", B: "" });
@@ -383,8 +387,8 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       } else {
         videoElement.removeAttribute("poster");
       }
-      physicalSourceRef.current[layerId] = resolveDigitalHumanSource(clip.src, portraitRef.current);
-      setLayerLayouts((layouts) => ({ ...layouts, [layerId]: getDigitalHumanLayout(clip.src, portraitRef.current) }));
+      physicalSourceRef.current[layerId] = resolveDigitalHumanSource(clip.src, portraitRef.current, personaIdRef.current);
+      setLayerLayouts((layouts) => ({ ...layouts, [layerId]: getDigitalHumanLayout(clip.src, portraitRef.current, personaIdRef.current) }));
       videoElement.src = physicalSourceRef.current[layerId];
       videoElement.load();
     });
@@ -433,6 +437,19 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       preloadClipRef.current = nextClip;
       // The spare decoder temporarily prepares the same node's other actor.
       if (orientationSwapRef.current || transitionTimerRef.current !== null) return;
+
+      // Current and preload props can advance in the same render. Let the
+      // incoming current clip become visible before using its decoder for preload.
+      const incomingLayerId = getOtherLayerId(activeLayerIdRef.current);
+      const desiredSignature = buildClipSignature(currentClipRef.current);
+      if (
+        desiredSignature &&
+        layerClipSignatureRef.current[incomingLayerId] === desiredSignature &&
+        layerClipSignatureRef.current[activeLayerIdRef.current] !== desiredSignature
+      ) {
+        emitStateChange();
+        return;
+      }
 
       // On the Jetson display Chromium currently composites in software. Keep
       // only the displayed 1080p clip loaded; the small transition delay is
@@ -531,7 +548,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
       const video = getVideoElement(from);
       const clip = layerClipRef.current[from];
       if (!clip || !video || buildClipSignature(clip) !== buildClipSignature(currentClipRef.current)) return;
-      const source = resolveDigitalHumanSource(clip.src, portrait);
+      const source = resolveDigitalHumanSource(clip.src, portrait, personaId);
       const pending = orientationSwapRef.current;
       if (source === physicalSourceRef.current[from]) {
         // A quick rotation back cancels the pending actor without touching the visible decoder.
@@ -566,7 +583,7 @@ export const SeamlessVideoPlayer = forwardRef<SeamlessVideoPlayerHandle, Seamles
         signature: buildClipSignature(clip), progress: completed ? 1 : progress,
         playing, metadataRestored: false,
       };
-    }, [portrait, activeLayerId, currentClip]);
+    }, [portrait, personaId, activeLayerId, currentClip]);
 
     const restoreOrientationPosition = useEffectEvent((layerId: LayerId) => {
       const restore = orientationRestoreRef.current[layerId];

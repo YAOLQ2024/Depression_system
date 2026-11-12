@@ -1,0 +1,52 @@
+/* The opt-in actor has a square, close-up recording. Never apply the old
+   full-body zoom or vertical offsets to this material. Legacy layers are untouched. */
+[data-digital-human-layout="square"] {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+[data-digital-human-layout="square"] video,
+:root .app-route-scope:is([data-app-route="/consultation"], [data-app-route="/scale-questionnaire"], [data-app-route="/result"], [data-app-route="/intervention"]) [data-digital-human-layout="square"] video {
+  position: static !important;
+  height: min(100%, 640px) !important;
+  width: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  flex-shrink: 0;
+  object-fit: contain;
+  object-position: center bottom;
+  transform: none !important;
+  scale: none !important;
+  translate: none !important;
+}
+
+.app-route-scope[data-app-route="/result"] .result-counselor [data-digital-human-layout="square"] video,
+.result-counselor[data-digital-human-fallback="square"] img {
+  width: min(100%, 512px) !important;
+  height: auto !important;
+  max-height: 100% !important;
+  object-fit: contain;
+  object-position: center bottom;
+  transform: none !important;
+  scale: none !important;
+  translate: none !important;
+}
+
+@media (orientation: portrait) {
+  .app-route-scope[data-app-route="/result"] .result-counselor-pane[data-square-actor="true"] {
+    right: 2vw;
+  }
+
+  :root .app-route-scope:is([data-app-route="/consultation"], [data-app-route="/scale-questionnaire"]) [data-digital-human-layout="square"] video {
+    height: min(100%, 85vw) !important;
+  }
+
+  :root .app-route-scope[data-app-route="/intervention"] [data-digital-human-layout="square"] video {
+    height: min(100%, 90vw) !important;
+  }
+
+  .home-page .home-portal-avatar-button[data-digital-human-layout="square"] {
+    height: 100%;
+  }
+}

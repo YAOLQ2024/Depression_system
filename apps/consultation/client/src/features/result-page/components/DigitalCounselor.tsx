@@ -7,6 +7,8 @@ import {
   type SeamlessVideoPlayerHandle,
 } from "../../../components/video";
 import { cn } from "../../../lib/utils";
+import { useSelectedDoctorPersona } from "../../../app/ConsultationAppContext";
+import { getDigitalHumanPoster, NEW_DOCTOR_PERSONA_ID, usePortraitOrientation } from "../../../lib/digitalHumanResources";
 
 interface DigitalCounselorProps {
   imageSrc?: string;
@@ -123,6 +125,8 @@ export function DigitalCounselor({
   overallSeverity,
   portraitHidden = false,
 }: DigitalCounselorProps) {
+  const personaId = useSelectedDoctorPersona();
+  const portrait = usePortraitOrientation();
   const playerRef = useRef<SeamlessVideoPlayerHandle | null>(null);
   const pausedByVisibilityRef = useRef(false);
   const [sequenceStep, setSequenceStep] = useState<"intro" | "severity">("intro");
@@ -185,9 +189,9 @@ export function DigitalCounselor({
 
   if (videoError) {
     return (
-      <div className={cn("flex h-full w-full items-end justify-center overflow-hidden", className)}>
+      <div data-digital-human-fallback={personaId === NEW_DOCTOR_PERSONA_ID ? "square" : undefined} className={cn("flex h-full w-full items-end justify-center overflow-hidden", className)}>
         <img
-          src={imageSrc}
+          src={getDigitalHumanPoster(portrait, personaId, imageSrc)}
           alt={title}
           className={RESULT_FALLBACK_IMAGE_CLASS_NAME}
           draggable={false}

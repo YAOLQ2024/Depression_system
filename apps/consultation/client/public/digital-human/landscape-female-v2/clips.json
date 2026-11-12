@@ -1,0 +1,503 @@
+{
+  "source_directory": "/home/nvidia/Documents/ZR/woman_videos_transparent",
+  "video_codec": "vp9",
+  "audio_codec": "opus",
+  "width": 512,
+  "height": 512,
+  "fps": 25,
+  "alpha": true,
+  "clips": [
+    {
+      "filename": "social-function-000.webm",
+      "original_filename": "0. social-function-000.webm",
+      "duration_seconds": 21.618,
+      "sha256": "64665cf257227c614d114047714add47d24728e7429c53f774609d71ef5b09d1"
+    },
+    {
+      "filename": "greeting-001.webm",
+      "original_filename": "1. greeting-001.webm",
+      "duration_seconds": 20.978,
+      "sha256": "cf3cc73982509cde3e7c42fadccb7c5f0773ffeeb9f5c9c9145a5e52c9f3b5a7"
+    },
+    {
+      "filename": "intervention-entry-001.webm",
+      "original_filename": "1. intervention-entry-001.webm",
+      "duration_seconds": 5.618,
+      "sha256": "bff187117d50cb914d0791f4805db9eaefcd53fa76909b8ae5e496cdd0cc1fcb"
+    },
+    {
+      "filename": "phq9-001.webm",
+      "original_filename": "1. phq9-001.webm",
+      "duration_seconds": 5.448,
+      "sha256": "e42d2cdd060894ac938d36140e5dff5441a0c6fe499ff2600e4907acd9962cf5"
+    },
+    {
+      "filename": "result-intro-001.webm",
+      "original_filename": "1. result-intro-001.webm",
+      "duration_seconds": 2.098,
+      "sha256": "709b9639e2e0f99b068357f23f0232438c371582375c45ae6056bca2db9f5e88"
+    },
+    {
+      "filename": "sas-001.webm",
+      "original_filename": "1. sas-001.webm",
+      "duration_seconds": 14.088,
+      "sha256": "a5e4ad4669576d71f396598baa12a68d5b4c3984bfc6b01bd4b866c6cb4a05d6"
+    },
+    {
+      "filename": "sds-001.webm",
+      "original_filename": "1. sds-001.webm",
+      "duration_seconds": 9.608,
+      "sha256": "541d716cc5cf7bbc5b627c587a1837db10a87862a3ca13af4a4817c905fe889d"
+    },
+    {
+      "filename": "social-function-001.webm",
+      "original_filename": "1. social-function-001.webm",
+      "duration_seconds": 1.928,
+      "sha256": "d46bd2ca6d42fa9f983044b0ffe5eccc5917781421c639a036535e88226c2d46"
+    },
+    {
+      "filename": "risk-screening-review-001.webm",
+      "original_filename": "10. risk-screening-review-001.webm",
+      "duration_seconds": 7.688,
+      "sha256": "62b52b576f59efceea373f8fdefbd6b5bc46a2713667002f05a37ef48dee403d"
+    },
+    {
+      "filename": "sas-010.webm",
+      "original_filename": "10. sas-010.webm",
+      "duration_seconds": 2.248,
+      "sha256": "eaa71f78c42481a156deee83d2ae180246517aa5655adce88bad1c981f6cdb4e"
+    },
+    {
+      "filename": "sds-010.webm",
+      "original_filename": "10. sds-010.webm",
+      "duration_seconds": 3.528,
+      "sha256": "43a8c10f8d61140344fc67546064fb73fbf53ba7afb7a028262e10d5f3d97920"
+    },
+    {
+      "filename": "social-function-010.webm",
+      "original_filename": "10. social-function-010.webm",
+      "duration_seconds": 1.928,
+      "sha256": "0b414191b1ff1039816629354440893753ce4d2308c2c34d77edabc6147af1d6"
+    },
+    {
+      "filename": "risk-screening-review-002.webm",
+      "original_filename": "11. risk-screening-review-002.webm",
+      "duration_seconds": 6.088,
+      "sha256": "2b694eea758202d54b4e93f8be16ca6c85c5be7651e20aafc5b47fe1a8340588"
+    },
+    {
+      "filename": "sas-011.webm",
+      "original_filename": "11. sas-011.webm",
+      "duration_seconds": 3.058,
+      "sha256": "a14a6dca529342ff39bfebfc2d3a4fa0aabfebfa7f4139057805e8b303c5f430"
+    },
+    {
+      "filename": "sds-011.webm",
+      "original_filename": "11. sds-011.webm",
+      "duration_seconds": 3.058,
+      "sha256": "2a31044cbb9652fefe2b9ab35ef4e27b1d84596caf241b3b401a7f51336246f3"
+    },
+    {
+      "filename": "risk-screening-002.webm",
+      "original_filename": "12. risk-screening-002.webm",
+      "duration_seconds": 4.168,
+      "sha256": "73b880edcacd25a25e85c7639feaf8329ad1c8d764f71310264cf85b41030ec7"
+    },
+    {
+      "filename": "sas-012.webm",
+      "original_filename": "12. sas-012.webm",
+      "duration_seconds": 3.528,
+      "sha256": "1fa86ea86a8b0ba42a819639143374d52e077d62e5d9bccd36f5d02c95c1308c"
+    },
+    {
+      "filename": "sds-012.webm",
+      "original_filename": "12. sds-012.webm",
+      "duration_seconds": 4.168,
+      "sha256": "7d82073c38ece47d1798401b750a2ce623365ad7926e0024c7ae1e0fdd2d5558"
+    },
+    {
+      "filename": "risk-screening-004.webm",
+      "original_filename": "13. risk-screening-004.webm",
+      "duration_seconds": 4.488,
+      "sha256": "0df0d8ff91ab22c7cb696caf66385da55e90dcf8ffce5cb417fb6fdeaee177d6"
+    },
+    {
+      "filename": "sas-013.webm",
+      "original_filename": "13. sas-013.webm",
+      "duration_seconds": 3.528,
+      "sha256": "002c8d917c33d9a274336a6ea6d2971ab6678e89c9eb301a96fc31744ec7477c"
+    },
+    {
+      "filename": "sds-013.webm",
+      "original_filename": "13. sds-013.webm",
+      "duration_seconds": 4.018,
+      "sha256": "ca9aa0678e3a169109b98e36898c581fec4ce108d22f7471f3551f6257233921"
+    },
+    {
+      "filename": "risk-screening-005.webm",
+      "original_filename": "14. risk-screening-005.webm",
+      "duration_seconds": 12.018,
+      "sha256": "1eeec627050a5b87dc03ca1607f4d188ab5f33d2f63c5b423e5c978887560961"
+    },
+    {
+      "filename": "sas-014.webm",
+      "original_filename": "14. sas-014.webm",
+      "duration_seconds": 2.568,
+      "sha256": "dbab43c0dc862a67d4bfad7de22f9aad8f0afd4f8c22cc3c2576ce6931005945"
+    },
+    {
+      "filename": "sds-014.webm",
+      "original_filename": "14. sds-014.webm",
+      "duration_seconds": 2.888,
+      "sha256": "ee655076c9f9e58b1ded45f35be7fa0a7161c3e28328a0bd9a356893ffbd546e"
+    },
+    {
+      "filename": "handoff-001.webm",
+      "original_filename": "15. handoff-001.webm",
+      "duration_seconds": 28.018,
+      "sha256": "c3f9c8391faa418de17ec761150f921a17ebd1c9c20197d2f352a751dcab0ed8"
+    },
+    {
+      "filename": "sas-015.webm",
+      "original_filename": "15. sas-015.webm",
+      "duration_seconds": 3.848,
+      "sha256": "fa67da8ec62059c769ff4f4d77d9203da73cb9e1fae73beb5839e3d3aced4708"
+    },
+    {
+      "filename": "sds-015.webm",
+      "original_filename": "15. sds-015.webm",
+      "duration_seconds": 2.418,
+      "sha256": "289bebb4850906d985625e7b16ea13149a57f0e4e15a1bfcd55d735b7e54df40"
+    },
+    {
+      "filename": "sas-016.webm",
+      "original_filename": "16. sas-016.webm",
+      "duration_seconds": 1.458,
+      "sha256": "8261a3b18de4b6be18ea0df3ed4a2784172ec568467560aa4a4d472f940dfa29"
+    },
+    {
+      "filename": "sds-016.webm",
+      "original_filename": "16. sds-016.webm",
+      "duration_seconds": 2.738,
+      "sha256": "19c02d8045087c3195f7962c1ffffa6c43bf08108eaa9667201fae9f0bd4572f"
+    },
+    {
+      "filename": "sas-017.webm",
+      "original_filename": "17. sas-017.webm",
+      "duration_seconds": 3.058,
+      "sha256": "342d15f07048736827cb7029acdad90995bdd60e573e878330fb368490c2c134"
+    },
+    {
+      "filename": "sds-017.webm",
+      "original_filename": "17. sds-017.webm",
+      "duration_seconds": 4.018,
+      "sha256": "c8994687ed20862a72bdb0fb537e229cb00ce4d36ffe56b8575ec2a6c6a3623d"
+    },
+    {
+      "filename": "sas-018.webm",
+      "original_filename": "18. sas-018.webm",
+      "duration_seconds": 1.608,
+      "sha256": "8b44cdd90a8714931ee69bf73f8e8817bd516a0004911cd45124763873817ce7"
+    },
+    {
+      "filename": "sds-018.webm",
+      "original_filename": "18. sds-018.webm",
+      "duration_seconds": 1.928,
+      "sha256": "6dfe3b4dbc5fac74e4d562f14f29ac9554d9b60134f5fdeb4ff9b69259157c72"
+    },
+    {
+      "filename": "sas-019.webm",
+      "original_filename": "19. sas-019.webm",
+      "duration_seconds": 3.528,
+      "sha256": "bcb44387b013cf8eaf0bd9deee1bdff0eac421c8fa88450ae9e54a5dfad6c8f3"
+    },
+    {
+      "filename": "sds-019.webm",
+      "original_filename": "19. sds-019.webm",
+      "duration_seconds": 3.698,
+      "sha256": "930394606ea20e66e98766bfc5fbb1dfe34513a7c99203fa0cbb808ef93148aa"
+    },
+    {
+      "filename": "chief-complaint-001.webm",
+      "original_filename": "2. chief-complaint-001.webm",
+      "duration_seconds": 3.378,
+      "sha256": "4d5b1f91597472d28f8547255bb98401175d01ab1212bcd7d60a95c79d2f9fbb"
+    },
+    {
+      "filename": "phq9-002.webm",
+      "original_filename": "2. phq9-002.webm",
+      "duration_seconds": 6.578,
+      "sha256": "6d64147d5dd64451cdf6125d775d3baf5677a06e3545f233daef891a22745931"
+    },
+    {
+      "filename": "sas-002.webm",
+      "original_filename": "2. sas-002.webm",
+      "duration_seconds": 2.888,
+      "sha256": "29452c557e991997cb7f066355b4380703528aedd33adc8d5f3610bb9d5ba24f"
+    },
+    {
+      "filename": "sds-002.webm",
+      "original_filename": "2. sds-002.webm",
+      "duration_seconds": 3.058,
+      "sha256": "46518a140d1018476a10e593a5e307d690f3335132889634bc05cd5e52e92ba7"
+    },
+    {
+      "filename": "social-function-002.webm",
+      "original_filename": "2. social-function-002.webm",
+      "duration_seconds": 1.608,
+      "sha256": "44caff2175a0f3af85d23ec8572bd0258b5430a26e55ca4704b7dca5f013e46b"
+    },
+    {
+      "filename": "sas-020.webm",
+      "original_filename": "20. sas-020.webm",
+      "duration_seconds": 1.288,
+      "sha256": "ddb76b537fe43affbecbd8c146ce55e65f619e894863fb112bb5c0141ab7e9c2"
+    },
+    {
+      "filename": "sds-020.webm",
+      "original_filename": "20. sds-020.webm",
+      "duration_seconds": 3.698,
+      "sha256": "074e8e905db119890aa0b29dbe462d7019a5e899d89fcffa8d5e1d304d008057"
+    },
+    {
+      "filename": "chief-complaint-001-else.webm",
+      "original_filename": "3. chief-complaint-001-else.webm",
+      "duration_seconds": 10.098,
+      "sha256": "b7a5a2e2f9f9b5a1c60b27d38bd76f07af9e51c470d2764870782976ff0f8efa"
+    },
+    {
+      "filename": "phq9-003.webm",
+      "original_filename": "3. phq9-003.webm",
+      "duration_seconds": 6.258,
+      "sha256": "ded1f26ecc03189984274c2b157344b3d9fbe7241045c10a2f17f0d709b719f4"
+    },
+    {
+      "filename": "sas-003.webm",
+      "original_filename": "3. sas-003.webm",
+      "duration_seconds": 2.568,
+      "sha256": "447efb587ffed2d3f958f5e294e9664bbafa82134853c59b88edddff4e3dca73"
+    },
+    {
+      "filename": "sds-003.webm",
+      "original_filename": "3. sds-003.webm",
+      "duration_seconds": 2.568,
+      "sha256": "3b50e35db8c8f3c1134259188c922c7575ed32f57c1e360d9fcdc37ca0147835"
+    },
+    {
+      "filename": "social-function-003.webm",
+      "original_filename": "3. social-function-003.webm",
+      "duration_seconds": 1.458,
+      "sha256": "2bff83c06f8ed50159bbd3116216d7e6ca3be45893faa16ac1f18082745719ef"
+    },
+    {
+      "filename": "chief-complaint-002.webm",
+      "original_filename": "4. chief-complaint-002.webm",
+      "duration_seconds": 4.658,
+      "sha256": "e2a8a39ab3116aaa77392f412e9f37c5a71784232829aa1b3daaac7db565a11c"
+    },
+    {
+      "filename": "phq9-004.webm",
+      "original_filename": "4. phq9-004.webm",
+      "duration_seconds": 5.448,
+      "sha256": "d9a92b63667f805f917eb8e2c05f94a7be1e51f30da3446c46cba933e18d9c83"
+    },
+    {
+      "filename": "sas-004.webm",
+      "original_filename": "4. sas-004.webm",
+      "duration_seconds": 3.058,
+      "sha256": "6cdc768c492bb4a75df9cb1dc4082d1d87d262f1fe34b164301fe598fb555427"
+    },
+    {
+      "filename": "sds-004.webm",
+      "original_filename": "4. sds-004.webm",
+      "duration_seconds": 2.418,
+      "sha256": "cba71f686260bed9b12d3833b8ee2657950d12d072427e2a8aea5883bf890363"
+    },
+    {
+      "filename": "social-function-004.webm",
+      "original_filename": "4. social-function-004.webm",
+      "duration_seconds": 1.778,
+      "sha256": "25064f42f7b05c4969a376fbbf5b56dcef452449c382410086391337d46528d3"
+    },
+    {
+      "filename": "chief-complaint-003.webm",
+      "original_filename": "5. chief-complaint-003.webm",
+      "duration_seconds": 9.928,
+      "sha256": "9d42a55a5a25bac50641452091b8b5a38330b5ca59d69ee323109565913cb66f"
+    },
+    {
+      "filename": "phq9-005.webm",
+      "original_filename": "5. phq9-005.webm",
+      "duration_seconds": 5.768,
+      "sha256": "4d1746f876f524fe20d2ef48614c9eb144fb742830b72225e2a045dcce4d6da1"
+    },
+    {
+      "filename": "sas-005.webm",
+      "original_filename": "5. sas-005.webm",
+      "duration_seconds": 4.808,
+      "sha256": "88b6210c30dfe7026ebbd2c5db2a78041432714b0a92ba3c50d19ca9db1f76c2"
+    },
+    {
+      "filename": "sds-005.webm",
+      "original_filename": "5. sds-005.webm",
+      "duration_seconds": 2.738,
+      "sha256": "a542d14eaacf894f4b0548fe2f5abbfd7178f69e37b3ed7ccc240d6d02c1763f"
+    },
+    {
+      "filename": "social-function-005.webm",
+      "original_filename": "5. social-function-005.webm",
+      "duration_seconds": 2.418,
+      "sha256": "f0c2ae30fb936e4a96659b1aa074888623c19096db15b056811fbc8042b3734d"
+    },
+    {
+      "filename": "phq9-006.webm",
+      "original_filename": "6. phq9-006.webm",
+      "duration_seconds": 8.178,
+      "sha256": "1ed5535b3e8a3e6e0b829ad8b3a0c1ab95ced4426b070a971cbc509fa5a19b22"
+    },
+    {
+      "filename": "sas-006.webm",
+      "original_filename": "6. sas-006.webm",
+      "duration_seconds": 2.568,
+      "sha256": "6ddabac03e3655eac25f0e6211e887b878af80e70bef80d253b6aa00d06f03ef"
+    },
+    {
+      "filename": "sds-006.webm",
+      "original_filename": "6. sds-006.webm",
+      "duration_seconds": 5.298,
+      "sha256": "7364c39090a5f1e7754824e233a084f8dd06907d886ca1d4bc3694ae5f0b52c4"
+    },
+    {
+      "filename": "social-function-006.webm",
+      "original_filename": "6. social-function-006.webm",
+      "duration_seconds": 2.248,
+      "sha256": "761b5e058e34b255bf6f7661d1d9c2621d89a2a683a32e584491872c463a6003"
+    },
+    {
+      "filename": "symptom-screening-001.webm",
+      "original_filename": "6. symptom-screening-001.webm",
+      "duration_seconds": 4.338,
+      "sha256": "af19ad45350b119efc72b59f21dcc4d6f362e96fbd1a82d3ae4f4e0a66224a15"
+    },
+    {
+      "filename": "phq9-007.webm",
+      "original_filename": "7. phq9-007.webm",
+      "duration_seconds": 9.138,
+      "sha256": "4795a4974a280696b0f3f2860804ecef25d75726c39245b305578f37b209d08c"
+    },
+    {
+      "filename": "sas-007.webm",
+      "original_filename": "7. sas-007.webm",
+      "duration_seconds": 4.168,
+      "sha256": "b53a65576061b347a1fb174a912690f448b71a767ade7c3c046c4850081356ff"
+    },
+    {
+      "filename": "sds-007.webm",
+      "original_filename": "7. sds-007.webm",
+      "duration_seconds": 2.098,
+      "sha256": "20791517d55949cab84a1f18e1f57402264392d7e22eb565b460cc90f1c60f86"
+    },
+    {
+      "filename": "social-function-007.webm",
+      "original_filename": "7. social-function-007.webm",
+      "duration_seconds": 1.928,
+      "sha256": "12578e0ccdc4156c4491ec5363a505bec074dd9222dae8844986bc3a0a452cc3"
+    },
+    {
+      "filename": "symptom-screening-002.webm",
+      "original_filename": "7. symptom-screening-002.webm",
+      "duration_seconds": 10.738,
+      "sha256": "a9761479e498eb49309e002cc8d2c02703001ebf2d2d808fe1e398e0acba2d18"
+    },
+    {
+      "filename": "phq9-008.webm",
+      "original_filename": "8. phq9-008.webm",
+      "duration_seconds": 12.018,
+      "sha256": "2621d25b23cafd3404574e510a0905252d68c7afb299bc1105519297428d8c51"
+    },
+    {
+      "filename": "sas-008.webm",
+      "original_filename": "8. sas-008.webm",
+      "duration_seconds": 2.568,
+      "sha256": "a5ae9eb38300db3b0e39c9e2822f8a6072fc0780bf358da9d924fb045db73c4a"
+    },
+    {
+      "filename": "sds-008.webm",
+      "original_filename": "8. sds-008.webm",
+      "duration_seconds": 2.568,
+      "sha256": "5c32f62b5beaf27b371aee5be813db06fcc61ffe3560da3793613e409f806140"
+    },
+    {
+      "filename": "social-function-008.webm",
+      "original_filename": "8. social-function-008.webm",
+      "duration_seconds": 1.928,
+      "sha256": "0be9d3333728c4b8ea55e9f6c337fb1b60e08e972c53085a06a14b8b4efee4be"
+    },
+    {
+      "filename": "symptom-screening-003.webm",
+      "original_filename": "8. symptom-screening-003.webm",
+      "duration_seconds": 10.738,
+      "sha256": "1a8416708c3d93d9c06ddbfa33ccd548823e30cd9604d4cf948e5cddf6d44c2d"
+    },
+    {
+      "filename": "phq9-009.webm",
+      "original_filename": "9. phq9-009.webm",
+      "duration_seconds": 7.368,
+      "sha256": "f95c5b1cc4bbe5f0fd2a3b46e9002c479ad129e848ace6868c367f7a214f2816"
+    },
+    {
+      "filename": "risk-screening-001.webm",
+      "original_filename": "9. risk-screening-001.webm",
+      "duration_seconds": 3.698,
+      "sha256": "705041785348199b1f0c7c4a07a5ae69aa4f0d37b6cd5d23e20a57851e2ca609"
+    },
+    {
+      "filename": "sas-009.webm",
+      "original_filename": "9. sas-009.webm",
+      "duration_seconds": 3.848,
+      "sha256": "34eb4558018b64bbfe2064f69783130a07fd56311fa884aa2bbde0eb80cdfd81"
+    },
+    {
+      "filename": "sds-009.webm",
+      "original_filename": "9. sds-009.webm",
+      "duration_seconds": 2.738,
+      "sha256": "cc5a61d441538b188e1171f0477835651dd6f8f6256248153d2265b0751a0f83"
+    },
+    {
+      "filename": "social-function-009.webm",
+      "original_filename": "9. social-function-009.webm",
+      "duration_seconds": 2.568,
+      "sha256": "57ef5bbbed9812865bf39df62abadaf7c8713c95c03ac129f82336cab953b132"
+    },
+    {
+      "filename": "answer-option-reminder-001.webm",
+      "original_filename": "answer-option-reminder-001.webm",
+      "duration_seconds": 2.738,
+      "sha256": "635e21a27e162c5c385916002e0f3e2c24895c9f19497c195dc710f1a41a53a9"
+    },
+    {
+      "filename": "result-severity-mild-001.webm",
+      "original_filename": "result-severity-mild-001.webm",
+      "duration_seconds": 4.018,
+      "sha256": "2264c7bfbdef61c0d8dd85baefa8abdc8973236b9134a953e6ba62a5daff02c9"
+    },
+    {
+      "filename": "result-severity-moderate-001.webm",
+      "original_filename": "result-severity-moderate-001.webm",
+      "duration_seconds": 3.058,
+      "sha256": "f995c1993a5ab1d2b38348305a674ef8d769899041017c3833133f0f42fd2494"
+    },
+    {
+      "filename": "result-severity-none-001.webm",
+      "original_filename": "result-severity-none-001.webm",
+      "duration_seconds": 3.058,
+      "sha256": "0bceb047c9f36b98e317cce1011664c9d5965d346776cb45c4df7f3b78573564"
+    },
+    {
+      "filename": "result-severity-severe-001.webm",
+      "original_filename": "result-severity-severe-001.webm",
+      "duration_seconds": 3.528,
+      "sha256": "db1b8539cf0a633c7dd947784b004d1762aa84aa0f298ec1d2cf026c9127853a"
+    }
+  ]
+}

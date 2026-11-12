@@ -1,5 +1,7 @@
 import { motion } from "motion/react";
 import { CometOrbit } from "./CometOrbit";
+import { useSelectedDoctorPersona } from "../../app/ConsultationAppContext";
+import { getDigitalHumanPoster, NEW_DOCTOR_PERSONA_ID } from "../../lib/digitalHumanResources";
 
 type HomePortalProps = {
   activeMenuTitle: string;
@@ -8,6 +10,7 @@ type HomePortalProps = {
 
 /** The original avatar placement with the AI Studio dual-track comet orbit. */
 export function HomePortal({ activeMenuTitle, onAvatarClick }: HomePortalProps) {
+  const personaId = useSelectedDoctorPersona();
   return (
     <div className="pointer-events-none relative flex h-full w-full select-none items-center justify-start">
       <div className="home-portal-ring relative mt-[4vh] aspect-square w-[52vw] min-w-[720px] max-w-[940px] -ml-[8vw] sm:-ml-[6vw]">
@@ -21,14 +24,15 @@ export function HomePortal({ activeMenuTitle, onAvatarClick }: HomePortalProps) 
               type="button"
               onClick={onAvatarClick}
               className="home-portal-avatar-button relative h-[89%] cursor-pointer focus:outline-none"
+              data-digital-human-layout={personaId === NEW_DOCTOR_PERSONA_ID ? "square" : undefined}
               animate={{ y: [0, -5, 0] }}
               transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
               title={`进入${activeMenuTitle}`}
             >
               <picture className="block h-full">
-                  <source media="(orientation: portrait)" srcSet="/digital-human/portrait-male-v1/portrait-male-poster.png" />
+                  <source media="(orientation: portrait)" srcSet={getDigitalHumanPoster(true, personaId)} />
                   <img
-                src="/home-digital-human.png"
+                src={getDigitalHumanPoster(false, personaId)}
                 alt="数字人心理助手"
                 fetchPriority="high"
                 className="h-full w-auto max-w-none object-contain object-bottom drop-shadow-[0_28px_48px_rgba(15,23,42,0.26)]"

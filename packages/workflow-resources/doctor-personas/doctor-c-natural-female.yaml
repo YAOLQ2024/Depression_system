@@ -1,0 +1,13 @@
+version: 1
+persona_id: doctor-c-natural-female
+display_name: 新女医生
+role_title: 数字心理问诊医生
+voice_style: natural_female_cn
+tone_style: 自然、亲切、平稳
+interaction_mode: voice_first
+supported_workflows:
+  - consultation-v1
+supported_script_bundle: rule-v1
+notes:
+  - 仅在用户明确选择此角色时使用新素材，不改变原有角色的默认横竖屏行为
+  - 视频资源位于 /digital-human/landscape-female-v2/，共 82 段，512×512 透明 WebM

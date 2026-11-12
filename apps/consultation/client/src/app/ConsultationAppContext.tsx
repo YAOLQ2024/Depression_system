@@ -22,3 +22,8 @@ export function useConsultationAppContext() {
 
   return value;
 }
+
+/** Use the user's saved choice, so loading historical sessions never changes the actor. */
+export function useSelectedDoctorPersona() {
+  return useContext(ConsultationAppContext)?.state.user?.preparation_state?.assigned_doctor_persona ?? null;
+}

@@ -27,6 +27,7 @@ import {
 import { ConsultationLayout } from "../layouts";
 import { useTimedToast } from "../lib/useTimedToast";
 import { cn } from "../lib/utils";
+import { getDigitalHumanPoster } from "../lib/digitalHumanResources";
 import { APP_PATHS } from "../routes";
 import type { UpdateUserProfilePayload } from "../services/api/contracts";
 
@@ -274,6 +275,7 @@ export default function PreparationPage() {
   const [dataConsentConfirmedAt, setDataConsentConfirmedAt] = useState<string | null>(null);
   const [selectedDoctorPersonaId, setSelectedDoctorPersonaId] = useState<string | null>(null);
   const [doctorSelectedAt, setDoctorSelectedAt] = useState<string | null>(null);
+  const [isSavingDoctorPersona, setIsSavingDoctorPersona] = useState(false);
   const [formData, setFormData] = useState<PreparationFormData>(EMPTY_PROFILE);
   const [formError, setFormError] = useState("");
 
@@ -458,6 +460,7 @@ export default function PreparationPage() {
   };
 
   const handleSelectDoctorPersona = async () => {
+    if (isSavingDoctorPersona) return;
     if (!doctorPersonas.length) {
       pushToast("医生风格仍在加载，请稍后再试。", "error");
       return;
@@ -471,6 +474,7 @@ export default function PreparationPage() {
 
     setSelectedDoctorPersonaId(nextPersona.persona_id);
     setDoctorSelectedAt(selectedAt);
+    setIsSavingDoctorPersona(true);
     try {
       await persistPreparationState({
         assignedDoctorPersona: nextPersona.persona_id,
@@ -481,6 +485,8 @@ export default function PreparationPage() {
       setSelectedDoctorPersonaId(previousDoctorPersonaId);
       setDoctorSelectedAt(previousDoctorSelectedAt);
       pushToast(caught instanceof Error ? caught.message : "保存医生选择失败，请重试。", "error");
+    } finally {
+      setIsSavingDoctorPersona(false);
     }
   };
 
@@ -677,18 +683,21 @@ export default function PreparationPage() {
                 </div>
               </div>
 
-              <div
+              <button
+                type="button"
+                disabled={isSavingDoctorPersona}
+                aria-label={`切换数字医生，当前${displayedDoctorPersona?.display_name || "未选择"}`}
                 onClick={() => void handleSelectDoctorPersona()}
                 className={cn(
-                  "preparation-doctor bg-white/28 border rounded-2xl p-4 flex gap-4 items-center shrink-0 w-full sm:w-auto mt-4 md:mt-0 transition-all cursor-pointer [backdrop-filter:blur(20px)_saturate(130%)]",
+                  "preparation-doctor bg-white/28 border rounded-2xl p-4 flex gap-4 items-center shrink-0 w-full sm:w-auto mt-4 md:mt-0 transition-all cursor-pointer text-left disabled:opacity-70 [backdrop-filter:blur(20px)_saturate(130%)]",
                   isDoctorSelected ? "border-blue-400 ring-2 ring-blue-500/50" : "border-white/10 hover:border-white/30",
                 )}
               >
                 <picture className="shrink-0">
-                  <source media="(orientation: portrait)" srcSet="/digital-human/portrait-male-v1/portrait-male-poster.png" />
+                  <source media="(orientation: portrait)" srcSet={getDigitalHumanPoster(true, selectedDoctorPersonaId)} />
                   <img
-                  src="/home-digital-human.png"
-                  alt="Doctor"
+                  src={getDigitalHumanPoster(false, selectedDoctorPersonaId)}
+                  alt={displayedDoctorPersona?.display_name || "数字医生"}
                   className="w-14 h-14 rounded-full object-cover border-2 border-blue-400/50"
                 />
                 </picture>
@@ -704,7 +713,7 @@ export default function PreparationPage() {
                   </div>
                   {doctorSelectedAtText ? <div className="text-slate-500 text-[11px] mt-1">上次确认：{doctorSelectedAtText}</div> : null}
                 </div>
-              </div>
+              </button>
             </div>
           </div>
         </div>

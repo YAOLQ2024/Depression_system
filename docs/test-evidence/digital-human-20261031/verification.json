@@ -1,0 +1,48 @@
+{
+  "checks": [
+    "Actual preparation selector cycles through all three personas and saves the explicit new selection",
+    "Saved new selection survives reload in isolated fixture storage",
+    "New actor remains square and uncropped; rotation preserves paused playback position without changing actors",
+    "New scale clip ignores old trim, reaches its own full duration, and rotation does not repeat completion",
+    "Preloaded next question switches to the new actor correctly",
+    "Real result component advances intro to severity with new durations and square layout in both orientations",
+    "Intervention entry uses the selected new actor in both orientations",
+    "Home preview follows explicit new selection in both orientations",
+    "Switching back restores original landscape female and portrait male assets",
+    "Failed selection save rolls back the preview and preserves the saved preference",
+    "Performance mode also advances between new actor questions without aborting the next video"
+  ],
+  "runtime_errors": [],
+  "landscape_box": {
+    "width": 640,
+    "height": 640,
+    "top": 440,
+    "time": 0.291124,
+    "src": "https://localhost:3443/digital-human/landscape-female-v2/greeting-001.webm",
+    "transform": "none"
+  },
+  "portrait_box": {
+    "width": 918,
+    "height": 918,
+    "top": 522,
+    "bottom": 1440,
+    "left": 81,
+    "right": 999
+  },
+  "result_box": {
+    "width": 512,
+    "height": 512,
+    "top": 568,
+    "src": "https://localhost:3443/digital-human/landscape-female-v2/result-severity-mild-001.webm",
+    "duration": 4.018
+  },
+  "result_portrait_box": {
+    "width": 367.1875,
+    "height": 367.1875,
+    "top": 896.390625,
+    "bottom": 1263.578125,
+    "left": 615.625,
+    "right": 982.8125
+  },
+  "fixture": "Isolated synthetic user and storage; real preparation UI, shared player, home portal and result component. No real patient data changed."
+}

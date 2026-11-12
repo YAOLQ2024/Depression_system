@@ -1,0 +1,158 @@
+{
+  "checked_at_local": "2026-10-31T14:08:20.007212+08:00",
+  "replaced_containers": [
+    "mcs-jetson-consultation-1"
+  ],
+  "containers": {
+    "mcs-jetson-multimodal-service-1": {
+      "id": "270fcfae938d11d506ec3472f12dda8d8bcba5d963a73a2c84cd4f6ef17ccb84",
+      "image": "sha256:df29ca99e9b113c5c5abb244e615da84ced5be3cdf25c19f5956475c4e8c26c9",
+      "health": "healthy"
+    },
+    "mcs-jetson-consultation-1": {
+      "id": "fb70ee10ecc615223ca2ef38b266411c61495f0e6e13f18d517a8a92e0102d85",
+      "image": "sha256:3a0140f0c0e6c1d6c906d1b04dfad0de1cff776330c134bcc62d4883a3943b55",
+      "health": null
+    },
+    "mcs-jetson-gateway-service-1": {
+      "id": "7117d0c7d2d56d9b7628cc4b3cbb8376c4fee9aa3faf867b11a2d57d23382ad3",
+      "image": "sha256:7fef564b2acb2afe875698073d100cea66aca4d4ea5b1997c2244e1a26ec69bb",
+      "health": "healthy"
+    },
+    "mcs-jetson-eeg-bridge-1": {
+      "id": "dafc80ca50de488f47697f144fba63a13e2be85b0f0527316b1ab9b974e2e3da",
+      "image": "sha256:8073546c9fcb2fb42e50b81c35f95dc52a6e9381a1ca3d7e60eb0bff13f3f35d",
+      "health": "healthy"
+    },
+    "mcs-jetson-caddy-1": {
+      "id": "fdfa766665db95997c60bce363d5ed29e422d44a03fd799688a44288b5482ee4",
+      "image": "sha256:8f5619aac3ed45304632491507becd99711bcaed375aee3e6317c7b703902969",
+      "health": null
+    },
+    "mcs-jetson-operations-console-1": {
+      "id": "302ef8ce08e4b57be3b8f743cae0cfcab7ed5db81e1ac54bc01e53bee4e00f1c",
+      "image": "sha256:10d54bebe4f3d32a02bae46ef1a6ac3ba70574c7bf967107c9483fc633b2c91f",
+      "health": null
+    },
+    "mcs-jetson-risk-service-1": {
+      "id": "96efe6e6c3c0112f4fa2007904b413aa02fd84e9990079011116796343e9c3e4",
+      "image": "sha256:d739f7b4e4b238cbef4d3c9e3e08a522a78854f8f265338e570d71873925ee78",
+      "health": "healthy"
+    },
+    "mcs-jetson-assessment-service-1": {
+      "id": "e6a8916b15246d3ed6d860869d9ffc13a6b033fefea6e23475d2518888a5e39c",
+      "image": "sha256:a76203db891262628de6a2294289c32ab1ce5f739a77c9f1c3f9c80981a0bbf5",
+      "health": "healthy"
+    },
+    "mcs-jetson-consultation-service-1": {
+      "id": "e8177db8733457d27bec5e9413d3b400e46a44c5d0a700cf6ee238529aa9d9e3",
+      "image": "sha256:dfef4a66f7a993fa2f273f9d810a7a792c75b7e4d7619bd14c54a5ffb6da4cee",
+      "health": "healthy"
+    },
+    "mcs-jetson-minio-1": {
+      "id": "07de9c0b5a4e90aa4e41fca57c75bd7364fcd9feca2e49575c0ba93f28891521",
+      "image": "sha256:0b5146fb476d202800c54dd712128bd9a6bade8340ec81e037c39b4169336466",
+      "health": null
+    },
+    "mcs-jetson-identity-service-1": {
+      "id": "8d9c5bf558cb5458df6c6540ef2448220c1dbf8bb5ec3dc8d5b6629a3e40acc9",
+      "image": "sha256:c31f4d50a0f5ab24b6b870e18c0c7ab41c09b2a4bd23a0da00c3df4396c8eb5b",
+      "health": "healthy"
+    },
+    "mcs-jetson-intervention-service-1": {
+      "id": "2cdbbefc7147a3f6e456d94f1b32acb06d0933938213433848e84d3ffe7c977c",
+      "image": "sha256:d349190c6763438036cc5bf4117fabd6142f48c3d6e4bc9ae8b3bf234e0dd9b2",
+      "health": "healthy"
+    },
+    "mcs-jetson-followup-service-1": {
+      "id": "9b8a8d32450d9dc6d3daec1451efb7cec9c7f9b93b72762e91b4b48ec15cad51",
+      "image": "sha256:dfe9bd2f4a64b6095b54fee6b98abbcd2a7e1df502d01e8d342324d50ce8015c",
+      "health": null
+    },
+    "mcs-jetson-postgres-1": {
+      "id": "70fb36084a5aee62344bed0358e9a292ba7386106d92ddb369c6c07442900e7e",
+      "image": "sha256:ef738a34a8651d11b2bace81c55c7e2187f786b484add6c83070884340074368",
+      "health": "healthy"
+    },
+    "mcs-jetson-redis-1": {
+      "id": "9247a7d4464588a8a206846f8fcfcafed29da1c88eacd5ff53f7e40468446c6f",
+      "image": "sha256:ec4f171e9ff071bb2a1c936057d3be00206069b028b6c0d61df2477e1dd02c42",
+      "health": null
+    }
+  },
+  "served_assets": {
+    "/assets/PreparationPage-Bc4j8t0B.js": "527b7934ef3d1fb328dfabb08f2822cb2a22191c450558050ea9424152c37ba2",
+    "/assets/ResultPage-BJPd5E7x.js": "7836c76378c30bb69bab32245dbb8e52583a3c27fef5c68da020a79f1fe2d3e2",
+    "/assets/SeamlessVideoPlayer-B3QKwP4o.js": "441b5616297519e24a3d18c1251c590541f72fd01ebd8fbb613d6e0eef3fd330",
+    "/assets/charts-vendor-C_Ok1gmA.js": "cb6ddd1b9f21dc9bc0423a20ab6712849b4627271b45881ee8f8dd17268fae3b",
+    "/assets/digitalHumanSources-DEb5oLEO.js": "f31a52d545658f5ea36ca68c043003ca1044a2632d174f36f2cc86b97286211a",
+    "/assets/index-C6AwFGAF.css": "5168c18ef7603ab01e8268f7b02a94119f1940b176fc5be0285310328d9d5dbd",
+    "/assets/index-D9lwx6sP.js": "3a880a2334d70392601e6daafbfd3041898ef4b4f8877653f6d8f8703cbda490",
+    "/assets/motion-vendor-CvB6gGN3.js": "c78b0aa3587fac9e951f7af494c0d5833f04611b26492a6c385b808b28d22831",
+    "/assets/react-vendor-Bh9kfqAM.js": "4e92575621ad0a8e85593a33654f6e5015cdab6b6e49affb36be389cde038403",
+    "/assets/router-vendor-nV80x_LD.js": "e77f1cb667ab35cc1dda104fa2d704dc01577cc653cdfdd4fe21b0c53c7fb559"
+  },
+  "videos_verified_by_sha256": 82,
+  "doctor_personas": [
+    {
+      "version": 1,
+      "persona_id": "doctor-a-calm-female",
+      "display_name": "林医生",
+      "role_title": "数字心理问诊医生",
+      "voice_style": "calm_female_cn",
+      "tone_style": "温柔、专业、稳定",
+      "interaction_mode": "voice_first",
+      "supported_workflows": [
+        "consultation-v1"
+      ],
+      "supported_script_bundle": "rule-v1",
+      "notes": [
+        "适合作为默认接待角色",
+        "开场语与安抚语保持平稳"
+      ]
+    },
+    {
+      "version": 1,
+      "persona_id": "doctor-b-formal-male",
+      "display_name": "周医生",
+      "role_title": "数字心理问诊医生",
+      "voice_style": "formal_male_cn",
+      "tone_style": "正式、冷静、简洁",
+      "interaction_mode": "voice_first",
+      "supported_workflows": [
+        "consultation-v1"
+      ],
+      "supported_script_bundle": "rule-v1",
+      "notes": [
+        "适合更正式的问诊语气",
+        "适合后台演示时切换不同数字人角色"
+      ]
+    },
+    {
+      "version": 1,
+      "persona_id": "doctor-c-natural-female",
+      "display_name": "新女医生",
+      "role_title": "数字心理问诊医生",
+      "voice_style": "natural_female_cn",
+      "tone_style": "自然、亲切、平稳",
+      "interaction_mode": "voice_first",
+      "supported_workflows": [
+        "consultation-v1"
+      ],
+      "supported_script_bundle": "rule-v1",
+      "notes": [
+        "仅在用户明确选择此角色时使用新素材，不改变原有角色的默认横竖屏行为",
+        "视频资源位于 /digital-human/landscape-female-v2/，共 82 段，512×512 透明 WebM"
+      ]
+    }
+  ],
+  "fixture_present": false,
+  "checks": [
+    "Only frontend container replaced",
+    "Production index and updated JS/CSS served over HTTPS and equal container assets",
+    "All 82 new videos served and SHA-256 match imported files",
+    "New poster and original greeting available",
+    "Gateway catalog and running consultation workflow both recognize all three personas",
+    "Synthetic browser fixture absent from production image"
+  ]
+}

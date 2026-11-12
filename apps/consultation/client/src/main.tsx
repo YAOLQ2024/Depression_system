@@ -6,6 +6,7 @@ import App from "./App";
 import "./index.css";
 import { isPerformanceMode } from "./lib/runtimeConfig";
 import "./portrait.css";
+import "./digitalHuman.css";
 
 if (isPerformanceMode()) {
   document.documentElement.dataset.performanceMode = "true";
