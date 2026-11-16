@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -1084,31 +1085,73 @@ def _compute_confidence_weighted_score(
     return round(weighted_sum / total_weight, 2), used_components, missing_components
 
 
-def _gather_text_fragments(consultation_payload: dict[str, Any]) -> list[str]:
-    fragments: list[str] = []
-    for key in (
-        "chief_complaint_summary",
-        "chief_complaint_stage_summary",
-        "symptom_screening_stage_summary",
-        "high_risk_screening_stage_summary",
-        "digital_human_consultation_summary",
-    ):
-        value = consultation_payload.get(key)
-        if value:
-            fragments.append(str(value))
-
-    for result_key in (
-        "chief_complaint_structured_result",
-        "current_history_structured_result",
-        "high_risk_screening_result",
+def _gather_text_fragments(consultation_payload: dict[str, Any]) -> list[tuple[str, str]]:
+    # Screening summaries contain system labels such as “轻生想法：无”.
+    # Their risk enums are evaluated separately, never as patient statements.
+    fragments: list[tuple[str, str]] = []
+    for result_key, summary_keys in (
+        (
+            "chief_complaint_structured_result",
+            ("chief_complaint_summary", "chief_complaint_stage_summary"),
+        ),
+        ("current_history_structured_result", ("symptom_screening_stage_summary",)),
     ):
         result_payload = consultation_payload.get(result_key)
-        if not isinstance(result_payload, dict):
-            continue
-        for value in result_payload.values():
-            if value not in (None, ""):
-                fragments.append(str(value))
+        structured_fragments = []
+        if isinstance(result_payload, dict):
+            structured_fragments = [
+                (f"{result_key}.{key}", value)
+                for key, value in result_payload.items()
+                if isinstance(value, str) and value.strip()
+            ]
+        if structured_fragments:
+            fragments.extend(structured_fragments)
+        else:
+            for key in summary_keys:
+                value = consultation_payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    fragments.append((key, value))
+
+    primary_concern = _ensure_json_dict(
+        consultation_payload.get("high_risk_screening_result")
+    ).get("primary_concern")
+    if isinstance(primary_concern, str) and primary_concern.strip():
+        fragments.append(("high_risk_screening_result.primary_concern", primary_concern))
     return fragments
+
+
+def _find_self_harm_statement(text: str, keyword: str, keywords: tuple[str, ...]) -> str | None:
+    """Match each occurrence locally so a denial cannot hide a later disclosure."""
+    normalized_keyword = _normalize_search_text(keyword)
+    if not normalized_keyword:
+        return None
+    alternatives = "|".join(
+        re.escape(_normalize_search_text(item)) for item in keywords if item.strip()
+    )
+    denied_prefix = re.compile(
+        r"(?:没有|没|无|并无|从未|未曾|否认|不会|不想|不愿|不打算|不考虑|不曾|不是|不|未)"
+        r"(?:任何|过|出现过|出现|产生过|产生|想过|想要|想|再|去|过要|要|有|的)*"
+        rf"(?:(?:{alternatives})(?:或|和|、|以及))*$"
+    )
+    denied_suffix = re.compile(
+        r"^(?:的)?(?:想法|念头|意念|倾向|行为|计划)?"
+        r"(?:都|也|完全)?(?:[：:]无|[：:]没有|[：:]否|没有|不存在|从未有过)"
+    )
+    for clause in re.split(r"[，,。；;！!？?\n]|但是|不过|然而|可是|但", text):
+        normalized = _normalize_search_text(clause)
+        for match in re.finditer(re.escape(normalized_keyword), normalized):
+            prefix, suffix = normalized[:match.start()], normalized[match.end():]
+            # Double negation still discloses a risk signal.
+            double_negative = any(
+                hint in prefix
+                for hint in ("不是没有", "并非没有", "不能说没有", "不完全没有")
+            )
+            if not double_negative and (
+                denied_prefix.search(prefix) or denied_suffix.search(suffix)
+            ):
+                continue
+            return clause.strip()
+    return None
 
 
 def _append_trigger(
@@ -1215,14 +1258,12 @@ def _evaluate_safety_risk(
         if str(keyword).strip()
     ) or DEFAULT_SELF_HARM_KEYWORDS
 
-    normalized_text_blob = "\n".join(
-        _normalize_search_text(text)
-        for text in _gather_text_fragments(consultation_payload)
-        if text
-    )
+    text_fragments = _gather_text_fragments(consultation_payload)
     for keyword in keywords:
-        normalized_keyword = _normalize_search_text(keyword)
-        if normalized_keyword and normalized_keyword in normalized_text_blob:
+        for field, text in text_fragments:
+            statement = _find_self_harm_statement(text, keyword, keywords)
+            if statement is None:
+                continue
             safety_risk_level = _max_risk_level(safety_risk_level, "high")
             _append_trigger(
                 triggers,
@@ -1231,9 +1272,12 @@ def _evaluate_safety_risk(
                 source="interview_or_scale",
                 effect="escalate_to_high_or_urgent",
                 evidence_summary=f"问诊文本命中高风险表达：{keyword}",
-                evidence_payload={"keyword": keyword},
+                evidence_payload={"keyword": keyword, "field": field, "statement": statement},
             )
             break
+        else:
+            continue
+        break
 
     for risk_flag in _ensure_json_list(assessment_payload.get("flattened_risk_flags")):
         if not isinstance(risk_flag, dict):
