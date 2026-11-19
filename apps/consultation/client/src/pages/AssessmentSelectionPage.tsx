@@ -427,7 +427,7 @@ export default function AssessmentSelectionPage() {
 
           {/* Footer */}
           <div className="scale-selection-footer mt-12 border-t border-white/70 pt-6 text-center text-xs text-[#9a8ea0]">
-            量表选择 · 抑郁症数字人辅助评估系统
+            量表选择 · 情绪识别数字人辅助评估系统
           </div>
         </div>
       </main>

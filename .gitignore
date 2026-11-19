@@ -54,3 +54,6 @@ services/multimodal-service/tests/test_multimodal_visual_service.py
 
 tmp_export_audio/
 tmp_response_original.webm
+.aider*
+/tools/deepseek/key.txt
+/data/video-recordings/

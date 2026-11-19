@@ -99,7 +99,7 @@ export function Header({ theme = 'light', title }: HeaderProps) {
         </div>
         <div className="header-titles flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">
           <h1 className={cn("header-system-title shrink-0 text-[clamp(14px,1.05vw,24px)] font-semibold leading-tight", isDark ? "text-white" : "text-slate-800")}>
-            抑郁症智能评测与调节系统
+            情绪识别智能评测与调节系统
           </h1>
           {title !== false ? (
             <div className="header-page-title flex min-w-0 items-center gap-[clamp(8px,0.7vw,16px)]">

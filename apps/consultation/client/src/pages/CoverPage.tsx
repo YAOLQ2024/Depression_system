@@ -17,7 +17,7 @@ function CoverPage() {
             <div className="absolute -inset-x-[clamp(1rem,3vw,3rem)] -inset-y-10 -z-10 rounded-[3rem] bg-[radial-gradient(circle_at_18%_32%,rgba(255,255,255,0.62),rgba(255,255,255,0.16)_48%,transparent_76%)] blur-2xl" />
 
             <h1 className="cover-title max-w-none text-[clamp(3.25rem,6vw,7.1rem)] font-semibold leading-[0.92] tracking-[-0.075em] text-[#6f42cf] [text-wrap:balance] [text-shadow:0_0_26px_rgba(255,255,255,0.32),0_16px_34px_rgba(91,58,189,0.18)] md:whitespace-nowrap">
-              <span>抑郁症智能评测</span><span>与调节系统</span>
+              <span>情绪识别智能评测</span><span>与调节系统</span>
             </h1>
 
             <div className="cover-actions mt-[clamp(1.8rem,3vw,2.8rem)] flex flex-wrap items-center gap-5">
